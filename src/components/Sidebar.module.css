@@ -1,0 +1,137 @@
+.sidebar {
+  width: 300px;
+  height: 100vh;
+  background-color: var(--surface);
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 1rem;
+  border-right: 1px solid var(--card-border);
+  transition: width 0.3s ease, padding 0.3s ease;
+  overflow: hidden;
+}
+
+.sidebar.collapsed {
+  width: 80px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+  position: relative;
+}
+
+.logo {
+  color: var(--text);
+  font-size: 1.5rem;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  white-space: nowrap;
+}
+
+.logo img {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.toggleBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1.25rem;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: background 0.2s, color 0.2s;
+}
+
+.toggleBtn:hover {
+  background-color: var(--hover-bg);
+  color: var(--hover-text);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.navItem {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-family: 'Montserrat', sans-serif;
+  padding: 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1.125rem;
+  transition: background 0.2s, color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 1.875rem;
+  white-space: nowrap;
+}
+
+.navItem:hover {
+  background-color: var(--hover-bg);
+  color: var(--hover-text);
+}
+
+.active {
+  background-color: var(--yellow);
+  color: #111111;
+  font-weight: bold;
+}
+
+.sidebar.collapsed .navItem {
+  gap: 0;
+  justify-content: center;
+  padding: 1rem 0.5rem;
+}
+
+.label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.logout {
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  padding: 0.75rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1.125rem;
+  font-weight: 500;
+  transition: background 0.2s, color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 1.875rem;
+}
+
+.logout:hover {
+  background-color: var(--hover-bg);
+  color: var(--hover-text);
+}
+
+.sidebar.collapsed .logout {
+  gap: 0;
+  justify-content: center;
+  padding: 0.75rem 0.5rem;
+}
+
+.icon {
+  width: 1.25rem;
+  text-align: center;
+  flex-shrink: 0;
+}
