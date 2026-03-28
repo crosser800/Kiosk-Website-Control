@@ -7,11 +7,15 @@
   padding: 1.5rem 1rem;
   border-right: 1px solid var(--card-border);
   transition: width 0.3s ease, padding 0.3s ease;
-  overflow: hidden;
+  overflow: hidden;        /* fix: sidebar never scrolls */
+  position: fixed;         /* fix: stays in place when page scrolls */
+  top: 0;
+  left: 0;
 }
 
 .sidebar.collapsed {
   width: 80px;
+  padding: 1.5rem 0.5rem; /* fix: adjust padding when collapsed */
 }
 
 .header {
@@ -19,7 +23,7 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 2rem;
-  position: relative;
+  flex-shrink: 0;          /* fix: header never shrinks or scrolls */
 }
 
 .sidebar.collapsed .header {
@@ -35,6 +39,7 @@
   align-items: center;
   gap: 0.625rem;
   white-space: nowrap;
+  overflow: hidden;        /* fix: prevents logo text overflow */
 }
 
 .logo img {
@@ -42,7 +47,7 @@
   height: 2.4rem;
   border-radius: 50%;
   object-fit: cover;
-  flex-shrink: 0;
+  flex-shrink: 0;          /* fix: logo image never shrinks */
 }
 
 .logoBtn {
@@ -63,6 +68,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 6px;
+  flex-shrink: 0;          /* fix: button never shrinks */
   transition: background 0.2s, color 0.2s;
 }
 
@@ -75,7 +81,18 @@
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  flex: 1;
+  flex: 1;                 /* fix: nav takes remaining space */
+  overflow-y: auto;        /* fix: only nav scrolls if items overflow */
+  overflow-x: hidden;      /* fix: no horizontal scroll */
+
+  /* fix: hide scrollbar visually but still scrollable */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+/* fix: hide scrollbar for Chrome/Safari */
+.nav::-webkit-scrollbar {
+  display: none;
 }
 
 .navItem {
@@ -91,6 +108,8 @@
   align-items: center;
   gap: 1.875rem;
   white-space: nowrap;
+  text-decoration: none;   /* fix: removes underline from NavLink */
+  flex-shrink: 0;          /* fix: nav items never shrink */
 }
 
 .navItem:hover {
@@ -119,7 +138,7 @@
 .logout {
   color: var(--text-muted);
   font-family: 'Montserrat', sans-serif;
-  padding: 0.75rem 0.75rem;
+  padding: 0.75rem;
   border-radius: 6px;
   cursor: pointer;
   font-size: 1.125rem;
@@ -128,6 +147,10 @@
   display: flex;
   align-items: center;
   gap: 1.875rem;
+  white-space: nowrap;
+  flex-shrink: 0;          /* fix: logout never scrolls, always at bottom */
+  text-decoration: none;   /* fix: removes underline if used as a link */
+  margin-top: auto;        /* fix: this is not needed since nav has flex:1 */
 }
 
 .logout:hover {
@@ -144,5 +167,5 @@
 .icon {
   width: 1.25rem;
   text-align: center;
-  flex-shrink: 0;
+  flex-shrink: 0;          /* fix: icons never shrink */
 }
