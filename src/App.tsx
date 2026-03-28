@@ -7,6 +7,7 @@ import Header from './components/Header';
 export default function App() {
   const [active, setActive] = useState('Dashboard');
   const [isDark, setIsDark] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const toggleTheme = () => {
     setIsDark(!isDark);
@@ -39,16 +40,14 @@ export default function App() {
   };
 
   return (
-    <div style={{ display: 'flex' }}>
-      <Sidebar active={active} onNavigate={setActive} />
+    <>
+      <Sidebar active={active} onNavigate={setActive} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} />
 
-      {/* Right side */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ marginLeft: isCollapsed ? '80px' : '300px', display: 'flex', flexDirection: 'column', minHeight: '100vh', transition: 'margin-left 0.3s ease' }}>
         <Header active={active} isDark={isDark} onToggle={toggleTheme} />
 
-        {/* Page content */}
-        <div style={{ flex: 1 }}>{renderPage()}</div>
+        <div style={{ flex: 1, overflowY: 'auto' }}>{renderPage()}</div>
       </div>
-    </div>
+    </>
   );
 }

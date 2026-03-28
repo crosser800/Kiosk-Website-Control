@@ -1,10 +1,11 @@
-import { useState } from 'react';
 import styles from './Sidebar.module.css';
 import logo from "../assets/2B LOGO.png";
 
 type SidebarProps = {
   active: string;
   onNavigate: (item: string) => void;
+  isCollapsed: boolean;
+  setIsCollapsed: (collapsed: boolean) => void;
 };
 
 const navItems = [
@@ -16,8 +17,7 @@ const navItems = [
   { name: 'Settings', icon: 'fa-solid fa-gear' },
 ];
 
-export default function Sidebar({ active, onNavigate }: SidebarProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+export default function Sidebar({ active, onNavigate, isCollapsed, setIsCollapsed }: SidebarProps) {
 
   return (
     <div className={`${styles.sidebar} ${isCollapsed ? styles.collapsed : ''}`}>
