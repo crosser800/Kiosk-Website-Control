@@ -21,7 +21,8 @@ export default function App() {
       case 'Dashboard':
         return <Dashboard />;
       case 'Products':
-        return <Products />;  // ← now works
+        return <Products />;
+        
       case 'Order':
         return <div>Order Page — coming soon!</div>;
       case 'Sales':
