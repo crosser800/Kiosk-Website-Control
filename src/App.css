@@ -6,6 +6,7 @@
 
 :root {
   --yellow: #f5c518;
+  --sidebar-width: 300px;
 
   --background: #ffffff;
   --surface: #f5f5f5;
@@ -16,6 +17,10 @@
   --card-shadow: 2px 2px 8px rgba(0, 0, 0, 0.08);
   --hover-bg: #f5c518;
   --hover-text: #111111;
+}
+
+[data-sidebar][data-collapsed="true"] {
+  --sidebar-width: 80px;
 }
 
 :root.dark {
