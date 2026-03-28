@@ -1,139 +1,165 @@
 .container {
-    background-color: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 12px;
-    padding: 1.5rem;
-    width: 100%;
-    box-shadow: var(--card-shadow);
-  }
-  
-  .header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1.25rem;
-  }
-  
-  .title {
-    font-size: 1.1rem;
-    font-weight: 700;
-    font-family: 'Montserrat', sans-serif;
-    color: var(--text);
-  }
-  
-  .filter {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.9rem;
-    color: var(--text-muted);
-    cursor: pointer;
-  }
-  
-  .filter:hover {
-    color: var(--text);
-  }
-  
-  /* Table */
-  .table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  
-  .th {
-    text-align: left;
-    font-size: 0.8rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--card-border);
-    font-family: 'Montserrat', sans-serif;
-    white-space: nowrap;
-  }
-  
-  .row {
-    border-bottom: 1px solid var(--card-border);
-    transition: background 0.2s;
-  }
-  
-  .row:hover {
-    background-color: var(--surface);
-  }
-  
-  .row:last-child {
-    border-bottom: none;
-  }
-  
-  .td {
-    padding: 1rem 0.75rem;
-    font-size: 0.95rem;
-    color: var(--text-muted);
-    font-family: 'Montserrat', sans-serif;
-  }
-  
-  .tdName {
-    padding: 1rem 0.75rem;
-    font-size: 0.95rem;
-    font-weight: 700;
-    color: var(--text);
-    font-family: 'Montserrat', sans-serif;
-    white-space: nowrap;
-  }
-  
-  .tdSales {
-    padding: 1rem 0.75rem;
-    font-size: 0.95rem;
-    font-weight: 700;
-    color: var(--text);
-    font-family: 'Montserrat', sans-serif;
-  }
-  
-  /* Status badge */
-  .badge {
-    padding: 0.3rem 0.8rem;
-    border-radius: 6px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    font-family: 'Montserrat', sans-serif;
-  }
-  
-  .active {
-    background-color: #22c55e;
-    color: #ffffff;
-  }
-  
-  .inactive {
-    background-color: #ef4444;
-    color: #ffffff;
-  }
-  
-  /* Empty state */
-  .empty {
-    text-align: center;
-    padding: 2rem;
-    color: var(--text-muted);
-    font-size: 0.95rem;
-    font-family: 'Montserrat', sans-serif;
-  }
-  
-  /* Footer */
-  .footer {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 1rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--card-border);
-  }
-  
-  .viewAll {
-    font-size: 0.9rem;
-    color: var(--text-muted);
-    text-decoration: underline;
-    font-family: 'Montserrat', sans-serif;
-    cursor: pointer;
-    transition: color 0.2s;
-  }
-  
-  .viewAll:hover {
-    color: var(--text);
-  }
+  background-color: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  width: 100%;
+  box-shadow: var(--card-shadow);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+
+.title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+  color: var(--text);
+}
+
+.filter {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.filter:hover {
+  color: var(--text);
+}
+
+/* Table */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* all headers left aligned */
+.th {
+  text-align: left;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--card-border);
+  font-family: 'Montserrat', sans-serif;
+  white-space: nowrap;
+}
+
+/* status header center aligned */
+.thStatus {
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--card-border);
+  font-family: 'Montserrat', sans-serif;
+  white-space: nowrap;
+}
+
+.row {
+  border-bottom: 1px solid var(--card-border);
+  transition: background 0.2s;
+}
+
+.row:hover {
+  background-color: var(--surface);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+/* all cells left aligned */
+.td {
+  padding: 1rem 0.75rem;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  text-align: left;
+}
+
+/* name cell — bold */
+.tdName {
+  padding: 1rem 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  text-align: left;
+  white-space: nowrap;
+}
+
+/* sales cell — bold */
+.tdSales {
+  padding: 1rem 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  text-align: left;
+}
+
+/* status cell — center aligned */
+.tdStatus {
+  padding: 1rem 0.75rem;
+  text-align: center;
+}
+
+/* Status badge */
+.badge {
+  padding: 0.3rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+  display: inline-block;
+}
+
+.active {
+  background-color: #22c55e;
+  color: #ffffff;
+}
+
+.inactive {
+  background-color: #ef4444;
+  color: #ffffff;
+}
+
+/* Empty state */
+.empty {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  font-family: 'Montserrat', sans-serif;
+}
+
+/* Footer */
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--card-border);
+}
+
+.viewAll {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  text-decoration: underline;
+  font-family: 'Montserrat', sans-serif;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.viewAll:hover {
+  color: var(--text);
+}

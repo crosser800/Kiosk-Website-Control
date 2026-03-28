@@ -1,38 +1,32 @@
-import { useState, useEffect } from 'react';
 import styles from './Sidebar.module.css';
 import logo from "../assets/2B LOGO.png";
 
 type SidebarProps = {
   active: string;
   onNavigate: (item: string) => void;
+  isCollapsed: boolean;       // ← receive from App
+  onToggle: (val: boolean) => void; // ← receive from App
 };
 
 const navItems = [
   { name: 'Dashboard', icon: 'fa-solid fa-house' },
-  { name: 'Product', icon: 'fa-solid fa-box' },
-  { name: 'Order', icon: 'fa-solid fa-cart-shopping' },
-  { name: 'Sales', icon: 'fa-solid fa-chart-line' },
-  { name: 'Accounts', icon: 'fa-solid fa-user' },
-  { name: 'Settings', icon: 'fa-solid fa-gear' },
+  { name: 'Products',   icon: 'fa-solid fa-box' },
+  { name: 'Order',     icon: 'fa-solid fa-cart-shopping' },
+  { name: 'Sales',     icon: 'fa-solid fa-chart-line' },
+  { name: 'Accounts',  icon: 'fa-solid fa-user' },
+  { name: 'Settings',  icon: 'fa-solid fa-gear' },
 ];
 
-export default function Sidebar({ active, onNavigate }: SidebarProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-
-  useEffect(() => {
-    const sidebar = document.querySelector('[data-sidebar]');
-    if (sidebar) {
-      sidebar.setAttribute('data-collapsed', isCollapsed ? 'true' : 'false');
-    }
-  }, [isCollapsed]);
-
+export default function Sidebar({ active, onNavigate, isCollapsed, onToggle }: SidebarProps) {
   return (
-    <div className={`${styles.sidebar} ${isCollapsed ? styles.collapsed : ''}`} data-sidebar data-collapsed={isCollapsed ? 'true' : 'false'}>
+    <div className={`${styles.sidebar} ${isCollapsed ? styles.collapsed : ''}`}>
+
+      {/* Header */}
       <div className={styles.header}>
         {isCollapsed ? (
           <button
             className={`${styles.logo} ${styles.logoBtn}`}
-            onClick={() => setIsCollapsed(false)}
+            onClick={() => onToggle(false)}
             aria-label="Open sidebar"
           >
             <img src={logo} alt="logo" />
@@ -45,7 +39,7 @@ export default function Sidebar({ active, onNavigate }: SidebarProps) {
             </div>
             <button
               className={styles.toggleBtn}
-              onClick={() => setIsCollapsed(true)}
+              onClick={() => onToggle(true)}
               aria-label="Close sidebar"
             >
               <i className="fa-solid fa-bars"></i>
@@ -54,13 +48,12 @@ export default function Sidebar({ active, onNavigate }: SidebarProps) {
         )}
       </div>
 
+      {/* Nav */}
       <nav className={styles.nav}>
         {navItems.map((item) => (
           <div
             key={item.name}
-            className={`${styles.navItem} ${
-              active === item.name ? styles.active : ''
-            }`}
+            className={`${styles.navItem} ${active === item.name ? styles.active : ''}`}
             onClick={() => onNavigate(item.name)}
             title={isCollapsed ? item.name : ''}
           >
@@ -70,10 +63,12 @@ export default function Sidebar({ active, onNavigate }: SidebarProps) {
         ))}
       </nav>
 
-      <div className={`${styles.logout} ${isCollapsed ? styles.iconOnly : ''}`}>
+      {/* Logout */}
+      <div className={styles.logout}>
         <i className="fa-solid fa-right-from-bracket"></i>
         {!isCollapsed && <span className={styles.label}>Logout</span>}
       </div>
+
     </div>
   );
 }

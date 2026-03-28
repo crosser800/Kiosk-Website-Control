@@ -13,9 +13,7 @@ export default function Dashboard() {
   const [itemsOrders] = useState(0);
   const [ordersYesterday] = useState(0);
   const [salesTotal] = useState<number>(0);
-  const [salesData] = useState
-    { day: string; today: number; yesterday: number }[]
-  >([]);
+  const [salesData] = useState<{ day: string; today: number; yesterday: number }[]>([]);
 
   return (
     <div className={styles.dashboard}>
@@ -39,8 +37,8 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Agent Summary */}
-      <AgentSummary />  {/* ← missing! */}
+      {/* Agent Summary — outside chartRow, it's a separate section */}
+      <AgentSummary />
 
     </div>
   );

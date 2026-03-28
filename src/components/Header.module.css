@@ -1,5 +1,7 @@
 .header {
-  width: 100%;
+  position: fixed;        /* ← fixed so it stays on top */
+  top: 0;
+  right: 0;               /* ← stretches to right edge */
   height: 3.75rem;
   background-color: var(--card-bg);
   border-bottom: 1px solid var(--card-border);
@@ -7,27 +9,13 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 1.5rem;
-  position: sticky;
-  top: 0;
   z-index: 10;
-  transition: background-color 0.3s;
+  transition: background-color 0.3s, left 0.3s ease;
 }
 
 .title {
   font-size: 1.25rem;
   font-weight: bold;
-  letter-spacing: 0rem;
   font-family: 'Montserrat', sans-serif;
   color: var(--text);
-}
-
-@media (max-width: 768px) {
-  .header {
-    height: 3rem;
-    padding: 0 1rem;
-  }
-
-  .title {
-    font-size: 1rem;
-  }
 }

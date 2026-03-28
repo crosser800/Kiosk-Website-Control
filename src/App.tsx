@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import './App.css';
 import Sidebar from './components/Sidebar';
-import Dashboard from './pages/Dashboard';
 import Header from './components/Header';
+import MainContent from './components/MainContent';
+import Dashboard from './pages/Dashboard';
+import Products from './pages/Products';  // ← renamed to Products
 
 export default function App() {
   const [active, setActive] = useState('Dashboard');
   const [isDark, setIsDark] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const toggleTheme = () => {
     setIsDark(!isDark);
@@ -17,36 +20,38 @@ export default function App() {
     switch (active) {
       case 'Dashboard':
         return <Dashboard />;
-      case 'Product':
-        return (
-          <div style={{ padding: '24px' }}>Product Page — coming soon!</div>
-        );
+      case 'Products':
+        return <Products />;  // ← now works
       case 'Order':
-        return <div style={{ padding: '24px' }}>Order Page — coming soon!</div>;
+        return <div>Order Page — coming soon!</div>;
       case 'Sales':
-        return <div style={{ padding: '24px' }}>Sales Page — coming soon!</div>;
+        return <div>Sales Page — coming soon!</div>;
       case 'Accounts':
-        return (
-          <div style={{ padding: '24px' }}>Accounts Page — coming soon!</div>
-        );
+        return <div>Accounts Page — coming soon!</div>;
       case 'Settings':
-        return (
-          <div style={{ padding: '24px' }}>Settings Page — coming soon!</div>
-        );
+        return <div>Settings Page — coming soon!</div>;
       default:
         return <Dashboard />;
     }
   };
 
   return (
-    <>
-      <Sidebar active={active} onNavigate={setActive} />
-
-      <div style={{ marginLeft: 'var(--sidebar-width, 300px)', display: 'flex', flexDirection: 'column', minHeight: '100vh', transition: 'margin-left 0.3s ease' }}>
-        <Header active={active} isDark={isDark} onToggle={toggleTheme} />
-
-        <div style={{ flex: 1, overflowY: 'auto' }}>{renderPage()}</div>
-      </div>
-    </>
+    <div className="app-container">
+      <Sidebar
+        active={active}
+        onNavigate={setActive}
+        isCollapsed={isCollapsed}
+        onToggle={setIsCollapsed}
+      />
+      <Header
+        active={active}
+        isDark={isDark}
+        onToggle={toggleTheme}
+        isCollapsed={isCollapsed}
+      />
+      <MainContent isCollapsed={isCollapsed}>
+        {renderPage()}
+      </MainContent>
+    </div>
   );
 }
