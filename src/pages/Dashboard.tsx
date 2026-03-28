@@ -5,6 +5,7 @@ import TotalSales from '../components/dashboard/TotalSales';
 import ForDelivery from '../components/dashboard/ForDelivery';
 import SalesOverview from '../components/dashboard/SalesOverview';
 import OrderSummary from '../components/dashboard/OrderSummary';
+import AgentSummary from '../components/dashboard/AgentSummary';
 import styles from './Dashboard.module.css';
 
 export default function Dashboard() {
@@ -12,12 +13,13 @@ export default function Dashboard() {
   const [itemsOrders] = useState(0);
   const [ordersYesterday] = useState(0);
   const [salesTotal] = useState<number>(0);
-  const [salesData] = useState<
+  const [salesData] = useState
     { day: string; today: number; yesterday: number }[]
   >([]);
 
   return (
     <div className={styles.dashboard}>
+
       {/* Stat cards */}
       <div className={styles.statsRow}>
         <ActiveProducts count={activeProducts} />
@@ -36,6 +38,10 @@ export default function Dashboard() {
           wholesaleVsYesterday={0}
         />
       </div>
+
+      {/* Agent Summary */}
+      <AgentSummary />  {/* ← missing! */}
+
     </div>
   );
 }

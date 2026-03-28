@@ -1,0 +1,15 @@
+.mainContent {
+    margin-left: 300px; 
+    margin-top: 3.75rem;
+    height: calc(100vh - 3.75rem);
+    overflow-y: auto;
+    overflow-x: hidden;
+    background-color: var(--background);
+    padding: 0;              /* ← remove padding, let each page handle its own */
+    flex: 1;
+    transition: margin-left 0.3s ease;
+  }
+  
+  .mainContent.collapsed {
+    margin-left: 80px;
+  }
