@@ -29,14 +29,14 @@ export default function OrderSummary({
         {/* Retail */}
         <div className={styles.item}>
           <div className={styles.donut}>
-            <ResponsiveContainer width={130} height={130}>
+            <ResponsiveContainer width={160} height={160}>
               <PieChart>
                 <Pie
                   data={retailData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={40}
-                  outerRadius={55}
+                  innerRadius={50}
+                  outerRadius={68}
                   startAngle={90}
                   endAngle={-270}
                   dataKey="value"
@@ -63,14 +63,14 @@ export default function OrderSummary({
         {/* Wholesale */}
         <div className={styles.item}>
           <div className={styles.donut}>
-            <ResponsiveContainer width={130} height={130}>
+            <ResponsiveContainer width={160} height={160}>
               <PieChart>
                 <Pie
                   data={wholesaleData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={40}
-                  outerRadius={55}
+                  innerRadius={50}
+                  outerRadius={68}
                   startAngle={90}
                   endAngle={-270}
                   dataKey="value"

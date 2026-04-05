@@ -5,8 +5,8 @@ import {
   type TopProductRecord,
 } from '../../services/topProducts';
 
-const SLOT_COUNT = 3;
-const FALLBACK_ITEM_COUNT = 9;
+const SLOT_COUNT = 5;
+const FALLBACK_ITEM_COUNT = 20;
 const INTERVAL = 3000;
 
 function buildDisplayProducts(products: TopProductRecord[], currentPage: number) {
