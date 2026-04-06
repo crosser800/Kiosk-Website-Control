@@ -1,0 +1,156 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 1.5rem;
+  row-gap: 1.25rem;
+  align-items: start;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.descriptionField {
+  grid-column: 1 / -1;
+}
+
+.label {
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.required {
+  color: #ef4444;
+  margin-left: 0.15rem;
+}
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  max-width: 100%;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.85rem;
+  background-color: var(--surface);
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: 'Montserrat', sans-serif;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--yellow) 22%, transparent);
+}
+
+.select {
+  appearance: none;
+  cursor: pointer;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--yellow) 50%),
+    linear-gradient(135deg, var(--yellow) 50%, transparent 50%);
+  background-position:
+    calc(100% - 1.1rem) calc(50% - 0.15rem),
+    calc(100% - 0.75rem) calc(50% - 0.15rem);
+  background-size: 0.4rem 0.4rem, 0.4rem 0.4rem;
+  background-repeat: no-repeat;
+  padding-right: 2.4rem;
+}
+
+.textarea {
+  width: 100%;
+  max-width: 100%;
+  min-height: 10rem;
+  resize: vertical;
+}
+
+.footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.statusField {
+  width: min(100%, 18rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.cancelButton,
+.nextButton {
+  min-width: 8.5rem;
+  padding: 0.9rem 1.35rem;
+  border-radius: 0.85rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.cancelButton {
+  border: 1px solid var(--card-border);
+  background-color: transparent;
+  color: var(--text);
+}
+
+.nextButton {
+  border: 1px solid var(--yellow);
+  background-color: var(--yellow);
+  color: #1f2937;
+}
+
+.cancelButton:hover,
+.nextButton:hover {
+  transform: translateY(-1px);
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .footer {
+    align-items: stretch;
+  }
+
+  .statusField {
+    width: 100%;
+  }
+
+  .actions {
+    width: 100%;
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+}

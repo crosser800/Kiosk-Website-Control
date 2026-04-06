@@ -13,6 +13,10 @@ interface ProductSummaryItem {
   createdAt: string;
 }
 
+type ProductSummaryProps = {
+  onAddProduct: () => void;
+};
+
 type FilterMode = 'alphabetical' | 'relevancy' | 'cost';
 type SortOrder = 'ascending' | 'descending';
 
@@ -163,7 +167,7 @@ function buildVisiblePages(currentPage: number, totalPages: number) {
   ];
 }
 
-export default function ProductSummary() {
+export default function ProductSummary({ onAddProduct }: ProductSummaryProps) {
   const [searchValue, setSearchValue] = useState('');
   const [filterBy, setFilterBy] = useState<FilterMode>('alphabetical');
   const [sortOrder, setSortOrder] = useState<SortOrder>('ascending');
@@ -215,7 +219,8 @@ export default function ProductSummary() {
   const pageStartIndex = (currentPage - 1) * ROWS_PER_PAGE;
   const pagedItems = filteredItems.slice(pageStartIndex, pageStartIndex + ROWS_PER_PAGE);
   const pageStart = totalDataCount === 0 ? 0 : pageStartIndex + 1;
-  const pageEnd = totalDataCount === 0 ? 0 : Math.min(pageStartIndex + ROWS_PER_PAGE, totalDataCount);
+  const pageEnd =
+    totalDataCount === 0 ? 0 : Math.min(pageStartIndex + ROWS_PER_PAGE, totalDataCount);
   const visiblePages = buildVisiblePages(currentPage, totalPages);
 
   function handlePageInputChange(value: string) {
@@ -283,7 +288,11 @@ export default function ProductSummary() {
             </select>
           </label>
 
-          <button type="button" className={styles.primaryButton}>
+          <button
+            type="button"
+            className={styles.primaryButton}
+            onClick={onAddProduct}
+          >
             <PlusIcon />
             <span>Add New Product</span>
           </button>
@@ -316,7 +325,11 @@ export default function ProductSummary() {
               <span>{item.details}</span>
               <span>{item.price.toLocaleString()}</span>
               <span>{item.status}</span>
-              <button type="button" className={styles.actionButton} aria-label={`Edit ${item.product}`}>
+              <button
+                type="button"
+                className={styles.actionButton}
+                aria-label={`Edit ${item.product}`}
+              >
                 <EditIcon />
               </button>
             </div>

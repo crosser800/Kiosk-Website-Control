@@ -4,7 +4,7 @@ import ItemsOrders from '../components/dashboard/ItemsOrders';
 import TotalSales from '../components/dashboard/TotalSales';
 import ForDelivery from '../components/dashboard/ForDelivery';
 import SalesOverview from '../components/dashboard/SalesOverview';
-import OrderSummary from '../components/dashboard/OrderSummary';
+import OrderSummaryGraph from '../components/dashboard/OrderSummaryGraph';
 import AgentSummary from '../components/dashboard/AgentSummary';
 import styles from './Dashboard.module.css';
 
@@ -29,7 +29,7 @@ export default function Dashboard() {
       {/* Charts */}
       <div className={styles.chartRow}>
         <SalesOverview total={salesTotal} data={salesData} />
-        <OrderSummary
+        <OrderSummaryGraph
           retail={0}
           wholesale={0}
           retailVsYesterday={0}
