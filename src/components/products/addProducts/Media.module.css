@@ -1,0 +1,296 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.counter {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.uploadArea {
+  position: relative;
+  display: block;
+  padding: 2rem 1.5rem;
+  border: 1.5px dashed color-mix(in srgb, var(--yellow) 50%, var(--card-border));
+  border-radius: 1rem;
+  background: linear-gradient(180deg, var(--surface) 0%, var(--card-bg) 100%);
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+
+.uploadArea:hover,
+.uploadAreaActive {
+  border-color: var(--yellow);
+  transform: translateY(-1px);
+  box-shadow: 0 14px 30px color-mix(in srgb, var(--yellow) 14%, transparent);
+}
+
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.uploadContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  text-align: center;
+}
+
+.uploadHeadline {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.browseText {
+  color: #ca8a04;
+}
+
+.uploadHint,
+.uploadFormats {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.uploadMessage {
+  margin: 0.2rem 0 0;
+  color: #b91c1c;
+  font-size: 0.88rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.emptyState {
+  min-height: 10rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--card-border);
+  border-radius: 1rem;
+  background-color: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.mediaGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  gap: 1rem;
+}
+
+.mediaCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  border: 1px solid var(--card-border);
+  border-radius: 1rem;
+  background-color: var(--surface);
+  box-shadow: var(--card-shadow);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.mediaCard:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--yellow) 45%, var(--card-border));
+  box-shadow: 0 18px 28px rgba(15, 23, 42, 0.1);
+}
+
+.mediaCardDragging {
+  opacity: 0.55;
+}
+
+.mediaPreview {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: 0.85rem;
+  background:
+    linear-gradient(135deg, rgba(250, 204, 21, 0.08), rgba(15, 23, 42, 0.06)),
+    var(--card-bg);
+}
+
+.previewAsset {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cardActions {
+  margin-top: auto;
+  padding-top: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.iconButton {
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 0;
+  background-color: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    color 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.iconButton:hover {
+  transform: scale(1.05);
+  color: var(--text);
+}
+
+.iconButtonPrimary {
+  color: #ca8a04;
+}
+
+.deleteButton {
+  color: #dc2626;
+}
+
+.deleteButton:hover {
+  color: #b91c1c;
+}
+
+.icon {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.cardFooter {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+}
+
+.fileName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.mainBadge {
+  flex-shrink: 0;
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--yellow) 20%, transparent);
+  color: #854d0e;
+  font-size: 0.74rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.backButton,
+.nextButton {
+  min-width: 8.5rem;
+  padding: 0.9rem 1.35rem;
+  border-radius: 0.85rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.backButton {
+  border: 1px solid var(--card-border);
+  background-color: transparent;
+  color: var(--text);
+}
+
+.nextButton {
+  border: 1px solid var(--yellow);
+  background-color: var(--yellow);
+  color: #1f2937;
+}
+
+.backButton:hover,
+.nextButton:hover {
+  transform: translateY(-1px);
+}
+
+@media (max-width: 900px) {
+  .uploadArea {
+    padding: 1.75rem 1rem;
+  }
+
+  .mediaGrid {
+    grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  }
+
+  .actions {
+    justify-content: flex-start;
+  }
+}

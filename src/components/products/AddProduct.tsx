@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import styles from './AddProduct.module.css';
 import BasicInformation from './addProducts/BasicInformation';
+import Media from './addProducts/Media';
+import VarAndPrice from './addProducts/VarAndPrice';
 
 type AddProductSection =
   | 'Basic Information'
@@ -24,6 +26,14 @@ const sections: AddProductSection[] = [
 export default function AddProduct({ onCancel }: AddProductProps) {
   const [activeSection, setActiveSection] =
     useState<AddProductSection>('Basic Information');
+
+  const handleBack = () => {
+    const currentIndex = sections.indexOf(activeSection);
+
+    if (currentIndex > 0) {
+      setActiveSection(sections[currentIndex - 1]);
+    }
+  };
 
   const handleNext = () => {
     const currentIndex = sections.indexOf(activeSection);
@@ -59,6 +69,10 @@ export default function AddProduct({ onCancel }: AddProductProps) {
       <div className={styles.content}>
         {activeSection === 'Basic Information' ? (
           <BasicInformation onCancel={onCancel} onNext={handleNext} />
+        ) : activeSection === 'Images' ? (
+          <Media onBack={handleBack} onNext={handleNext} />
+        ) : activeSection === 'Variation & Pricing' ? (
+          <VarAndPrice onCancel={onCancel} />
         ) : (
           <div className={styles.placeholder}>
             <h3 className={styles.placeholderTitle}>{activeSection}</h3>
