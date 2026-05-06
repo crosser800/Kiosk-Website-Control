@@ -1,0 +1,14 @@
+.orders {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-height: 100%;
+  padding: 1.5rem;
+  background-color: var(--background);
+}
+
+@media (max-width: 768px) {
+  .orders {
+    padding: 1rem;
+  }
+}
