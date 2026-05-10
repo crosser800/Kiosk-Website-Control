@@ -6,6 +6,7 @@ import MainContent from './components/MainContent';
 import Dashboard from './pages/Dashboard';
 import Products from './pages/Products';
 import Orders from './pages/Orders';
+import Sales from './pages/Sales';
 
 type ProductView = 'summary' | 'add';
 
@@ -48,7 +49,7 @@ export default function App() {
       case 'Order':
         return <Orders />;
       case 'Sales':
-        return <div>Sales Page - coming soon!</div>;
+        return <Sales />;
       case 'Accounts':
         return <div>Accounts Page - coming soon!</div>;
       case 'Settings':
