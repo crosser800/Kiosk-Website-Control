@@ -1,0 +1,22 @@
+.accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+}
+
+.statsRow {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .accounts {
+    padding: 1rem;
+  }
+
+  .statsRow {
+    gap: 0.75rem;
+  }
+}
