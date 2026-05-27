@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import './App.css';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -8,6 +8,9 @@ import Products from './pages/Products';
 import Orders from './pages/Orders';
 import Sales from './pages/Sales';
 import Accounts from './pages/Accounts';
+import Login from './pages/Login';
+import { supabase } from './lib/supabase';
+import { signOutAdmin } from './services/auth';
 
 type ProductView = 'summary' | 'add';
 
@@ -16,6 +19,8 @@ export default function App() {
   const [isDark, setIsDark] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [productView, setProductView] = useState<ProductView>('summary');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isInitializingAuth, setIsInitializingAuth] = useState(true);
 
   const toggleTheme = () => {
     setIsDark(!isDark);
@@ -33,6 +38,40 @@ export default function App() {
     if (item !== 'Products') {
       setProductView('summary');
     }
+  };
+
+  const handleLogin = () => {
+    setIsAuthenticated(true);
+    setActive('Dashboard');
+  };
+
+  useEffect(() => {
+    let mounted = true;
+
+    const initAuth = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!mounted) return;
+      setIsAuthenticated(Boolean(data.session));
+      setIsInitializingAuth(false);
+    };
+
+    void initAuth();
+
+    const { data: authSubscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(Boolean(session));
+    });
+
+    return () => {
+      mounted = false;
+      authSubscription.subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleLogout = async () => {
+    await signOutAdmin();
+    setIsAuthenticated(false);
+    setIsCollapsed(false);
+    setProductView('summary');
   };
 
   const renderPage = () => {
@@ -60,6 +99,14 @@ export default function App() {
     }
   };
 
+  if (isInitializingAuth) {
+    return null;
+  }
+
+  if (!isAuthenticated) {
+    return <Login onLogin={handleLogin} />;
+  }
+
   return (
     <div className="app-container">
       <Sidebar
@@ -67,6 +114,7 @@ export default function App() {
         onNavigate={handleNavigate}
         isCollapsed={isCollapsed}
         onToggle={setIsCollapsed}
+        onLogout={handleLogout}
       />
       <Header
         active={headerTitle}
@@ -74,9 +122,7 @@ export default function App() {
         onToggle={toggleTheme}
         isCollapsed={isCollapsed}
       />
-      <MainContent isCollapsed={isCollapsed}>
-        {renderPage()}
-      </MainContent>
+      <MainContent isCollapsed={isCollapsed}>{renderPage()}</MainContent>
     </div>
   );
 }

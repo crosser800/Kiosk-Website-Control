@@ -1,18 +1,12 @@
 import { useState } from 'react';
 import styles from './VarAndPrice.module.css';
+import type { VariationItem } from './types';
 
 type VarAndPriceProps = {
-  onCancel: () => void;
-};
-
-type VariationItem = {
-  id: string;
-  group: string;
-  variation: string;
-  branch: string;
-  price: string;
-  skuCode: string;
-  availability: string;
+  onBack: () => void;
+  onNext: () => void;
+  items: VariationItem[];
+  onChange: (items: VariationItem[]) => void;
 };
 
 function formatPriceInput(value: string) {
@@ -21,234 +15,114 @@ function formatPriceInput(value: string) {
   const normalizedInteger = rawInteger.replace(/^0+(?=\d)/, '') || '0';
   const formattedInteger = Number(normalizedInteger).toLocaleString('en-US');
   const limitedDecimal = rawDecimal.slice(0, 2);
-
-  if (sanitizedValue.includes('.')) {
-    return `${formattedInteger}.${limitedDecimal}`;
-  }
-
-  return formattedInteger;
+  return sanitizedValue.includes('.') ? `${formattedInteger}.${limitedDecimal}` : formattedInteger;
 }
 
 function formatPriceForDisplay(value: string) {
   const numericValue = Number(value.replace(/,/g, ''));
+  if (Number.isNaN(numericValue) || value.trim() === '') return '-';
+  return numericValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
-  if (Number.isNaN(numericValue) || value.trim() === '') {
-    return '-';
-  }
-
-  return numericValue.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+export default function VarAndPrice({ onBack, onNext, items, onChange }: VarAndPriceProps) {
+  const [draft, setDraft] = useState<VariationItem>({
+    id: '',
+    priceType: '',
+    variationName: '',
+    className: '',
+    priceCode: '',
+    branchName: '',
+    price: '',
+    skuCode: '',
+    availability: '',
   });
-}
-
-function EditIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.editIcon}>
-      <path
-        d="M4 20h4l10-10-4-4L4 16v4z"
-        fill="none"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="2"
-      />
-      <path
-        d="M12 6l4 4"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="2"
-      />
-    </svg>
-  );
-}
-
-export default function VarAndPrice({ onCancel }: VarAndPriceProps) {
-  const [group, setGroup] = useState('');
-  const [variation, setVariation] = useState('');
-  const [branch, setBranch] = useState('');
-  const [price, setPrice] = useState('');
-  const [skuCode, setSkuCode] = useState('');
-  const [availability, setAvailability] = useState('');
-  const [items, setItems] = useState<VariationItem[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  function handlePriceChange(value: string) {
-    const sanitizedValue = value.replace(/[^\d.]/g, '');
-    const decimalParts = sanitizedValue.split('.');
-
-    if (decimalParts.length > 2) {
-      return;
-    }
-
-    setPrice(formatPriceInput(value));
-  }
-
-  function handleAddVariation() {
-    const nextItem: VariationItem = {
-      id: editingId ?? crypto.randomUUID(),
-      group,
-      variation,
-      branch,
-      price,
-      skuCode,
-      availability,
-    };
-
-    setItems((currentItems) => {
-      if (editingId) {
-        return currentItems.map((item) =>
-          item.id === editingId ? nextItem : item,
-        );
-      }
-
-      return [...currentItems, nextItem];
-    });
-
-    setGroup('');
-    setVariation('');
-    setBranch('');
-    setPrice('');
-    setSkuCode('');
-    setAvailability('');
+  function resetDraft() {
+    setDraft({ id: '', priceType: '', variationName: '', className: '', priceCode: '', branchName: '', price: '', skuCode: '', availability: '' });
     setEditingId(null);
   }
 
-  function handleEdit(itemId: string) {
-    const selectedItem = items.find((item) => item.id === itemId);
-
-    if (!selectedItem) {
+  function handleSaveVariation() {
+    if (!draft.priceType || !draft.className || !draft.branchName || !draft.price || !draft.skuCode || !draft.availability) {
       return;
     }
 
-    setGroup(selectedItem.group);
-    setVariation(selectedItem.variation);
-    setBranch(selectedItem.branch);
-    setPrice(selectedItem.price);
-    setSkuCode(selectedItem.skuCode);
-    setAvailability(selectedItem.availability);
-    setEditingId(selectedItem.id);
+    const nextItem: VariationItem = { ...draft, id: editingId ?? crypto.randomUUID() };
+    const nextItems = editingId ? items.map((item) => (item.id === editingId ? nextItem : item)) : [...items, nextItem];
+    onChange(nextItems);
+    resetDraft();
+  }
+
+  function handleEdit(itemId: string) {
+    const selected = items.find((item) => item.id === itemId);
+    if (!selected) return;
+    setDraft(selected);
+    setEditingId(selected.id);
+  }
+
+  function handleDelete(itemId: string) {
+    onChange(items.filter((item) => item.id !== itemId));
+    if (editingId === itemId) resetDraft();
   }
 
   return (
     <section className={styles.wrapper}>
       <div className={styles.sectionHeader}>
         <h3 className={styles.title}>Variations</h3>
-
-        <button
-          type="button"
-          className={styles.addButton}
-          onClick={handleAddVariation}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.addIcon}>
-            <path
-              d="M12 5.25a.75.75 0 0 1 .75.75v5.25H18a.75.75 0 0 1 0 1.5h-5.25V18a.75.75 0 0 1-1.5 0v-5.25H6a.75.75 0 0 1 0-1.5h5.25V6a.75.75 0 0 1 .75-.75z"
-              fill="currentColor"
-            />
-          </svg>
-          Add Variation
-        </button>
+        <button type="button" className={styles.addButton} onClick={handleSaveVariation}>{editingId ? 'Update Variation' : 'Add Variation'}</button>
       </div>
 
       <div className={styles.itemsContainer}>
         <div className={styles.tableHeader}>
-          <span>Group</span>
-          <span>Variation</span>
-          <span>Branch</span>
-          <span>Price (PHP)</span>
-          <span>SKU/Code</span>
-          <span>Availability</span>
-          <span>Action</span>
+          <span>Type</span><span>Variation</span><span>Class</span><span>Branch</span><span>Price</span><span>SKU</span><span>Availability</span><span>Code</span><span>Action</span>
         </div>
 
         {items.length === 0 ? (
-          <div className={styles.emptyState}>
-            Variation rows will appear here once the separate variation screen is connected.
-          </div>
+          <div className={styles.emptyState}>No variations yet.</div>
         ) : (
           items.map((item) => (
             <div key={item.id} className={styles.tableRow}>
-              <span className={styles.value}>{item.group || '-'}</span>
-              <span className={styles.value}>{item.variation || '-'}</span>
-              <span className={styles.value}>{item.branch || '-'}</span>
+              <span className={styles.value}>{item.priceType}</span>
+              <span className={styles.value}>{item.variationName || '-'}</span>
+              <span className={styles.value}>{item.className}</span>
+              <span className={styles.value}>{item.branchName}</span>
               <span className={styles.value}>{formatPriceForDisplay(item.price)}</span>
-              <span className={styles.value}>{item.skuCode || '-'}</span>
-              <span className={styles.value}>{item.availability || '-'}</span>
-              <button
-                type="button"
-                className={styles.editButton}
-                onClick={() => handleEdit(item.id)}
-                aria-label="Edit variation"
-              >
-                <EditIcon />
-              </button>
+              <span className={styles.value}>{item.skuCode}</span>
+              <span className={styles.value}>{item.availability}</span>
+              <span className={styles.value}>{item.priceCode || '-'}</span>
+              <div className={styles.actionCell}>
+                <button type="button" className={styles.secondaryAction} onClick={() => handleEdit(item.id)}>Edit</button>
+                <button type="button" className={styles.deleteAction} onClick={() => handleDelete(item.id)}>Delete</button>
+              </div>
             </div>
           ))
         )}
       </div>
 
       <div className={styles.previewRow}>
-        <select
-          className={styles.select}
-          value={group}
-          onChange={(event) => setGroup(event.target.value)}
-        >
-          <option value=""></option>
+        <select className={styles.select} value={draft.priceType} onChange={(e) => setDraft({ ...draft, priceType: e.target.value as VariationItem['priceType'] })}>
+          <option value="">Price Type</option><option value="Retail">Retail</option><option value="Wholesale">Wholesale</option>
         </select>
-
-        <select
-          className={styles.select}
-          value={variation}
-          onChange={(event) => setVariation(event.target.value)}
-        >
-          <option value=""></option>
+        <input type="text" className={styles.input} placeholder="Variation Name" value={draft.variationName} onChange={(e) => setDraft({ ...draft, variationName: e.target.value })} />
+        <input type="text" className={styles.input} placeholder="Class Name" value={draft.className} onChange={(e) => setDraft({ ...draft, className: e.target.value })} />
+        <select className={styles.select} value={draft.branchName} onChange={(e) => setDraft({ ...draft, branchName: e.target.value as VariationItem['branchName'] })}>
+          <option value="">Branch</option><option value="Manila">Manila</option><option value="Cebu">Cebu</option>
         </select>
-
-        <select
-          className={styles.select}
-          value={branch}
-          onChange={(event) => setBranch(event.target.value)}
-        >
-          <option value=""></option>
+        <input type="text" className={styles.input} placeholder="0.00" value={draft.price} onChange={(e) => setDraft({ ...draft, price: formatPriceInput(e.target.value) })} />
+        <input type="text" className={styles.input} placeholder="SKU" value={draft.skuCode} onChange={(e) => setDraft({ ...draft, skuCode: e.target.value.toUpperCase() })} />
+        <select className={styles.select} value={draft.availability} onChange={(e) => setDraft({ ...draft, availability: e.target.value as VariationItem['availability'] })}>
+          <option value="">Availability</option><option value="Available">Available</option><option value="Unavailable">Unavailable</option>
         </select>
-
-        <input
-          type="text"
-          inputMode="decimal"
-          className={styles.input}
-          placeholder="0.00"
-          value={price}
-          onChange={(event) => handlePriceChange(event.target.value)}
-        />
-
-        <input
-          type="text"
-          className={styles.input}
-          placeholder="ENTER CODE"
-          value={skuCode}
-          onChange={(event) => setSkuCode(event.target.value.toUpperCase())}
-        />
-
-        <select
-          className={styles.select}
-          value={availability}
-          onChange={(event) => setAvailability(event.target.value)}
-        >
-          <option value=""></option>
-          <option value="available">Available</option>
-          <option value="unavailable">Unavailable</option>
+        <select className={styles.select} value={draft.priceCode} onChange={(e) => setDraft({ ...draft, priceCode: e.target.value as VariationItem['priceCode'] })}>
+          <option value="">Price Code</option><option value="R1">R1</option><option value="R2">R2</option><option value="W1">W1</option><option value="W2">W2</option>
         </select>
-
-        <div className={styles.actionPlaceholder}>-</div>
+        <button type="button" className={styles.secondaryAction} onClick={resetDraft}>Clear</button>
       </div>
 
       <div className={styles.actions}>
-        <button type="button" className={styles.cancelButton} onClick={onCancel}>
-          Cancel
-        </button>
-        <button type="button" className={styles.registerButton}>
-          Register
-        </button>
+        <button type="button" className={styles.cancelButton} onClick={onBack}>Back</button>
+        <button type="button" className={styles.registerButton} onClick={onNext}>Next</button>
       </div>
     </section>
   );

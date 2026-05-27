@@ -48,16 +48,9 @@
 .tableHeader,
 .tableRow,
 .emptyState {
-  min-width: 74rem;
+  min-width: 96rem;
   display: grid;
-  grid-template-columns:
-    minmax(9rem, 1fr)
-    minmax(9rem, 1fr)
-    minmax(10rem, 1fr)
-    minmax(9rem, 0.9fr)
-    minmax(9rem, 0.9fr)
-    minmax(9rem, 0.9fr)
-    minmax(10rem, auto);
+  grid-template-columns: repeat(10, minmax(8.2rem, 1fr));
   gap: 1rem;
   align-items: center;
 }
@@ -80,14 +73,7 @@
 
 .previewRow {
   display: grid;
-  grid-template-columns:
-    minmax(9rem, 1fr)
-    minmax(9rem, 1fr)
-    minmax(10rem, 1fr)
-    minmax(9rem, 0.9fr)
-    minmax(9rem, 0.9fr)
-    minmax(9rem, 0.9fr)
-    minmax(10rem, auto);
+  grid-template-columns: repeat(10, minmax(8.2rem, 1fr));
   gap: 1rem;
   align-items: center;
 }
@@ -295,7 +281,7 @@
 
 @media (max-width: 1200px) {
   .previewRow {
-    min-width: 74rem;
+    min-width: 96rem;
   }
 }
 

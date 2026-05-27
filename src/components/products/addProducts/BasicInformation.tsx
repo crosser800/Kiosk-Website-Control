@@ -1,43 +1,30 @@
-import { useState } from 'react';
 import styles from './BasicInformation.module.css';
+import type { ProductFormState } from './types';
+
+type OptionItem = {
+  id: string;
+  label: string;
+};
 
 type BasicInformationProps = {
   onCancel: () => void;
   onNext: () => void;
-};
-
-type ProductFormState = {
-  productName: string;
-  skuCode: string;
-  category: string;
-  brand: string;
-  description: string;
-  status: string;
-};
-
-const initialFormState: ProductFormState = {
-  productName: '',
-  skuCode: '',
-  category: '',
-  brand: '',
-  description: '',
-  status: '',
+  value: ProductFormState;
+  categories: OptionItem[];
+  brands: OptionItem[];
+  onChange: (next: ProductFormState) => void;
 };
 
 export default function BasicInformation({
   onCancel,
   onNext,
+  value,
+  categories,
+  brands,
+  onChange,
 }: BasicInformationProps) {
-  const [formValues, setFormValues] = useState(initialFormState);
-
-  function handleFieldChange(
-    field: keyof ProductFormState,
-    value: string,
-  ) {
-    setFormValues((current) => ({
-      ...current,
-      [field]: value,
-    }));
+  function handleFieldChange(field: keyof ProductFormState, fieldValue: string) {
+    onChange({ ...value, [field]: fieldValue } as ProductFormState);
   }
 
   return (
@@ -51,7 +38,7 @@ export default function BasicInformation({
             id="product-name"
             type="text"
             placeholder="Enter Name"
-            value={formValues.productName}
+            value={value.productName}
             onChange={(event) => handleFieldChange('productName', event.target.value)}
             className={styles.input}
             required
@@ -64,12 +51,17 @@ export default function BasicInformation({
           </label>
           <select
             id="brand"
-            value={formValues.brand}
-            onChange={(event) => handleFieldChange('brand', event.target.value)}
+            value={value.brandId}
+            onChange={(event) => handleFieldChange('brandId', event.target.value)}
             className={styles.select}
             required
           >
-            <option value=""></option>
+            <option value="">Select brand</option>
+            {brands.map((brand) => (
+              <option key={brand.id} value={brand.id}>
+                {brand.label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -81,8 +73,8 @@ export default function BasicInformation({
             id="sku-code"
             type="text"
             placeholder="Enter Code"
-            value={formValues.skuCode}
-            onChange={(event) => handleFieldChange('skuCode', event.target.value)}
+            value={value.skuCode}
+            onChange={(event) => handleFieldChange('skuCode', event.target.value.toUpperCase())}
             className={styles.input}
             required
           />
@@ -94,12 +86,17 @@ export default function BasicInformation({
           </label>
           <select
             id="category"
-            value={formValues.category}
-            onChange={(event) => handleFieldChange('category', event.target.value)}
+            value={value.categoryId}
+            onChange={(event) => handleFieldChange('categoryId', event.target.value)}
             className={styles.select}
             required
           >
-            <option value=""></option>
+            <option value="">Select category</option>
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -111,10 +108,8 @@ export default function BasicInformation({
             id="description"
             placeholder="Enter Description"
             rows={3}
-            value={formValues.description}
-            onChange={(event) =>
-              handleFieldChange('description', event.target.value)
-            }
+            value={value.description}
+            onChange={(event) => handleFieldChange('description', event.target.value)}
             className={styles.textarea}
             required
           />
@@ -128,22 +123,17 @@ export default function BasicInformation({
           </label>
           <select
             id="status"
-            value={formValues.status}
-            onChange={(event) => handleFieldChange('status', event.target.value)}
+            value={value.status}
+            onChange={(event) => handleFieldChange('status', event.target.value as 'Active' | 'Inactive')}
             className={styles.select}
           >
-            <option value="">Select Status</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
           </select>
         </div>
 
         <div className={styles.actions}>
-          <button
-            type="button"
-            className={styles.cancelButton}
-            onClick={onCancel}
-          >
+          <button type="button" className={styles.cancelButton} onClick={onCancel}>
             Cancel
           </button>
           <button type="button" className={styles.nextButton} onClick={onNext}>

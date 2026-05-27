@@ -22,11 +22,22 @@ export default function Products({
   const [activeProducts] = useState(0);
   const [itemsOrders] = useState(0);
   const [ordersYesterday] = useState(0);
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+
+  const handleOpenAdd = () => {
+    setEditingProductId(null);
+    onOpenAddProduct();
+  };
+
+  const handleOpenEdit = (productId: string) => {
+    setEditingProductId(productId);
+    onOpenAddProduct();
+  };
 
   if (view === 'add') {
     return (
       <div className={styles.products}>
-        <AddProduct onCancel={onCloseAddProduct} />
+        <AddProduct onCancel={onCloseAddProduct} editProductId={editingProductId} />
       </div>
     );
   }
@@ -39,7 +50,7 @@ export default function Products({
         <TopProducts />
       </div>
 
-      <ProductSummary onAddProduct={onOpenAddProduct} />
+      <ProductSummary onAddProduct={handleOpenAdd} onEditProduct={handleOpenEdit} />
     </div>
   );
 }
