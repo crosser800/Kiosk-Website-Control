@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { getBranchTypeOptions, subscribeBranchTypeOptions } from '../../../services/branchTypes';
 import styles from './VarAndPrice.module.css';
 import type { VariationItem } from './types';
 
@@ -37,6 +38,9 @@ export default function VarAndPrice({ onBack, onNext, items, onChange }: VarAndP
     availability: '',
   });
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [branchOptions, setBranchOptions] = useState<string[]>(() => getBranchTypeOptions());
+
+  useEffect(() => subscribeBranchTypeOptions(setBranchOptions), []);
 
   function resetDraft() {
     setDraft({ id: '', priceType: '', variationName: '', className: '', priceCode: '', branchName: '', price: '', skuCode: '', availability: '' });
@@ -107,7 +111,10 @@ export default function VarAndPrice({ onBack, onNext, items, onChange }: VarAndP
         <input type="text" className={styles.input} placeholder="Variation Name" value={draft.variationName} onChange={(e) => setDraft({ ...draft, variationName: e.target.value })} />
         <input type="text" className={styles.input} placeholder="Class Name" value={draft.className} onChange={(e) => setDraft({ ...draft, className: e.target.value })} />
         <select className={styles.select} value={draft.branchName} onChange={(e) => setDraft({ ...draft, branchName: e.target.value as VariationItem['branchName'] })}>
-          <option value="">Branch</option><option value="Manila">Manila</option><option value="Cebu">Cebu</option>
+          <option value="">Branch</option>
+          {branchOptions.map((branchOption) => (
+            <option key={branchOption} value={branchOption}>{branchOption}</option>
+          ))}
         </select>
         <input type="text" className={styles.input} placeholder="0.00" value={draft.price} onChange={(e) => setDraft({ ...draft, price: formatPriceInput(e.target.value) })} />
         <input type="text" className={styles.input} placeholder="SKU" value={draft.skuCode} onChange={(e) => setDraft({ ...draft, skuCode: e.target.value.toUpperCase() })} />

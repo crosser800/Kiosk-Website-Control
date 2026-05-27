@@ -76,6 +76,20 @@
   padding-right: 2.4rem;
 }
 
+.statusActive {
+  border-color: var(--status-active-border);
+  background-color: var(--status-active-bg);
+  color: var(--status-active-text);
+  font-weight: 800;
+}
+
+.statusInactive {
+  border-color: var(--status-inactive-border);
+  background-color: var(--status-inactive-bg);
+  color: var(--status-inactive-text);
+  font-weight: 800;
+}
+
 .textarea {
   width: 100%;
   max-width: 100%;

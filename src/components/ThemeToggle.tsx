@@ -7,8 +7,14 @@ type ThemeToggleProps = {
 
 export default function ThemeToggle({ isDark, onToggle }: ThemeToggleProps) {
   return (
-    <button className={styles.button} onClick={onToggle}>
-      {isDark ? '☀️ Light Mode' : '🌙 Dark Mode'}
+    <button
+      className={styles.button}
+      onClick={onToggle}
+      type="button"
+      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      title={isDark ? 'Light mode' : 'Dark mode'}
+    >
+      <i className={`fa-solid ${isDark ? 'fa-sun' : 'fa-moon'}`} aria-hidden="true" />
     </button>
   );
 }

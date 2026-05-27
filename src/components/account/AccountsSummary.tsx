@@ -7,6 +7,7 @@ type SortOrder = 'ascending' | 'descending';
 
 export type AccountSummaryItem = {
   id: string;
+  profileImage?: string;
   name: string;
   email: string;
   contact: string;
@@ -178,6 +179,10 @@ function formatContactNumber(contact: string) {
   return `${digitsOnly.slice(0, 4)}-${digitsOnly.slice(4, 7)}-${digitsOnly.slice(7)}`;
 }
 
+function getStatusClass(status: string) {
+  return status.toLowerCase() === 'active' ? styles.statusActive : styles.statusInactive;
+}
+
 export default function AccountsSummary({
   accounts = [],
   onCreateAccount,
@@ -317,6 +322,7 @@ export default function AccountsSummary({
 
       <div className={styles.table}>
         <div className={styles.tableHeader}>
+          <span>Profile</span>
           <span>Name</span>
           <span>Email</span>
           <span>Contact</span>
@@ -334,13 +340,28 @@ export default function AccountsSummary({
         ) : (
           pagedAccounts.map((account) => (
             <div key={account.id} className={styles.tableRow}>
+              <span className={styles.profileCell}>
+                {account.profileImage ? (
+                  <img
+                    src={account.profileImage}
+                    alt=""
+                    className={styles.profileImage}
+                  />
+                ) : (
+                  <span className={styles.profileBlank} aria-hidden="true">
+                    <i className="fa-solid fa-user"></i>
+                  </span>
+                )}
+              </span>
               <span>{account.name}</span>
               <span>{account.email}</span>
               <span>{formatContactNumber(account.contact)}</span>
               <span>{account.role === 'admins' ? 'Admin' : 'Agent'}</span>
               <span>{account.role === 'admins' ? account.access : account.handle}</span>
               <span>{account.branch}</span>
-              <span>{account.status}</span>
+              <span className={`${styles.statusBadge} ${getStatusClass(account.status)}`}>
+                {account.status}
+              </span>
               <button
                 type="button"
                 className={styles.actionButton}

@@ -1,0 +1,270 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 0 1.25rem 1.25rem;
+  border-top: 1px solid var(--card-border);
+  background-color: var(--card-bg);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.title,
+.subtitle,
+.label,
+.input,
+.textarea,
+.addButton,
+.cancelEditButton,
+.removeButton,
+.iconButton,
+.empty,
+.error,
+.item {
+  font-family: 'Montserrat', sans-serif;
+}
+
+.title {
+  margin: 0;
+  margin-top: 1rem;
+  color: var(--text);
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.subtitle {
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.descriptionField {
+  grid-column: 1 / -1;
+}
+
+.label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.input,
+.textarea {
+  min-height: 2.65rem;
+  width: 100%;
+  padding: 0 0.85rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.5rem;
+  background-color: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  outline: none;
+}
+
+.textarea {
+  min-height: 5rem;
+  padding: 0.75rem 0.85rem;
+  resize: vertical;
+}
+
+.select {
+  appearance: none;
+  cursor: pointer;
+}
+
+.input:focus,
+.textarea:focus {
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--yellow) 24%, transparent);
+}
+
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.addButton,
+.cancelEditButton,
+.removeButton,
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.addButton {
+  min-height: 2.65rem;
+  gap: 0.5rem;
+  padding: 0 1rem;
+  border: 1px solid var(--yellow);
+  background-color: var(--yellow);
+  color: #1f2937;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.cancelEditButton,
+.removeButton,
+.iconButton {
+  height: 2.25rem;
+  border: 1px solid var(--card-border);
+  background-color: var(--surface);
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.cancelEditButton {
+  min-height: 2.65rem;
+  height: auto;
+  padding: 0 0.9rem;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.removeButton,
+.iconButton {
+  width: 2.25rem;
+}
+
+.removeButton:hover,
+.iconButton:hover,
+.cancelEditButton:hover {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.item {
+  min-height: 3rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 7rem 9rem 7rem auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.65rem 0.6rem 0.85rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.5rem;
+  background-color: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.termMain {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.termName,
+.termDescription,
+.termCode,
+.termDate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.termDescription {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.termCode,
+.termDate {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.statusBadge {
+  min-height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.statusActive {
+  border-color: var(--status-active-border);
+  background-color: var(--status-active-bg);
+  color: var(--status-active-text);
+}
+
+.statusInactive {
+  border-color: var(--status-inactive-border);
+  background-color: var(--status-inactive-bg);
+  color: var(--status-inactive-text);
+}
+
+.empty,
+.error {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.empty {
+  color: var(--text-muted);
+}
+
+.error {
+  color: #b42318;
+}
+
+@media (max-width: 900px) {
+  .form {
+    grid-template-columns: 1fr;
+  }
+
+  .item {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .termCode,
+  .termDate,
+  .statusBadge {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .panel {
+    padding: 0 1rem 1rem;
+  }
+}

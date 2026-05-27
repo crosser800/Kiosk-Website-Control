@@ -48,6 +48,10 @@ function toNumber(value: unknown) {
   return 0;
 }
 
+function getStatusClass(status: string) {
+  return status.toLowerCase() === 'active' ? styles.statusActive : styles.statusInactive;
+}
+
 export default function ProductSummary({ onAddProduct, onEditProduct }: ProductSummaryProps) {
   const [searchValue, setSearchValue] = useState('');
   const [filterBy, setFilterBy] = useState<FilterMode>('alphabetical');
@@ -213,7 +217,13 @@ export default function ProductSummary({ onAddProduct, onEditProduct }: ProductS
         ) : (
           pagedItems.map((item) => (
             <div key={item.id} className={styles.tableRow}>
-              <span>{item.product}</span><span>{item.location}</span><span>{item.code}</span><span>{item.variations}</span><span>{item.details}</span><span>{item.price.toLocaleString()}</span><span>{item.status}</span>
+              <span>{item.product}</span>
+              <span>{item.location}</span>
+              <span>{item.code}</span>
+              <span>{item.variations}</span>
+              <span>{item.details}</span>
+              <span>{item.price.toLocaleString()}</span>
+              <span className={`${styles.statusBadge} ${getStatusClass(item.status)}`}>{item.status}</span>
               <button type="button" className={styles.actionButton} aria-label={`Edit ${item.product}`} onClick={() => onEditProduct(item.id)}><EditIcon /></button>
             </div>
           ))

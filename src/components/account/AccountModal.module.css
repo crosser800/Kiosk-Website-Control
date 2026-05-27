@@ -35,6 +35,8 @@
 .input,
 .select,
 .checkboxField,
+.validationError,
+.profileButton,
 .createButton,
 .cancelButton {
   font-family: 'Montserrat', sans-serif;
@@ -99,6 +101,64 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
+}
+
+.profilePicker {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.profilePreview {
+  width: 5.25rem;
+  height: 5.25rem;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px dashed var(--card-border);
+  border-radius: 50%;
+  background-color: var(--surface);
+  color: var(--text-muted);
+  font-size: 1.65rem;
+}
+
+.profileImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profileButton {
+  min-height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0 0.9rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.5rem;
+  background-color: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.profileButton:hover,
+.profileButton:focus-within {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.profileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .field {
@@ -238,6 +298,17 @@
   width: 1.05rem;
   height: 1.05rem;
   accent-color: var(--yellow);
+}
+
+.validationError {
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--status-inactive-border);
+  border-radius: 0.5rem;
+  background-color: var(--status-inactive-bg);
+  color: var(--status-inactive-text);
+  font-size: 0.86rem;
+  font-weight: 800;
 }
 
 .actions {

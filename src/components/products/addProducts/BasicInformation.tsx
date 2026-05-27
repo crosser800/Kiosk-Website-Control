@@ -15,14 +15,14 @@ type BasicInformationProps = {
   onChange: (next: ProductFormState) => void;
 };
 
-export default function BasicInformation({
-  onCancel,
-  onNext,
-  value,
-  categories,
-  brands,
-  onChange,
-}: BasicInformationProps) {
+export default function BasicInformation({ onCancel, onNext, value, categories, brands, onChange }: BasicInformationProps) {
+  const statusClass =
+    value.status === 'Active'
+      ? styles.statusActive
+      : value.status === 'Inactive'
+        ? styles.statusInactive
+        : '';
+
   function handleFieldChange(field: keyof ProductFormState, fieldValue: string) {
     onChange({ ...value, [field]: fieldValue } as ProductFormState);
   }
@@ -125,7 +125,7 @@ export default function BasicInformation({
             id="status"
             value={value.status}
             onChange={(event) => handleFieldChange('status', event.target.value as 'Active' | 'Inactive')}
-            className={styles.select}
+            className={`${styles.select} ${statusClass}`}
           >
             <option value="Active">Active</option>
             <option value="Inactive">Inactive</option>

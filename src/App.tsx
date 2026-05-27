@@ -9,6 +9,7 @@ import Orders from './pages/Orders';
 import Sales from './pages/Sales';
 import Accounts from './pages/Accounts';
 import Login from './pages/Login';
+import Settings from './pages/Settings';
 import { supabase } from './lib/supabase';
 import { signOutAdmin } from './services/auth';
 
@@ -23,8 +24,11 @@ export default function App() {
   const [isInitializingAuth, setIsInitializingAuth] = useState(true);
 
   const toggleTheme = () => {
-    setIsDark(!isDark);
-    document.documentElement.classList.toggle('dark');
+    setIsDark((current) => {
+      const next = !current;
+      document.documentElement.classList.toggle('dark', next);
+      return next;
+    });
   };
 
   const headerTitle =
@@ -93,7 +97,7 @@ export default function App() {
       case 'Accounts':
         return <Accounts />;
       case 'Settings':
-        return <div>Settings Page - coming soon!</div>;
+        return <Settings />;
       default:
         return <Dashboard />;
     }
