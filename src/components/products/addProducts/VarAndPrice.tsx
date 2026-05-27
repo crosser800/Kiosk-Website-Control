@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { getBranchTypeOptions, subscribeBranchTypeOptions } from '../../../services/branchTypes';
 import styles from './VarAndPrice.module.css';
 
 type VarAndPriceProps = {
@@ -70,8 +71,11 @@ export default function VarAndPrice({ onCancel }: VarAndPriceProps) {
   const [price, setPrice] = useState('');
   const [skuCode, setSkuCode] = useState('');
   const [availability, setAvailability] = useState('');
+  const [branchOptions, setBranchOptions] = useState<string[]>(() => getBranchTypeOptions());
   const [items, setItems] = useState<VariationItem[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  useEffect(() => subscribeBranchTypeOptions(setBranchOptions), []);
 
   function handlePriceChange(value: string) {
     const sanitizedValue = value.replace(/[^\d.]/g, '');
@@ -210,6 +214,11 @@ export default function VarAndPrice({ onCancel }: VarAndPriceProps) {
           onChange={(event) => setBranch(event.target.value)}
         >
           <option value=""></option>
+          {branchOptions.map((branchOption) => (
+            <option key={branchOption} value={branchOption}>
+              {branchOption}
+            </option>
+          ))}
         </select>
 
         <input

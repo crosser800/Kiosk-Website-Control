@@ -29,6 +29,12 @@ export default function BasicInformation({
   onNext,
 }: BasicInformationProps) {
   const [formValues, setFormValues] = useState(initialFormState);
+  const statusClass =
+    formValues.status === 'active'
+      ? styles.statusActive
+      : formValues.status === 'inactive'
+        ? styles.statusInactive
+        : '';
 
   function handleFieldChange(
     field: keyof ProductFormState,
@@ -130,7 +136,7 @@ export default function BasicInformation({
             id="status"
             value={formValues.status}
             onChange={(event) => handleFieldChange('status', event.target.value)}
-            className={styles.select}
+            className={`${styles.select} ${statusClass}`}
           >
             <option value="">Select Status</option>
             <option value="active">Active</option>

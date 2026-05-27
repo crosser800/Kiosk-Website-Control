@@ -1,13 +1,21 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AccountSummaryItem, AccountView } from './AccountsSummary';
+import {
+  getAccountHandlingOptions,
+  subscribeAccountHandlingOptions,
+} from '../../services/accountHandling';
+import { updateAccountItem } from '../../services/accounts';
+import { getBranchTypeOptions, subscribeBranchTypeOptions } from '../../services/branchTypes';
 import styles from './AccountModal.module.css';
 
 type EditAccountProps = {
   account: AccountSummaryItem;
+  onSave: (accounts: AccountSummaryItem[]) => void;
   onClose: () => void;
 };
 
 type AccountForm = {
+  profileImage: string;
   name: string;
   role: AccountView;
   access: string[];
@@ -21,8 +29,6 @@ type AccountForm = {
 };
 
 const accessOptions = ['Products', 'Order', 'Sales', 'Accounts', 'Settings'];
-const handlingOptions: string[] = [];
-const branchOptions: string[] = [];
 
 function formatContactInput(value: string) {
   const digitsOnly = value.replace(/\D/g, '').slice(0, 11);
@@ -35,6 +41,7 @@ function formatContactInput(value: string) {
 
 function getInitialForm(account: AccountSummaryItem): AccountForm {
   return {
+    profileImage: account.profileImage ?? '',
     name: account.name,
     role: account.role,
     access: account.access ? account.access.split(',').map((item) => item.trim()) : [],
@@ -48,19 +55,27 @@ function getInitialForm(account: AccountSummaryItem): AccountForm {
   };
 }
 
-export default function EditAccount({ account, onClose }: EditAccountProps) {
+export default function EditAccount({ account, onSave, onClose }: EditAccountProps) {
   const [form, setForm] = useState<AccountForm>(() => getInitialForm(account));
+  const [handlingOptions, setHandlingOptions] = useState<string[]>(() => getAccountHandlingOptions());
+  const [branchOptions, setBranchOptions] = useState<string[]>(() => getBranchTypeOptions());
   const [isAccessOpen, setIsAccessOpen] = useState(false);
+  const [validationError, setValidationError] = useState('');
   const accountLabel = form.role === 'admins' ? 'Admin' : 'Agent';
+
+  useEffect(() => subscribeAccountHandlingOptions(setHandlingOptions), []);
+  useEffect(() => subscribeBranchTypeOptions(setBranchOptions), []);
 
   function updateField<Field extends keyof AccountForm>(
     field: Field,
     value: AccountForm[Field],
   ) {
+    setValidationError('');
     setForm((current) => ({ ...current, [field]: value }));
   }
 
   function toggleAccess(access: string) {
+    setValidationError('');
     setForm((current) => {
       const hasAccess = current.access.includes(access);
 
@@ -73,8 +88,67 @@ export default function EditAccount({ account, onClose }: EditAccountProps) {
     });
   }
 
+  function handleProfileImageChange(file: File | undefined) {
+    setValidationError('');
+
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      setForm((current) => ({
+        ...current,
+        profileImage: typeof reader.result === 'string' ? reader.result : '',
+      }));
+    };
+
+    reader.readAsDataURL(file);
+  }
+
+  function validateForm() {
+    const requiredValues = [
+      form.name,
+      form.role,
+      form.contact,
+      form.branch,
+    ];
+    const hasRoleSpecificValue =
+      form.role === 'admins' ? form.access.length > 0 : Boolean(form.handling);
+
+    if (requiredValues.some((value) => !value.trim()) || !hasRoleSpecificValue) {
+      setValidationError('Complete all required fields except email address.');
+      return false;
+    }
+
+    if ((form.password || form.confirmPassword) && form.password !== form.confirmPassword) {
+      setValidationError('Passwords do not match.');
+      return false;
+    }
+
+    setValidationError('');
+    return true;
+  }
+
   function handleSave() {
-    onClose();
+    if (!validateForm()) {
+      return;
+    }
+
+    onSave(
+      updateAccountItem(account.id, {
+        profileImage: form.profileImage || undefined,
+        name: form.name,
+        email: form.email,
+        contact: form.contact,
+        role: form.role,
+        handle: form.role === 'agents' ? form.handling : '',
+        access: form.role === 'admins' ? form.access.join(', ') : '',
+        branch: form.branch,
+        status: form.isActive ? 'Active' : 'Inactive',
+      }),
+    );
   }
 
   return (
@@ -106,6 +180,27 @@ export default function EditAccount({ account, onClose }: EditAccountProps) {
         <div className={styles.divider}></div>
 
         <div className={styles.formContainer}>
+          <div className={styles.profilePicker}>
+            <div className={styles.profilePreview} aria-hidden="true">
+              {form.profileImage ? (
+                <img src={form.profileImage} alt="" className={styles.profileImage} />
+              ) : (
+                <i className="fa-solid fa-user"></i>
+              )}
+            </div>
+
+            <label className={styles.profileButton}>
+              <input
+                type="file"
+                accept="image/*"
+                className={styles.profileInput}
+                onChange={(event) => handleProfileImageChange(event.target.files?.[0])}
+              />
+              <i className="fa-solid fa-camera" aria-hidden="true"></i>
+              <span>Add Profile</span>
+            </label>
+          </div>
+
           <div className={styles.topGrid}>
             <label className={styles.field}>
               <span className={styles.label}>Name</span>
@@ -114,6 +209,7 @@ export default function EditAccount({ account, onClose }: EditAccountProps) {
                 value={form.name}
                 onChange={(event) => updateField('name', event.target.value)}
                 className={styles.input}
+                required
               />
             </label>
 
@@ -126,6 +222,7 @@ export default function EditAccount({ account, onClose }: EditAccountProps) {
                   setIsAccessOpen(false);
                 }}
                 className={styles.select}
+                required
               >
                 <option value="admins">Admin</option>
                 <option value="agents">Agent</option>
@@ -163,6 +260,7 @@ export default function EditAccount({ account, onClose }: EditAccountProps) {
                     className={styles.accessButton}
                     onClick={() => setIsAccessOpen((current) => !current)}
                     aria-expanded={isAccessOpen}
+                    aria-required="true"
                   >
                     <span>{form.access.length > 0 ? form.access.join(', ') : 'Select access'}</span>
                     <i className="fa-solid fa-chevron-down" aria-hidden="true"></i>
@@ -192,6 +290,7 @@ export default function EditAccount({ account, onClose }: EditAccountProps) {
                   value={form.handling}
                   onChange={(event) => updateField('handling', event.target.value)}
                   className={styles.select}
+                  required
                 >
                   <option value=""></option>
                   {handlingOptions.map((handling) => (
@@ -212,6 +311,7 @@ export default function EditAccount({ account, onClose }: EditAccountProps) {
                 onChange={(event) => updateField('contact', formatContactInput(event.target.value))}
                 placeholder="0000-000-0000"
                 className={styles.input}
+                required
               />
             </label>
 
@@ -221,6 +321,7 @@ export default function EditAccount({ account, onClose }: EditAccountProps) {
                 value={form.branch}
                 onChange={(event) => updateField('branch', event.target.value)}
                 className={styles.select}
+                required
               >
                 <option value=""></option>
                 {branchOptions.map((branch) => (
@@ -252,6 +353,8 @@ export default function EditAccount({ account, onClose }: EditAccountProps) {
             </label>
           </div>
         </div>
+
+        {validationError && <p className={styles.validationError}>{validationError}</p>}
 
         <div className={styles.actions}>
           <button type="button" className={styles.createButton} onClick={handleSave}>

@@ -1,4 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import {
+  getDeliveryTermOptions,
+  subscribeDeliveryTermOptions,
+} from '../../services/deliveryTerms';
 import styles from './EditOrder.module.css';
 
 type EditOrderData = {
@@ -40,7 +44,12 @@ const initialOrderItems: OrderListItem[] = [
 ];
 
 export default function EditOrder({ order, onClose }: EditOrderProps) {
+  const [terms, setTerms] = useState(order.terms);
+  const [poStatus, setPoStatus] = useState(order.poStatus);
+  const [termOptions, setTermOptions] = useState(() => getDeliveryTermOptions());
   const [orderItems, setOrderItems] = useState<OrderListItem[]>(initialOrderItems);
+
+  useEffect(() => subscribeDeliveryTermOptions(setTermOptions), []);
 
   function updateQuantity(itemId: string, change: number) {
     setOrderItems((items) =>
@@ -101,14 +110,27 @@ export default function EditOrder({ order, onClose }: EditOrderProps) {
 
             <label className={styles.field}>
               <span className={styles.label}>Terms</span>
-              <select className={styles.selectField} value={order.terms} onChange={() => {}}>
+              <select
+                className={styles.selectField}
+                value={terms}
+                onChange={(event) => setTerms(event.target.value)}
+              >
                 <option value=""></option>
+                {termOptions.map((term) => (
+                  <option key={term.id} value={term.name}>
+                    {term.name} ({term.code})
+                  </option>
+                ))}
               </select>
             </label>
 
             <label className={styles.field}>
               <span className={styles.label}>Status</span>
-              <select className={styles.selectField} value={order.poStatus} onChange={() => {}}>
+              <select
+                className={styles.selectField}
+                value={poStatus}
+                onChange={(event) => setPoStatus(event.target.value)}
+              >
                 <option value=""></option>
               </select>
             </label>

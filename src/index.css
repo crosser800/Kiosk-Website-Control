@@ -15,6 +15,12 @@
   --card-shadow: 2px 2px 8px rgba(0, 0, 0, 0.08);
   --hover-bg: #f5c518;
   --hover-text: #111111;
+  --status-active-bg: #dcfce7;
+  --status-active-text: #166534;
+  --status-active-border: #86efac;
+  --status-inactive-bg: #fee2e2;
+  --status-inactive-text: #991b1b;
+  --status-inactive-border: #fca5a5;
 }
 
 :root.dark {
@@ -27,6 +33,12 @@
   --card-shadow: 2px 2px 8px rgba(0, 0, 0, 0.4);
   --hover-bg: #f5c518;
   --hover-text: #111111;
+  --status-active-bg: rgba(34, 197, 94, 0.18);
+  --status-active-text: #86efac;
+  --status-active-border: rgba(134, 239, 172, 0.42);
+  --status-inactive-bg: rgba(239, 68, 68, 0.18);
+  --status-inactive-text: #fca5a5;
+  --status-inactive-border: rgba(252, 165, 165, 0.42);
 }
 
 html,

@@ -197,6 +197,31 @@
   text-align: right;
 }
 
+.statusBadge {
+  width: fit-content;
+  min-width: 5.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.statusActive {
+  border-color: var(--status-active-border);
+  background-color: var(--status-active-bg);
+  color: var(--status-active-text);
+}
+
+.statusInactive {
+  border-color: var(--status-inactive-border);
+  background-color: var(--status-inactive-bg);
+  color: var(--status-inactive-text);
+}
+
 .actionButton {
   justify-self: end;
   width: 2.25rem;

@@ -124,13 +124,15 @@
 }
 
 .active {
-  background-color: #22c55e;
-  color: #ffffff;
+  border: 1px solid var(--status-active-border);
+  background-color: var(--status-active-bg);
+  color: var(--status-active-text);
 }
 
 .inactive {
-  background-color: #ef4444;
-  color: #ffffff;
+  border: 1px solid var(--status-inactive-border);
+  background-color: var(--status-inactive-bg);
+  color: var(--status-inactive-text);
 }
 
 /* Empty state */

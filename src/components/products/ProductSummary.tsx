@@ -167,6 +167,10 @@ function buildVisiblePages(currentPage: number, totalPages: number) {
   ];
 }
 
+function getStatusClass(status: string) {
+  return status.toLowerCase() === 'active' ? styles.statusActive : styles.statusInactive;
+}
+
 export default function ProductSummary({ onAddProduct }: ProductSummaryProps) {
   const [searchValue, setSearchValue] = useState('');
   const [filterBy, setFilterBy] = useState<FilterMode>('alphabetical');
@@ -324,7 +328,9 @@ export default function ProductSummary({ onAddProduct }: ProductSummaryProps) {
               <span>{item.variations}</span>
               <span>{item.details}</span>
               <span>{item.price.toLocaleString()}</span>
-              <span>{item.status}</span>
+              <span className={`${styles.statusBadge} ${getStatusClass(item.status)}`}>
+                {item.status}
+              </span>
               <button
                 type="button"
                 className={styles.actionButton}
