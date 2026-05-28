@@ -4,7 +4,7 @@ import BasicInformation from './addProducts/BasicInformation';
 import Media from './addProducts/Media';
 import VarAndPrice from './addProducts/VarAndPrice';
 import { supabase } from '../../lib/supabase';
-import type { DiscountItem, MediaItem, ProductFormState, SurchargeItem, VariationItem } from './addProducts/types';
+import type { DiscountItem, MediaItem, ProductFormState, SurchargeItem, VariationItem } from '../../services/types';
 
 type AddProductSection = 'Basic Information' | 'Images' | 'Variation & Pricing';
 

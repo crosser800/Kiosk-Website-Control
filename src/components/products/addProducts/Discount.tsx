@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import styles from './VarAndPrice.module.css';
-import type { DiscountItem } from './types';
+import type { DiscountItem } from '../../../services/types';
 
 type DiscountProps = {
   onBack: () => void;

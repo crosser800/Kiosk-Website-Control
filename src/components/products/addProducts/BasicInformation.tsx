@@ -1,5 +1,5 @@
 import styles from './BasicInformation.module.css';
-import type { ProductFormState } from './types';
+import type { ProductFormState } from '../../../services/types';
 
 type OptionItem = {
   id: string;

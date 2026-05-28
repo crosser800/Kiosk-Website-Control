@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import styles from './VarAndPrice.module.css';
-import type { DiscountItem, SurchargeItem, VariationItem } from './types';
+import type { DiscountItem, SurchargeItem, VariationItem } from '../../../services/types';
 
 type VarAndPriceProps = {
   onBack: () => void;
