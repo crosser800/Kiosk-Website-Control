@@ -42,6 +42,8 @@ function createMediaItems(files: File[]) {
       fileName: file.name,
       previewUrl: URL.createObjectURL(file),
       type: file.type.startsWith('video/') ? 'video' : 'image',
+      title: '',
+      altText: '',
       isExisting: false,
       mediaPath: null,
     });
@@ -198,6 +200,23 @@ export default function Media({ onBack, onNext, items, mainMediaId, onChange, on
                   <div className={styles.cardFooter}>
                     <span className={styles.fileName} title={item.fileName}>{item.fileName}</span>
                     {isMainMedia ? <span className={styles.mainBadge}>Main</span> : null}
+                  </div>
+
+                  <div className={styles.metaGrid}>
+                    <input
+                      type="text"
+                      className={styles.metaInput}
+                      placeholder="Title"
+                      value={item.title ?? ''}
+                      onChange={(event) => onChange(items.map((entry) => (entry.id === item.id ? { ...entry, title: event.target.value } : entry)))}
+                    />
+                    <input
+                      type="text"
+                      className={styles.metaInput}
+                      placeholder="Alt text"
+                      value={item.altText ?? ''}
+                      onChange={(event) => onChange(items.map((entry) => (entry.id === item.id ? { ...entry, altText: event.target.value } : entry)))}
+                    />
                   </div>
 
                   <div className={styles.cardActions}>

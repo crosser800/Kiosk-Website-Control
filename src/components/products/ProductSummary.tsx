@@ -9,6 +9,7 @@ interface ProductSummaryItem {
   code: string;
   variations: string;
   details: string;
+  category: string;
   price: number;
   status: string;
   createdAt: string;
@@ -73,10 +74,11 @@ export default function ProductSummary({ onAddProduct, onEditProduct }: ProductS
           product_name,
           sku_code,
           status,
+          description,
+          product_categories(category_title),
           price,
           created_at,
-          product_variations(branch_name, variation_name, class_name, price),
-          product_surcharges(surcharge_name, surcharge_type, amount, surcharge_percent, free_quantity)
+          product_variations(branch_name, variation_name, class_name, price)
         `)
         .order('created_at', { ascending: false });
 
@@ -89,7 +91,6 @@ export default function ProductSummary({ onAddProduct, onEditProduct }: ProductS
 
       const mapped = (data ?? []).map((row: any) => {
         const variations = (row.product_variations ?? []) as Array<any>;
-        const surcharges = (row.product_surcharges ?? []) as Array<any>;
 
         const branches = Array.from(new Set(variations.map((v) => v.branch_name).filter(Boolean)));
         const location = branches.length > 0 ? branches.join(', ') : '-';
@@ -97,16 +98,11 @@ export default function ProductSummary({ onAddProduct, onEditProduct }: ProductS
         const variationLabel = variations.length > 0
           ? `${variations.length} variation${variations.length > 1 ? 's' : ''}`
           : 'No variations';
-
-        const surchargeDetails = surcharges.slice(0, 2).map((surcharge) => {
-          if (surcharge.surcharge_type === 'Percent') return `${surcharge.surcharge_name} (${toNumber(surcharge.surcharge_percent)}%)`;
-          if (surcharge.surcharge_type === 'BonusQty' || surcharge.surcharge_type === 'Freebie') return `${surcharge.surcharge_name} (free ${toNumber(surcharge.free_quantity)})`;
-          return `${surcharge.surcharge_name} (PHP ${toNumber(surcharge.amount).toLocaleString()})`;
-        });
-
-        const details = surchargeDetails.length > 0
-          ? surchargeDetails.join(' | ')
-          : 'No surcharges';
+        const details = String(row.description ?? '').trim() || '-';
+        const categorySource = row.product_categories;
+        const category = Array.isArray(categorySource)
+          ? String(categorySource[0]?.category_title ?? '-')
+          : String(categorySource?.category_title ?? '-');
 
         const variationPrices = variations.map((v) => toNumber(v.price)).filter((price) => price > 0);
         const minVariationPrice = variationPrices.length > 0 ? Math.min(...variationPrices) : null;
@@ -118,6 +114,7 @@ export default function ProductSummary({ onAddProduct, onEditProduct }: ProductS
           code: String(row.sku_code ?? '-'),
           variations: variationLabel,
           details,
+          category,
           price: minVariationPrice ?? toNumber(row.price),
           status: String(row.status ?? '-'),
           createdAt: String(row.created_at ?? new Date().toISOString()),
@@ -209,7 +206,7 @@ export default function ProductSummary({ onAddProduct, onEditProduct }: ProductS
 
       <div className={styles.table}>
         <div className={styles.tableHeader}>
-          <span>Product</span><span>Location</span><span>Code</span><span>Variations</span><span>Details</span><span>Price(PHP)</span><span>Status</span><span className={styles.actionHeader}>Action</span>
+          <span>Product</span><span>Location</span><span>Code</span><span>Variations</span><span>Details</span><span>Category</span><span>Status</span><span className={styles.actionHeader}>Action</span>
         </div>
 
         {pagedItems.length === 0 ? (
@@ -222,7 +219,7 @@ export default function ProductSummary({ onAddProduct, onEditProduct }: ProductS
               <span>{item.code}</span>
               <span>{item.variations}</span>
               <span>{item.details}</span>
-              <span>{item.price.toLocaleString()}</span>
+              <span>{item.category}</span>
               <span className={`${styles.statusBadge} ${getStatusClass(item.status)}`}>{item.status}</span>
               <button type="button" className={styles.actionButton} aria-label={`Edit ${item.product}`} onClick={() => onEditProduct(item.id)}><EditIcon /></button>
             </div>

@@ -13,6 +13,7 @@ type SurchargeProps = {
 export default function Surcharge({ onBack, onSubmit, items, onChange, isSaving }: SurchargeProps) {
   const [draft, setDraft] = useState<SurchargeItem>({
     id: '',
+    variationId: '',
     surchargeName: '',
     surchargeType: 'Amount',
     amount: '',
@@ -26,7 +27,7 @@ export default function Surcharge({ onBack, onSubmit, items, onChange, isSaving 
   const [editingId, setEditingId] = useState<string | null>(null);
 
   function resetDraft() {
-    setDraft({ id: '', surchargeName: '', surchargeType: 'Amount', amount: '', freeQuantity: '0', minQuantity: '1', maxQuantity: '', branchName: '', priceType: '', priceCode: '' });
+    setDraft({ id: '', variationId: '', surchargeName: '', surchargeType: 'Amount', amount: '', freeQuantity: '0', minQuantity: '1', maxQuantity: '', branchName: '', priceType: '', priceCode: '' });
     setEditingId(null);
   }
 
@@ -53,15 +54,15 @@ export default function Surcharge({ onBack, onSubmit, items, onChange, isSaving 
   return (
     <section className={styles.wrapper}>
       <div className={styles.sectionHeader}>
-        <h3 className={styles.title}>Surcharge</h3>
-        <button type="button" className={styles.addButton} onClick={saveItem}>{editingId ? 'Update Surcharge' : 'Add Surcharge'}</button>
+        <h3 className={styles.title}>Promo / Freebie</h3>
+        <button type="button" className={styles.addButton} onClick={saveItem}>{editingId ? 'Update Promo' : 'Add Promo'}</button>
       </div>
       <div className={styles.itemsContainer}>
         <div className={styles.tableHeader}>
           <span>Name</span><span>Type</span><span>Amount</span><span>Free Qty</span><span>Min Qty</span><span>Max Qty</span><span>Branch</span><span>Price Type</span><span>Code</span><span>Action</span>
         </div>
         {items.length === 0 ? (
-          <div className={styles.emptyState}>No surcharges yet.</div>
+          <div className={styles.emptyState}>No promo/freebie rules yet.</div>
         ) : (
           items.map((item) => (
             <div key={item.id} className={styles.tableRow}>
@@ -75,15 +76,15 @@ export default function Surcharge({ onBack, onSubmit, items, onChange, isSaving 
         )}
       </div>
       <div className={styles.previewRow}>
-        <input className={styles.input} placeholder="Surcharge Name" value={draft.surchargeName} onChange={(e) => setDraft({ ...draft, surchargeName: e.target.value })} />
+        <input className={styles.input} placeholder="Promo Name" value={draft.surchargeName} onChange={(e) => setDraft({ ...draft, surchargeName: e.target.value })} />
         <select className={styles.select} value={draft.surchargeType} onChange={(e) => setDraft({ ...draft, surchargeType: e.target.value as SurchargeItem['surchargeType'] })}><option value="Amount">Amount</option><option value="Percent">Percent</option><option value="Freebie">Freebie</option><option value="BonusQty">BonusQty</option></select>
         <input className={styles.input} placeholder="Amount/Percent" value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} />
         <input className={styles.input} placeholder="Free Qty" value={draft.freeQuantity} onChange={(e) => setDraft({ ...draft, freeQuantity: e.target.value })} />
         <input className={styles.input} placeholder="Min Qty" value={draft.minQuantity} onChange={(e) => setDraft({ ...draft, minQuantity: e.target.value })} />
         <input className={styles.input} placeholder="Max Qty" value={draft.maxQuantity} onChange={(e) => setDraft({ ...draft, maxQuantity: e.target.value })} />
-        <select className={styles.select} value={draft.branchName} onChange={(e) => setDraft({ ...draft, branchName: e.target.value as SurchargeItem['branchName'] })}><option value="">Branch</option><option value="Manila">Manila</option><option value="Cebu">Cebu</option></select>
-        <select className={styles.select} value={draft.priceType} onChange={(e) => setDraft({ ...draft, priceType: e.target.value as SurchargeItem['priceType'] })}><option value="">Price Type</option><option value="Retail">Retail</option><option value="Wholesale">Wholesale</option></select>
-        <select className={styles.select} value={draft.priceCode} onChange={(e) => setDraft({ ...draft, priceCode: e.target.value as SurchargeItem['priceCode'] })}><option value="">Price Code</option><option value="R1">R1</option><option value="R2">R2</option><option value="W1">W1</option><option value="W2">W2</option></select>
+        <select className={styles.select} value={draft.branchName} onChange={(e) => setDraft({ ...draft, branchName: e.target.value as SurchargeItem['branchName'] })}><option value="">Branch</option><option value="Manila">Manila</option><option value="Cebu">Cebu</option><option value="Both">Both</option></select>
+        <select className={styles.select} value={draft.priceType} onChange={(e) => setDraft({ ...draft, priceType: e.target.value as SurchargeItem['priceType'] })}><option value="">Price Type</option><option value="Retail">Retail</option><option value="Wholesale">Wholesale</option><option value="Special">Special</option><option value="Concept Store">Concept Store</option></select>
+        <select className={styles.select} value={draft.priceCode} onChange={(e) => setDraft({ ...draft, priceCode: e.target.value as SurchargeItem['priceCode'] })}><option value="">Price Code</option><option value="R1">R1</option><option value="R2">R2</option><option value="W1">W1</option><option value="W2">W2</option><option value="SP">SP</option><option value="CP">CP</option></select>
         <button type="button" className={styles.secondaryAction} onClick={resetDraft}>Clear</button>
       </div>
       <div className={styles.actions}>

@@ -1,3 +1,17 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.topHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
 .container {
   display: flex;
   flex-direction: column;
@@ -7,6 +21,174 @@
   border: 1px solid var(--card-border);
   border-radius: 0.5rem;
   box-shadow: var(--card-shadow);
+}
+
+.subtitle {
+  margin: 0.25rem 0 0;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.headerActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dateFilterButton,
+.clearFilterButton {
+  border: 1px solid var(--card-border);
+  border-radius: 0.55rem;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0.5rem 0.7rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.dateFilterButton {
+  background: var(--yellow);
+  border-color: var(--yellow);
+  color: #1f2937;
+}
+
+.filterIcon {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.dateFilterPopover {
+  border: 1px solid var(--card-border);
+  border-radius: 0.65rem;
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  padding: 0.8rem;
+}
+
+.dateFilterOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1350;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.dateFilterModal {
+  width: min(520px, 100%);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 0.8rem;
+  box-shadow: var(--card-shadow);
+  padding: 0.9rem;
+}
+
+.dateModeTabs {
+  display: inline-flex;
+  border: 1px solid var(--card-border);
+  border-radius: 0.55rem;
+  overflow: hidden;
+}
+
+.dateModeTab {
+  border: 0;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+}
+
+.dateModeTabActive {
+  background: var(--yellow);
+  color: #1f2937;
+}
+
+.calendarControls {
+  margin-top: 0.7rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.calendarControls select {
+  border: 1px solid var(--card-border);
+  border-radius: 0.5rem;
+  padding: 0.38rem 0.45rem;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.calendarGrid {
+  margin-top: 0.7rem;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.calendarHead {
+  text-align: center;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.25rem 0;
+}
+
+.calendarCell {
+  border: 1px solid var(--card-border);
+  border-radius: 0.45rem;
+  background: var(--surface);
+  color: var(--text);
+  min-height: 2rem;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.calendarCellEmpty {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.calendarCellSelected {
+  background: var(--yellow);
+  border-color: var(--yellow);
+  color: #1f2937;
+}
+
+.calendarCellRange {
+  background: color-mix(in srgb, var(--yellow) 32%, white);
+  border-color: color-mix(in srgb, var(--yellow) 65%, var(--card-border));
+}
+
+.dateFilterFooter {
+  margin-top: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.datePreview {
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
 .header {
@@ -23,6 +205,13 @@
   font-family: 'Montserrat', sans-serif;
   font-size: 1.05rem;
   font-weight: 700;
+}
+
+.loadingDetails {
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
 }
 
 .filterTabs {
@@ -95,9 +284,9 @@
 
 .tableHeader,
 .tableRow {
-  min-width: 88rem;
+  min-width: 80rem;
   display: grid;
-  grid-template-columns: 0.9fr 1fr 0.9fr 0.85fr 0.7fr 1fr 1fr 1.25fr 0.8fr 1fr 0.55fr;
+  grid-template-columns: 0.9fr 1fr 0.9fr 0.85fr 0.7fr 1fr 1.25fr 0.9fr 1fr 0.55fr;
   gap: 0.75rem;
   align-items: center;
 }
@@ -151,7 +340,7 @@
 }
 
 .emptyState {
-  min-width: 88rem;
+  min-width: 80rem;
   min-height: 8rem;
   padding: 1rem;
   display: flex;
@@ -161,6 +350,298 @@
   font-family: 'Montserrat', sans-serif;
   font-size: 0.85rem;
   font-weight: 600;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.modal {
+  width: min(1100px, 100%);
+  max-height: 92vh;
+  overflow: auto;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 0.8rem;
+  box-shadow: var(--card-shadow);
+  padding: 1rem;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.8rem;
+}
+
+.modalTitle {
+  margin: 0;
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.modalClose {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.modalInfoGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.9rem;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.infoCard {
+  display: block;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--surface) 72%, white);
+}
+
+.modalTable {
+  border: 1px solid var(--card-border);
+  border-radius: 0.65rem;
+  overflow: hidden;
+}
+
+.modalTableHeader,
+.modalTableRow {
+  display: grid;
+  grid-template-columns: 1.4fr 0.75fr 1fr 0.45fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.7rem;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.78rem;
+}
+
+.modalTableHeader {
+  background: color-mix(in srgb, var(--surface) 70%, white);
+  color: var(--text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.modalTableRow {
+  border-top: 1px solid var(--card-border);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.modalEmpty {
+  padding: 1rem;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.modalTotals {
+  margin-top: 0.85rem;
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.removeItemButton {
+  border: 1px solid #ef8f8f;
+  color: #b84141;
+  background: #fff3f3;
+  border-radius: 0.45rem;
+  padding: 0.35rem 0.5rem;
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.modalFooterActions {
+  margin-top: 0.9rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.statusTimeline {
+  margin-top: 0.9rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.6rem;
+  padding: 0.7rem;
+}
+
+.timelineTitle {
+  margin: 0 0 0.5rem;
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.timelineEmpty {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.timelineList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.timelineRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.placeButton,
+.rejectButton {
+  border: none;
+  border-radius: 0.6rem;
+  padding: 0.55rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+  cursor: pointer;
+}
+
+.placeButton {
+  background: #1c7f43;
+  color: #fff;
+}
+
+.rejectButton {
+  background: #f6c90e;
+  color: #1f2937;
+}
+
+.confirmOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 1rem;
+}
+
+.confirmModal {
+  width: min(420px, 100%);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  box-shadow: var(--card-shadow);
+  padding: 1rem;
+}
+
+.confirmTitle {
+  margin: 0;
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.confirmText {
+  margin: 0.6rem 0 0;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.confirmActions {
+  margin-top: 0.9rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.confirmCancel,
+.confirmProceed {
+  border: none;
+  border-radius: 0.55rem;
+  padding: 0.5rem 0.8rem;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.confirmCancel {
+  background: color-mix(in srgb, var(--surface) 70%, white);
+  color: var(--text);
+}
+
+.confirmProceed {
+  background: var(--yellow);
+  color: #1f2937;
+}
+
+.snackbar {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1500;
+  min-width: 260px;
+  max-width: 420px;
+  padding: 0.72rem 0.88rem;
+  border-radius: 0.6rem;
+  border: 1px solid transparent;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+  font-size: 0.88rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.snackbarSuccess {
+  color: #0e5d2f;
+  background: #e7f8ee;
+  border-color: #a8e7c1;
+}
+
+.snackbarError {
+  color: #8a1f26;
+  background: #ffe9eb;
+  border-color: #ffc8cf;
+}
+
+.snackbarInfo {
+  color: #1f4c8a;
+  background: #e9f2ff;
+  border-color: #c4dcff;
 }
 
 .footer {
@@ -240,6 +721,10 @@
 }
 
 @media (max-width: 768px) {
+  .topHeader {
+    flex-direction: column;
+  }
+
   .container {
     padding: 1rem;
   }
@@ -253,7 +738,21 @@
     align-items: flex-start;
   }
 
+  .modalInfoGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .pagination {
+    justify-content: flex-start;
+  }
+
+  .modalFooterActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .confirmActions {
+    width: 100%;
     justify-content: flex-start;
   }
 
