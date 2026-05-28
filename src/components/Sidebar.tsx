@@ -1,27 +1,26 @@
 import styles from './Sidebar.module.css';
-import logo from "../assets/2B LOGO.png";
+import logo from '../assets/2B LOGO.png';
 
 type SidebarProps = {
   active: string;
   onNavigate: (item: string) => void;
-  isCollapsed: boolean;       // ← receive from App
-  onToggle: (val: boolean) => void; // ← receive from App
+  isCollapsed: boolean;
+  onToggle: (val: boolean) => void;
+  onLogout: () => void;
 };
 
 const navItems = [
   { name: 'Dashboard', icon: 'fa-solid fa-house' },
-  { name: 'Products',   icon: 'fa-solid fa-box' },
-  { name: 'Order',     icon: 'fa-solid fa-cart-shopping' },
-  { name: 'Sales',     icon: 'fa-solid fa-chart-line' },
-  { name: 'Accounts',  icon: 'fa-solid fa-user' },
-  { name: 'Settings',  icon: 'fa-solid fa-gear' },
+  { name: 'Products', icon: 'fa-solid fa-box' },
+  { name: 'Order', icon: 'fa-solid fa-cart-shopping' },
+  { name: 'Sales', icon: 'fa-solid fa-chart-line' },
+  { name: 'Accounts', icon: 'fa-solid fa-user' },
+  { name: 'Settings', icon: 'fa-solid fa-gear' },
 ];
 
-export default function Sidebar({ active, onNavigate, isCollapsed, onToggle }: SidebarProps) {
+export default function Sidebar({ active, onNavigate, isCollapsed, onToggle, onLogout }: SidebarProps) {
   return (
     <div className={`${styles.sidebar} ${isCollapsed ? styles.collapsed : ''}`}>
-
-      {/* Header */}
       <div className={styles.header}>
         {isCollapsed ? (
           <button
@@ -48,7 +47,6 @@ export default function Sidebar({ active, onNavigate, isCollapsed, onToggle }: S
         )}
       </div>
 
-      {/* Nav */}
       <nav className={styles.nav}>
         {navItems.map((item) => (
           <div
@@ -63,12 +61,10 @@ export default function Sidebar({ active, onNavigate, isCollapsed, onToggle }: S
         ))}
       </nav>
 
-      {/* Logout */}
-      <div className={styles.logout}>
+      <div className={styles.logout} onClick={onLogout}>
         <i className="fa-solid fa-right-from-bracket"></i>
         {!isCollapsed && <span className={styles.label}>Logout</span>}
       </div>
-
     </div>
   );
 }

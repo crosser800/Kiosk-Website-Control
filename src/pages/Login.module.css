@@ -1,0 +1,98 @@
+.loginScreen {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background:
+    radial-gradient(circle at top right, rgba(245, 197, 24, 0.22), transparent 40%),
+    radial-gradient(circle at bottom left, rgba(0, 0, 0, 0.08), transparent 45%),
+    var(--background);
+}
+
+.loginCard {
+  width: min(420px, 100%);
+  background-color: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+  padding: 2rem;
+}
+
+.brand {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.brand img {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.brand h1 {
+  margin-top: 0.625rem;
+  font-size: 1.4rem;
+}
+
+.brand p {
+  margin-top: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.form label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.form input {
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 0.75rem;
+  font-size: 0.95rem;
+}
+
+.form input:focus {
+  outline: 2px solid var(--yellow);
+  outline-offset: 1px;
+}
+
+.form button {
+  margin-top: 0.75rem;
+  height: 44px;
+  border: none;
+  border-radius: 8px;
+  background: var(--yellow);
+  color: #111111;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.form button:hover {
+  filter: brightness(0.96);
+}
+
+.form button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.error {
+  margin-top: 0.25rem;
+  color: #d53939;
+  font-size: 0.85rem;
+}

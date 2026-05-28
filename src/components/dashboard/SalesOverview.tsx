@@ -9,6 +9,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
+import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
 type SalesOverviewProps = {
   total: number;
@@ -19,10 +20,25 @@ type SalesOverviewProps = {
   }[];
 };
 
-const formatY = (value: number | undefined) => {
-  if (!value) return '0';
-  if (value >= 1000) return `${value / 1000}K`;
-  return value.toString();
+const toNumber = (value: ValueType | undefined) => {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+};
+
+const formatY = (value: ValueType | undefined) => {
+  const numericValue = toNumber(value);
+  if (!numericValue) return '0';
+  if (numericValue >= 1000) return `${numericValue / 1000}K`;
+  return numericValue.toString();
+};
+
+const formatTooltipValue = (value: ValueType | undefined, _name: NameType | undefined) => {
+  const numericValue = toNumber(value);
+  return `PHP ${numericValue.toLocaleString()}`;
 };
 
 export default function SalesOverview({ total, data }: SalesOverviewProps) {
@@ -46,11 +62,7 @@ export default function SalesOverview({ total, data }: SalesOverviewProps) {
             <CartesianGrid vertical={false} stroke="var(--card-border)" />
             <XAxis dataKey="day" axisLine={false} tickLine={false} />
             <YAxis tickFormatter={formatY} axisLine={false} tickLine={false} />
-            <Tooltip
-              formatter={(value: number | undefined) =>
-                value ? `PHP ${value.toLocaleString()}` : 'PHP 0'
-              }
-            />
+            <Tooltip formatter={formatTooltipValue} />
             <Legend />
             <Bar
               dataKey="today"

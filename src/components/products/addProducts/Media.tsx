@@ -1,17 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
 import styles from './Media.module.css';
+import type { MediaItem } from './types';
 
 type MediaProps = {
   onBack: () => void;
   onNext: () => void;
-};
-
-type MediaItem = {
-  id: string;
-  file: File;
-  previewUrl: string;
-  type: 'image' | 'video';
+  items: MediaItem[];
+  mainMediaId: string | null;
+  onChange: (items: MediaItem[]) => void;
+  onMainMediaChange: (id: string | null) => void;
 };
 
 const MAX_MEDIA_FILES = 30;
@@ -34,35 +32,35 @@ function createMediaItems(files: File[]) {
     const maxSize = isVideo ? MAX_VIDEO_SIZE_BYTES : MAX_IMAGE_SIZE_BYTES;
 
     if (file.size > maxSize) {
-      rejectedFiles.push(
-        `${file.name} exceeds the ${isVideo ? '25 MB video' : '5 MB image'} limit.`,
-      );
+      rejectedFiles.push(`${file.name} exceeds the ${isVideo ? '25 MB video' : '5 MB image'} limit.`);
       return;
     }
 
     nextItems.push({
       id: `${file.name}-${file.lastModified}-${Math.random().toString(36).slice(2, 9)}`,
       file,
+      fileName: file.name,
       previewUrl: URL.createObjectURL(file),
       type: file.type.startsWith('video/') ? 'video' : 'image',
+      title: '',
+      altText: '',
+      isExisting: false,
+      mediaPath: null,
     });
   });
 
   return { nextItems, rejectedFiles };
 }
 
-function moveItem(items: MediaItem[], fromIndex: number, toIndex: number) {
-  const updatedItems = [...items];
+function moveItem(current: MediaItem[], fromIndex: number, toIndex: number) {
+  const updatedItems = [...current];
   const [movedItem] = updatedItems.splice(fromIndex, 1);
-
   updatedItems.splice(toIndex, 0, movedItem);
   return updatedItems;
 }
 
-export default function Media({ onBack, onNext }: MediaProps) {
-  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+export default function Media({ onBack, onNext, items, mainMediaId, onChange, onMainMediaChange }: MediaProps) {
   const [isDragOverUpload, setIsDragOverUpload] = useState(false);
-  const [mainMediaId, setMainMediaId] = useState<string | null>(null);
   const [draggedMediaId, setDraggedMediaId] = useState<string | null>(null);
   const [uploadMessage, setUploadMessage] = useState<string>('');
   const previewUrlsRef = useRef<Set<string>>(new Set());
@@ -74,12 +72,9 @@ export default function Media({ onBack, onNext }: MediaProps) {
   }, []);
 
   function addFiles(files: File[]) {
-    if (files.length === 0) {
-      return;
-    }
+    if (files.length === 0) return;
 
-    const remainingSlots = MAX_MEDIA_FILES - mediaItems.length;
-
+    const remainingSlots = MAX_MEDIA_FILES - items.length;
     if (remainingSlots <= 0) {
       setUploadMessage(`You can upload up to ${MAX_MEDIA_FILES} media files only.`);
       return;
@@ -89,34 +84,20 @@ export default function Media({ onBack, onNext }: MediaProps) {
     const nextItems = validItems.slice(0, remainingSlots);
 
     if (validItems.length > remainingSlots) {
-      rejectedFiles.push(
-        `Only ${remainingSlots} more file${remainingSlots === 1 ? '' : 's'} can be uploaded.`,
-      );
+      rejectedFiles.push(`Only ${remainingSlots} more file${remainingSlots === 1 ? '' : 's'} can be uploaded.`);
     }
 
-    if (rejectedFiles.length > 0) {
-      setUploadMessage(rejectedFiles[0]);
-    } else {
-      setUploadMessage('');
+    setUploadMessage(rejectedFiles[0] ?? '');
+    if (nextItems.length === 0) return;
+
+    nextItems.forEach((item) => previewUrlsRef.current.add(item.previewUrl));
+
+    const updatedItems = [...items, ...nextItems];
+    onChange(updatedItems);
+
+    if (!mainMediaId && updatedItems.length > 0) {
+      onMainMediaChange(updatedItems[0].id);
     }
-
-    if (nextItems.length === 0) {
-      return;
-    }
-
-    nextItems.forEach((item) => {
-      previewUrlsRef.current.add(item.previewUrl);
-    });
-
-    setMediaItems((currentItems) => {
-      const updatedItems = [...currentItems, ...nextItems];
-
-      if (!mainMediaId && updatedItems.length > 0) {
-        setMainMediaId(updatedItems[0].id);
-      }
-
-      return updatedItems;
-    });
   }
 
   function handleFileSelection(event: ChangeEvent<HTMLInputElement>) {
@@ -132,22 +113,18 @@ export default function Media({ onBack, onNext }: MediaProps) {
   }
 
   function handleDelete(itemId: string) {
-    setMediaItems((currentItems) => {
-      const itemToRemove = currentItems.find((item) => item.id === itemId);
+    const itemToRemove = items.find((item) => item.id === itemId);
+    if (itemToRemove) {
+      URL.revokeObjectURL(itemToRemove.previewUrl);
+      previewUrlsRef.current.delete(itemToRemove.previewUrl);
+    }
 
-      if (itemToRemove) {
-        URL.revokeObjectURL(itemToRemove.previewUrl);
-        previewUrlsRef.current.delete(itemToRemove.previewUrl);
-      }
+    const updatedItems = items.filter((item) => item.id !== itemId);
+    onChange(updatedItems);
 
-      const updatedItems = currentItems.filter((item) => item.id !== itemId);
-
-      if (mainMediaId === itemId) {
-        setMainMediaId(updatedItems[0]?.id ?? null);
-      }
-
-      return updatedItems;
-    });
+    if (mainMediaId === itemId) {
+      onMainMediaChange(updatedItems[0]?.id ?? null);
+    }
   }
 
   function handleMediaDrop(targetId: string) {
@@ -156,17 +133,11 @@ export default function Media({ onBack, onNext }: MediaProps) {
       return;
     }
 
-    setMediaItems((currentItems) => {
-      const fromIndex = currentItems.findIndex((item) => item.id === draggedMediaId);
-      const toIndex = currentItems.findIndex((item) => item.id === targetId);
+    const fromIndex = items.findIndex((item) => item.id === draggedMediaId);
+    const toIndex = items.findIndex((item) => item.id === targetId);
+    if (fromIndex === -1 || toIndex === -1) return;
 
-      if (fromIndex === -1 || toIndex === -1) {
-        return currentItems;
-      }
-
-      return moveItem(currentItems, fromIndex, toIndex);
-    });
-
+    onChange(moveItem(items, fromIndex, toIndex));
     setDraggedMediaId(null);
   }
 
@@ -178,9 +149,7 @@ export default function Media({ onBack, onNext }: MediaProps) {
         </div>
 
         <label
-          className={`${styles.uploadArea} ${
-            isDragOverUpload ? styles.uploadAreaActive : ''
-          }`}
+          className={`${styles.uploadArea} ${isDragOverUpload ? styles.uploadAreaActive : ''}`}
           onDragOver={(event) => {
             event.preventDefault();
             setIsDragOverUpload(true);
@@ -188,28 +157,12 @@ export default function Media({ onBack, onNext }: MediaProps) {
           onDragLeave={() => setIsDragOverUpload(false)}
           onDrop={handleUploadDrop}
         >
-          <input
-            type="file"
-            accept={acceptedTypes}
-            multiple
-            className={styles.fileInput}
-            onChange={handleFileSelection}
-          />
-
+          <input type="file" accept={acceptedTypes} multiple className={styles.fileInput} onChange={handleFileSelection} />
           <div className={styles.uploadContent}>
-            <p className={styles.uploadHeadline}>
-              Drag and drop your image or video here, or{' '}
-              <span className={styles.browseText}>Browse</span>
-            </p>
-            <p className={styles.uploadHint}>
-              You can upload up to {MAX_MEDIA_FILES} media files
-            </p>
-            <p className={styles.uploadFormats}>
-              Accepted: JPEG, JPG, PNG up to 5 MB, MP4 up to 25 MB
-            </p>
-            {uploadMessage ? (
-              <p className={styles.uploadMessage}>{uploadMessage}</p>
-            ) : null}
+            <p className={styles.uploadHeadline}>Drag and drop your image or video here, or <span className={styles.browseText}>Browse</span></p>
+            <p className={styles.uploadHint}>You can upload up to {MAX_MEDIA_FILES} media files</p>
+            <p className={styles.uploadFormats}>Accepted: JPEG, JPG, PNG up to 5 MB, MP4 up to 25 MB</p>
+            {uploadMessage ? <p className={styles.uploadMessage}>{uploadMessage}</p> : null}
           </div>
         </label>
       </div>
@@ -217,26 +170,19 @@ export default function Media({ onBack, onNext }: MediaProps) {
       <div className={styles.section}>
         <div className={styles.sectionHeader}>
           <h3 className={styles.title}>Images/Videos Uploaded</h3>
-          <span className={styles.counter}>
-            {mediaItems.length}/{MAX_MEDIA_FILES}
-          </span>
+          <span className={styles.counter}>{items.length}/{MAX_MEDIA_FILES}</span>
         </div>
 
-        {mediaItems.length === 0 ? (
-          <div className={styles.emptyState}>
-            Your uploaded media will appear here.
-          </div>
+        {items.length === 0 ? (
+          <div className={styles.emptyState}>Your uploaded media will appear here.</div>
         ) : (
           <div className={styles.mediaGrid}>
-            {mediaItems.map((item) => {
+            {items.map((item) => {
               const isMainMedia = mainMediaId === item.id;
-
               return (
                 <article
                   key={item.id}
-                  className={`${styles.mediaCard} ${
-                    draggedMediaId === item.id ? styles.mediaCardDragging : ''
-                  }`}
+                  className={`${styles.mediaCard} ${draggedMediaId === item.id ? styles.mediaCardDragging : ''}`}
                   draggable
                   onDragStart={() => setDraggedMediaId(item.id)}
                   onDragEnd={() => setDraggedMediaId(null)}
@@ -245,71 +191,45 @@ export default function Media({ onBack, onNext }: MediaProps) {
                 >
                   <div className={styles.mediaPreview}>
                     {item.type === 'image' ? (
-                      <img
-                        src={item.previewUrl}
-                        alt={item.file.name}
-                        className={styles.previewAsset}
-                      />
+                      <img src={item.previewUrl} alt={item.fileName} className={styles.previewAsset} />
                     ) : (
-                      <video
-                        src={item.previewUrl}
-                        className={styles.previewAsset}
-                        muted
-                        playsInline
-                        preload="metadata"
-                      />
+                      <video src={item.previewUrl} className={styles.previewAsset} muted playsInline preload="metadata" />
                     )}
                   </div>
 
                   <div className={styles.cardFooter}>
-                    <span className={styles.fileName} title={item.file.name}>
-                      {item.file.name}
-                    </span>
-                    {isMainMedia ? (
-                      <span className={styles.mainBadge}>Main</span>
-                    ) : null}
+                    <span className={styles.fileName} title={item.fileName}>{item.fileName}</span>
+                    {isMainMedia ? <span className={styles.mainBadge}>Main</span> : null}
+                  </div>
+
+                  <div className={styles.metaGrid}>
+                    <input
+                      type="text"
+                      className={styles.metaInput}
+                      placeholder="Title"
+                      value={item.title ?? ''}
+                      onChange={(event) => onChange(items.map((entry) => (entry.id === item.id ? { ...entry, title: event.target.value } : entry)))}
+                    />
+                    <input
+                      type="text"
+                      className={styles.metaInput}
+                      placeholder="Alt text"
+                      value={item.altText ?? ''}
+                      onChange={(event) => onChange(items.map((entry) => (entry.id === item.id ? { ...entry, altText: event.target.value } : entry)))}
+                    />
                   </div>
 
                   <div className={styles.cardActions}>
                     <button
                       type="button"
-                      className={`${styles.iconButton} ${
-                        isMainMedia ? styles.iconButtonPrimary : ''
-                      }`}
-                      onClick={() => setMainMediaId(item.id)}
-                      aria-label={
-                        isMainMedia
-                          ? 'Selected as main media'
-                          : 'Set as main media'
-                      }
-                      title={
-                        isMainMedia ? 'Main media selected' : 'Set as main media'
-                      }
+                      className={`${styles.iconButton} ${isMainMedia ? styles.iconButtonPrimary : ''}`}
+                      onClick={() => onMainMediaChange(item.id)}
                     >
-                      <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.icon}>
-                        <path
-                          d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.56L12 17.52 6.12 20.62l1.12-6.56L2.48 9.42l6.58-.96L12 2.5z"
-                          fill={isMainMedia ? 'currentColor' : 'none'}
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
+                      <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.icon}><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.56L12 17.52 6.12 20.62l1.12-6.56L2.48 9.42l6.58-.96L12 2.5z" fill={isMainMedia ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>
                     </button>
 
-                    <button
-                      type="button"
-                      className={`${styles.iconButton} ${styles.deleteButton}`}
-                      onClick={() => handleDelete(item.id)}
-                      aria-label={`Delete ${item.file.name}`}
-                      title="Delete media"
-                    >
-                      <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.icon}>
-                        <path
-                          d="M9 3.75h6l.75 1.5H20v1.5H4v-1.5h4.25L9 3.75zm-1.5 6h1.5v7.5H7.5v-7.5zm4.5 0h1.5v7.5H12v-7.5zm4.5 0H18v7.5h-1.5v-7.5zM6 8.25h12v10.5A2.25 2.25 0 0 1 15.75 21h-7.5A2.25 2.25 0 0 1 6 18.75V8.25z"
-                          fill="currentColor"
-                        />
-                      </svg>
+                    <button type="button" className={`${styles.iconButton} ${styles.deleteButton}`} onClick={() => handleDelete(item.id)}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.icon}><path d="M9 3.75h6l.75 1.5H20v1.5H4v-1.5h4.25L9 3.75zm-1.5 6h1.5v7.5H7.5v-7.5zm4.5 0h1.5v7.5H12v-7.5zm4.5 0H18v7.5h-1.5v-7.5zM6 8.25h12v10.5A2.25 2.25 0 0 1 15.75 21h-7.5A2.25 2.25 0 0 1 6 18.75V8.25z" fill="currentColor" /></svg>
                     </button>
                   </div>
                 </article>
@@ -320,12 +240,8 @@ export default function Media({ onBack, onNext }: MediaProps) {
       </div>
 
       <div className={styles.actions}>
-        <button type="button" className={styles.backButton} onClick={onBack}>
-          Back
-        </button>
-        <button type="button" className={styles.nextButton} onClick={onNext}>
-          Next
-        </button>
+        <button type="button" className={styles.backButton} onClick={onBack}>Back</button>
+        <button type="button" className={styles.nextButton} onClick={onNext}>Next</button>
       </div>
     </section>
   );
