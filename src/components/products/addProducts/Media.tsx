@@ -4,12 +4,14 @@ import styles from './Media.module.css';
 import type { MediaItem } from './types';
 
 type MediaProps = {
-  onBack: () => void;
-  onNext: () => void;
+  onBack?: () => void;
+  onNext?: () => void;
   items: MediaItem[];
   mainMediaId: string | null;
   onChange: (items: MediaItem[]) => void;
   onMainMediaChange: (id: string | null) => void;
+  showActions?: boolean;
+  nextLabel?: string;
 };
 
 const MAX_MEDIA_FILES = 30;
@@ -59,7 +61,16 @@ function moveItem(current: MediaItem[], fromIndex: number, toIndex: number) {
   return updatedItems;
 }
 
-export default function Media({ onBack, onNext, items, mainMediaId, onChange, onMainMediaChange }: MediaProps) {
+export default function Media({
+  onBack,
+  onNext,
+  items,
+  mainMediaId,
+  onChange,
+  onMainMediaChange,
+  showActions = true,
+  nextLabel = 'Next',
+}: MediaProps) {
   const [isDragOverUpload, setIsDragOverUpload] = useState(false);
   const [draggedMediaId, setDraggedMediaId] = useState<string | null>(null);
   const [uploadMessage, setUploadMessage] = useState<string>('');
@@ -239,10 +250,12 @@ export default function Media({ onBack, onNext, items, mainMediaId, onChange, on
         )}
       </div>
 
-      <div className={styles.actions}>
-        <button type="button" className={styles.backButton} onClick={onBack}>Back</button>
-        <button type="button" className={styles.nextButton} onClick={onNext}>Next</button>
-      </div>
+      {showActions ? (
+        <div className={styles.actions}>
+          <button type="button" className={styles.backButton} onClick={onBack}>Back</button>
+          <button type="button" className={styles.nextButton} onClick={onNext}>{nextLabel}</button>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -168,42 +168,63 @@ export default function OrdersSales() {
     <>
       <section className={styles.container}>
         <div className={styles.header}>
-          <div className={styles.filterTabs} aria-label="Sales table view">
-            {(Object.keys(viewLabels) as SalesView[]).map((view) => (
-              <button
-                key={view}
-                type="button"
-                className={`${styles.filterTab} ${
-                  activeView === view ? styles.filterTabActive : ''
-                }`}
-                onClick={() => handleViewChange(view)}
-              >
-                {viewLabels[view]}
-              </button>
-            ))}
+          <div className={styles.headerCopy}>
+            <p className={styles.eyebrow}>Sales records</p>
+            <h2 className={styles.title}>Orders and top-selling overview</h2>
+            <p className={styles.description}>
+              Switch between order activity and product performance using the same
+              clean table view.
+            </p>
           </div>
 
-          <label className={styles.selectControl}>
-            <FilterIcon />
-            <select
-              className={styles.selectField}
-              value={activeFilter}
-              onChange={(event) => {
-                setActiveFilter(event.target.value as SalesFilter);
-                setCurrentPage(1);
-              }}
-              aria-label="Filter sales records"
-            >
-              {(Object.keys(filterLabels) as SalesFilter[]).map((filter) => (
-                <option key={filter} value={filter}>
-                  {filterLabels[filter]}
-                </option>
+          <div className={styles.controls}>
+            <div className={styles.filterTabs} aria-label="Sales table view">
+              {(Object.keys(viewLabels) as SalesView[]).map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  className={`${styles.filterTab} ${
+                    activeView === view ? styles.filterTabActive : ''
+                  }`}
+                  onClick={() => handleViewChange(view)}
+                >
+                  {viewLabels[view]}
+                </button>
               ))}
-            </select>
-          </label>
+            </div>
+
+            <label className={styles.selectControl}>
+              <FilterIcon />
+              <select
+                className={styles.selectField}
+                value={activeFilter}
+                onChange={(event) => {
+                  setActiveFilter(event.target.value as SalesFilter);
+                  setCurrentPage(1);
+                }}
+                aria-label="Filter sales records"
+              >
+                {(Object.keys(filterLabels) as SalesFilter[]).map((filter) => (
+                  <option key={filter} value={filter}>
+                    {filterLabels[filter]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
 
-        <div className={styles.table} role="table" aria-label={viewLabels[activeView]}>
+        <div className={styles.tableShell}>
+          <div className={styles.tableMeta}>
+            <span className={styles.metaPill}>{filterLabels[activeFilter]}</span>
+            <span className={styles.metaText}>
+              {totalDataCount > 0
+                ? `${totalDataCount.toLocaleString()} records loaded`
+                : 'No records yet. Layout stays ready for live sales data.'}
+            </span>
+          </div>
+
+          <div className={styles.table} role="table" aria-label={viewLabels[activeView]}>
           <div className={styles.tableHeader} role="row">
             <span role="columnheader">Product</span>
             <span role="columnheader">Location</span>
@@ -218,17 +239,24 @@ export default function OrdersSales() {
 
           {displayRows.map((record) => (
             <div key={record.id} className={styles.tableRow} role="row">
-              <span role="cell">{record.productName ?? '\u00A0'}</span>
+              <span role="cell" className={styles.primaryCell}>
+                {record.productName ?? '\u00A0'}
+              </span>
               <span role="cell">{record.location ?? '\u00A0'}</span>
               <span role="cell">{record.code ?? '\u00A0'}</span>
-              <span role="cell">{formatOrders(record.orders) || '\u00A0'}</span>
-              <span role="cell">{formatSales(record.sales) || '\u00A0'}</span>
+              <span role="cell" className={styles.numericCell}>
+                {formatOrders(record.orders) || '\u00A0'}
+              </span>
+              <span role="cell" className={styles.numericCell}>
+                {formatSales(record.sales) || '\u00A0'}
+              </span>
               <span role="cell">{record.receipt ?? '\u00A0'}</span>
               <span role="cell" className={styles.actionCell}>
                 {record.actionLabel ?? '\u00A0'}
               </span>
             </div>
           ))}
+        </div>
         </div>
       </section>
 

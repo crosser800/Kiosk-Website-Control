@@ -206,7 +206,15 @@ export default function AccountsSummary({
         return true;
       }
 
-      return account.name.toLowerCase().includes(normalizedSearch);
+      return [
+        account.name,
+        account.email,
+        account.contact,
+        account.handle,
+        account.access,
+        account.branch,
+        account.status,
+      ].some((value) => value.toLowerCase().includes(normalizedSearch));
     });
 
     const sortedAccounts = [...searchedAccounts].sort((left, right) => {
@@ -278,7 +286,11 @@ export default function AccountsSummary({
             <SearchIcon />
             <input
               type="text"
-              placeholder="Search Name"
+              placeholder={
+                activeView === 'admins'
+                  ? 'Search name, email, branch'
+                  : 'Search name, code, company'
+              }
               value={searchValue}
               onChange={(event) => setSearchValue(event.target.value)}
               className={styles.searchInput}
@@ -327,8 +339,8 @@ export default function AccountsSummary({
           <span>Email</span>
           <span>Contact</span>
           <span>Role</span>
-          <span>{activeView === 'admins' ? 'Access' : 'Handle'}</span>
-          <span>Branch</span>
+          <span>{activeView === 'admins' ? 'Access' : 'Agent Code'}</span>
+          <span>{activeView === 'admins' ? 'Branch' : 'Company'}</span>
           <span>Status</span>
           <span className={styles.actionHeader}>Action</span>
         </div>

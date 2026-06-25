@@ -34,7 +34,6 @@ export default function Sidebar({ active, onNavigate, isCollapsed, onToggle, onL
           <>
             <div className={styles.logo}>
               <img src={logo} alt="logo" />
-              <span>BESTBUILT</span>
             </div>
             <button
               className={styles.toggleBtn}
@@ -49,22 +48,27 @@ export default function Sidebar({ active, onNavigate, isCollapsed, onToggle, onL
 
       <nav className={styles.nav}>
         {navItems.map((item) => (
-          <div
+          <button
             key={item.name}
+            type="button"
             className={`${styles.navItem} ${active === item.name ? styles.active : ''}`}
             onClick={() => onNavigate(item.name)}
             title={isCollapsed ? item.name : ''}
           >
-            <i className={`${item.icon} ${styles.icon}`}></i>
+            <span className={styles.iconWrap}>
+              <i className={`${item.icon} ${styles.icon}`}></i>
+            </span>
             {!isCollapsed && <span className={styles.label}>{item.name}</span>}
-          </div>
+          </button>
         ))}
       </nav>
 
-      <div className={styles.logout} onClick={onLogout}>
-        <i className="fa-solid fa-right-from-bracket"></i>
+      <button type="button" className={styles.logout} onClick={onLogout}>
+        <span className={styles.iconWrap}>
+          <i className="fa-solid fa-right-from-bracket"></i>
+        </span>
         {!isCollapsed && <span className={styles.label}>Logout</span>}
-      </div>
+      </button>
     </div>
   );
 }

@@ -1,30 +1,34 @@
 .sidebar {
   width: 300px;
   height: 100vh;
-  background-color: var(--surface);
+  background:
+    radial-gradient(circle at top left, rgba(250, 204, 21, 0.14), transparent 28%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 96%, white), var(--surface));
   display: flex;
   flex-direction: column;
   padding: 1.5rem 1rem;
-  border-right: 1px solid var(--card-border);
+  border-right: 1px solid color-mix(in srgb, var(--card-border) 78%, white);
+  box-shadow: 8px 0 30px rgba(15, 23, 42, 0.05);
   transition: width 0.3s ease, padding 0.3s ease;
   overflow: hidden;
-  position: fixed;      /* ← fixes scrolling */
+  position: fixed;
   top: 0;
   left: 0;
   z-index: 100;
 }
 
 .sidebar.collapsed {
-  width: 80px;
-  padding: 1.5rem 0.5rem;
+  width: 88px;
+  padding: 1.5rem 0.7rem;
 }
 
 .header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   margin-bottom: 2rem;
-  flex-shrink: 0;        /* ← never moves */
+  position: relative;
+  flex-shrink: 0;
 }
 
 .sidebar.collapsed .header {
@@ -32,10 +36,6 @@
 }
 
 .logo {
-  color: var(--text);
-  font-size: 1.5rem;
-  font-family: 'Montserrat', sans-serif;
-  font-weight: bold;
   display: flex;
   align-items: center;
   gap: 0.625rem;
@@ -44,10 +44,10 @@
 }
 
 .logo img {
-  width: 3rem;
-  height: 3rem;
-  border-radius: 50%;
-  object-fit: cover;
+  width: 4rem;
+  height: 4rem;
+  border-radius: 0;
+  object-fit: contain;
   flex-shrink: 0;
 }
 
@@ -59,70 +59,100 @@
 }
 
 .toggleBtn {
-  background: none;
-  border: none;
+  position: absolute;
+  right: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid color-mix(in srgb, var(--card-border) 80%, white);
+  background: color-mix(in srgb, var(--surface) 92%, white);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 1.25rem;
-  padding: 0.5rem;
+  font-size: 1rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 999px;
   flex-shrink: 0;
-  transition: background 0.2s, color 0.2s;
+  transition: transform 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
 .toggleBtn:hover {
-  background-color: var(--hover-bg);
-  color: var(--hover-text);
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.18), rgba(250, 204, 21, 0.06));
+  border-color: rgba(250, 204, 21, 0.42);
+  color: var(--text);
+  transform: translateY(-1px);
 }
 
 .nav {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.45rem;
   flex: 1;
-  overflow-y: auto;      /* ← only nav scrolls if needed */
+  overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: none; /* ← hides scrollbar */
+  scrollbar-width: none;
 }
 
 .nav::-webkit-scrollbar {
   display: none;
 }
 
-.navItem {
+.navItem,
+.logout {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--text-muted);
-  font-weight: 500;
+  font-weight: 600;
   font-family: 'Montserrat', sans-serif;
-  padding: 1rem;
-  border-radius: 6px;
+  padding: 0.8rem 0.9rem;
+  border-radius: 1rem;
   cursor: pointer;
-  font-size: 1.125rem;
-  transition: background 0.2s, color 0.2s;
+  font-size: 1rem;
+  transition:
+    background 0.22s ease,
+    color 0.22s ease,
+    border-color 0.22s ease,
+    transform 0.22s ease,
+    box-shadow 0.22s ease;
   display: flex;
   align-items: center;
-  gap: 1.875rem;
+  gap: 0.95rem;
   white-space: nowrap;
   flex-shrink: 0;
+  text-align: left;
 }
 
-.navItem:hover {
-  background-color: var(--hover-bg);
-  color: var(--hover-text);
+.navItem:hover,
+.logout:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(250, 204, 21, 0.18),
+    rgba(250, 204, 21, 0.06)
+  );
+  border-color: rgba(250, 204, 21, 0.26);
+  color: var(--text);
+  transform: translateX(2px);
 }
 
 .active {
-  background-color: var(--yellow);
-  color: #111111;
-  font-weight: bold;
+  background: linear-gradient(135deg, #facc15 0%, #f59e0b 100%);
+  border-color: rgba(245, 158, 11, 0.6);
+  color: #111827;
+  box-shadow: 0 12px 24px rgba(245, 158, 11, 0.18);
 }
 
-.sidebar.collapsed .navItem {
+.active .iconWrap {
+  background: rgba(255, 255, 255, 0.34);
+  color: #111827;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.sidebar.collapsed .navItem,
+.sidebar.collapsed .logout {
   gap: 0;
   justify-content: center;
-  padding: 1rem 0.5rem;
+  padding: 0.8rem 0.5rem;
 }
 
 .label {
@@ -132,35 +162,33 @@
 }
 
 .logout {
-  color: var(--text-muted);
-  font-family: 'Montserrat', sans-serif;
-  padding: 0.75rem;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 1.125rem;
-  font-weight: 500;
-  transition: background 0.2s, color 0.2s;
-  display: flex;
+  margin-top: 0.4rem;
+}
+
+.iconWrap {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  display: inline-flex;
   align-items: center;
-  gap: 1.875rem;
-  flex-shrink: 0;        /* ← always at bottom, never scrolls */
-  white-space: nowrap;
-}
-
-.logout:hover {
-  background-color: var(--hover-bg);
-  color: var(--hover-text);
-}
-
-/* reuse collapsed style for logout when sidebar is collapsed */
-.sidebar.collapsed .logout {
-  gap: 0;
   justify-content: center;
-  padding: 0.75rem 0.5rem;
+  background: color-mix(in srgb, var(--surface) 85%, white);
+  border: 1px solid color-mix(in srgb, var(--card-border) 76%, white);
+  color: inherit;
+  flex-shrink: 0;
+  transition: background 0.22s ease, border-color 0.22s ease, transform 0.22s ease;
+}
+
+.navItem:hover .iconWrap,
+.logout:hover .iconWrap {
+  background: rgba(255, 255, 255, 0.75);
+  border-color: rgba(250, 204, 21, 0.35);
+  transform: scale(1.04);
 }
 
 .icon {
-  width: 1.25rem;
+  width: 1.1rem;
   text-align: center;
   flex-shrink: 0;
+  font-size: 0.98rem;
 }

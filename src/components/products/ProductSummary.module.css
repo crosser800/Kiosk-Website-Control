@@ -222,6 +222,20 @@
   color: var(--status-inactive-text);
 }
 
+.rowSkeleton {
+  width: 100%;
+}
+
+.statusSkeleton {
+  width: 5.75rem;
+  border-radius: 999px;
+}
+
+.iconSkeleton {
+  justify-self: end;
+  border-radius: 0.65rem;
+}
+
 .actionButton {
   justify-self: end;
   width: 2.25rem;

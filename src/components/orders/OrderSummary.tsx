@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Skeleton from '../common/Skeleton';
 import { supabase } from '../../lib/supabase';
 import styles from './OrderSummary.module.css';
 
@@ -160,6 +161,30 @@ function formatIsoDate(isoDate: string) {
   return Number.isNaN(parsed.getTime()) ? isoDate : parsed.toLocaleDateString('en-PH');
 }
 
+async function resolveCurrentAdminAccountId() {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+
+  if (userError || !userData.user) {
+    if (userError) {
+      console.error('OrderSummary: failed to resolve current Supabase user for status history', userError);
+    }
+    return null;
+  }
+
+  const { data: adminAccount, error: adminError } = await supabase
+    .from('admin_accounts')
+    .select('id')
+    .eq('auth_user_id', userData.user.id)
+    .maybeSingle();
+
+  if (adminError) {
+    console.error('OrderSummary: failed to resolve current admin account for status history', adminError);
+    return null;
+  }
+
+  return adminAccount?.id ? String(adminAccount.id) : null;
+}
+
 export default function OrderSummary() {
   const warnedMissingAgentIdsRef = useRef<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
@@ -216,7 +241,7 @@ export default function OrderSummary() {
   const visiblePages = buildVisiblePages(currentPage, totalPages);
 
   const emptyText = isLoading
-    ? 'Loading orders...'
+    ? ''
     : loadError
       ? `Failed to load: ${loadError}`
       : 'No orders yet.';
@@ -488,63 +513,112 @@ export default function OrderSummary() {
     } satisfies OrderDetails;
   }
 
+  async function loadStatusHistory(orderId: string) {
+    const { data: historyRows, error } = await supabase
+      .from('order_status_history')
+      .select('id, status, changed_at')
+      .eq('order_id', orderId)
+      .order('changed_at', { ascending: true });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return (historyRows ?? []).map((row: any) => ({
+      id: String(row.id),
+      status: toDisplayStatus(String(row.status ?? '-')),
+      changedAt: String(row.changed_at ?? ''),
+    })) satisfies OrderStatusHistoryItem[];
+  }
+
   async function handleOpenOrder(order: OrderItem) {
     setIsLoadingDetails(true);
     try {
       const details = await fetchOrderDetails(order);
       setSelectedOrder(details);
-      const { data: historyRows } = await supabase
-        .from('order_status_history')
-        .select('id, status, changed_at')
-        .eq('order_id', order.id)
-        .order('changed_at', { ascending: true });
-      setStatusHistory(
-        (historyRows ?? []).map((row: any) => ({
-          id: String(row.id),
-          status: toDisplayStatus(String(row.status ?? '-')),
-          changedAt: String(row.changed_at ?? ''),
-        })),
-      );
+      setStatusHistory(await loadStatusHistory(order.id));
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Failed to load order details.');
     }
     setIsLoadingDetails(false);
   }
+
   async function handleUpdateOrderStatus(nextStatus: string) {
     if (!selectedOrder) return;
+
     setIsSubmittingStatus(true);
+    setLoadError('');
+
     const orderId = selectedOrder.order.id;
+    const updatedOrder = {
+      ...selectedOrder.order,
+      poStatus: toDisplayStatus(nextStatus),
+      rawStatus: nextStatus,
+    };
+
     const { error } = await supabase
       .from('orders')
       .update({ order_status: nextStatus })
       .eq('id', orderId);
+
     if (error) {
       setLoadError(error.message);
       setSnackbar({ type: 'error', message: error.message });
       setIsSubmittingStatus(false);
       return;
     }
+
+    let historyInsertFailed = false;
+    let historyInsertMessage = '';
+
+    try {
+      const adminAccountId = await resolveCurrentAdminAccountId();
+      const { error: historyError } = await supabase.from('order_status_history').insert({
+        order_id: orderId,
+        status: nextStatus,
+        changed_at: new Date().toISOString(),
+        changed_by: adminAccountId,
+        notes: 'Status updated from admin',
+      });
+
+      if (historyError) {
+        historyInsertFailed = true;
+        historyInsertMessage = historyError.message;
+        console.error('OrderSummary: failed to insert order status history', historyError);
+      }
+    } catch (historyError) {
+      historyInsertFailed = true;
+      historyInsertMessage =
+        historyError instanceof Error ? historyError.message : 'Failed to save order status history.';
+      console.error('OrderSummary: unexpected error while inserting order status history', historyError);
+    }
+
     setOrders((prev) =>
       prev.map((item) =>
-        item.id === orderId ? { ...item, poStatus: toDisplayStatus(nextStatus), rawStatus: nextStatus } : item,
+        item.id === orderId ? updatedOrder : item,
       ),
     );
-    setSelectedOrder((prev) =>
-      prev ? { ...prev, order: { ...prev.order, poStatus: toDisplayStatus(nextStatus), rawStatus: nextStatus } } : prev,
+
+    try {
+      const refreshedDetails = await fetchOrderDetails(updatedOrder);
+      setSelectedOrder(refreshedDetails);
+      setStatusHistory(await loadStatusHistory(orderId));
+    } catch (refreshError) {
+      console.error('OrderSummary: failed to refresh order details after status update', refreshError);
+      setSelectedOrder((prev) => (prev ? { ...prev, order: updatedOrder } : prev));
+    }
+
+    setSnackbar(
+      historyInsertFailed
+        ? {
+            type: 'info',
+            message: `Order moved to ${toDisplayStatus(nextStatus)}, but status history could not be saved.`,
+          }
+        : { type: 'success', message: `Order moved to ${toDisplayStatus(nextStatus)}.` },
     );
-    const { data: historyRows } = await supabase
-      .from('order_status_history')
-      .select('id, status, changed_at')
-      .eq('order_id', orderId)
-      .order('changed_at', { ascending: true });
-    setStatusHistory(
-      (historyRows ?? []).map((row: any) => ({
-        id: String(row.id),
-        status: toDisplayStatus(String(row.status ?? '-')),
-        changedAt: String(row.changed_at ?? ''),
-      })),
-    );
-    setSnackbar({ type: 'success', message: `Order moved to ${toDisplayStatus(nextStatus)}.` });
+    if (historyInsertFailed) {
+      setLoadError(historyInsertMessage);
+    }
     setPendingStatusAction(null);
     setIsSubmittingStatus(false);
   }
@@ -564,9 +638,12 @@ export default function OrderSummary() {
   return (
     <section className={styles.wrapper}>
       <div className={styles.topHeader}>
-        <div>
+        <div className={styles.topHeaderCopy}>
+          <p className={styles.sectionEyebrow}>Order controls</p>
           <h2 className={styles.title}>Order Summary</h2>
-          <p className={styles.subtitle}>Use this page to monitor and process all order statuses and schedule windows.</p>
+          <p className={styles.subtitle}>
+            Filter by date and keep the current order queue organized.
+          </p>
         </div>
         <div className={styles.headerActions}>
           {appliedSingleDate || (appliedRangeStart && appliedRangeEnd) ? (
@@ -669,7 +746,22 @@ export default function OrderSummary() {
           <span className={styles.actionHeader}>Action</span>
         </div>
 
-        {pagedOrders.length === 0 ? (
+        {isLoading ? (
+          Array.from({ length: ROWS_PER_PAGE }).map((_, index) => (
+            <div key={`order-skeleton-${index}`} className={styles.tableRow}>
+              <Skeleton className={styles.rowSkeleton} height="1rem" />
+              <Skeleton className={styles.rowSkeleton} height="1rem" />
+              <Skeleton className={styles.rowSkeleton} height="1rem" />
+              <Skeleton className={styles.rowSkeleton} height="1rem" />
+              <Skeleton className={styles.rowSkeleton} height="1rem" />
+              <Skeleton className={styles.rowSkeleton} height="1rem" />
+              <Skeleton className={styles.rowSkeleton} height="1rem" />
+              <Skeleton className={styles.rowSkeleton} height="1rem" />
+              <Skeleton className={styles.rowSkeleton} height="1rem" />
+              <Skeleton className={styles.iconSkeleton} height="2rem" width="2rem" />
+            </div>
+          ))
+        ) : pagedOrders.length === 0 ? (
           <div className={styles.emptyState}>
             <span>{emptyText}</span>
           </div>

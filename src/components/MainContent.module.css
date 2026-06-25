@@ -9,7 +9,34 @@
     flex: 1;
     transition: margin-left 0.3s ease;
   }
+
+.contentFrame {
+    min-height: 100%;
+    animation: contentReveal 0.42s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transform-origin: top center;
+  }
   
   .mainContent.collapsed {
     margin-left: 80px;
+  }
+
+  @keyframes contentReveal {
+    from {
+      opacity: 0;
+      transform: translateY(18px) scale(0.985);
+      filter: blur(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: blur(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mainContent,
+    .contentFrame {
+      transition: none;
+      animation: none;
+    }
   }

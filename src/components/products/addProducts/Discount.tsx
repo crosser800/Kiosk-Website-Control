@@ -9,44 +9,60 @@ type DiscountProps = {
   onChange: (items: DiscountItem[]) => void;
 };
 
+const emptyDiscount: DiscountItem = {
+  id: '',
+  discountRecordId: '',
+  discountClassId: '',
+  variationId: '',
+  discountName: '',
+  discountType: 'Percent',
+  amount: '',
+  minQuantity: '1',
+  maxQuantity: '',
+  branchName: '',
+  priceType: '',
+  priceCode: '',
+  calculationMethod: 'Cascading',
+  applySequence: '1',
+  discountGroup: '',
+  appliesTo: 'UnitPrice',
+  stackable: true,
+  description: '',
+  status: 'Active',
+  priority: '0',
+  startsAt: '',
+  endsAt: '',
+  unitOptionId: '',
+  orderUnitCode: '',
+  unitCondition: 'any_unit',
+  minOrderQuantity: '1',
+  maxOrderQuantity: '',
+  minBaseQuantity: '',
+  maxBaseQuantity: '',
+  unitRuleLabel: '',
+  unitRuleNotes: '',
+  hasPromo: false,
+  promoType: 'Freebie',
+  promoRewardUnitCode: '',
+  promoRewardQuantity: '1',
+  promoRewardLabel: '',
+  promoSourceSurchargeId: '',
+  promoRewardTargetType: 'same_item',
+  promoRewardProductId: '',
+  promoRewardProductLabel: '',
+  promoRewardVariationId: '',
+  promoRewardVariationLabel: '',
+  promoRewardUnitOptionId: '',
+  promoRewardRepeatMode: 'one_time',
+  promoRewardEveryQuantity: '',
+};
+
 export default function Discount({ onBack, onNext, items, onChange }: DiscountProps) {
-  const [draft, setDraft] = useState<DiscountItem>({
-    id: '',
-    variationId: '',
-    discountName: '',
-    discountType: 'Percent',
-    amount: '',
-    minQuantity: '1',
-    maxQuantity: '',
-    branchName: '',
-    priceType: '',
-    priceCode: '',
-    calculationMethod: 'Cascading',
-    applySequence: '1',
-    discountGroup: '',
-    appliesTo: 'UnitPrice',
-    stackable: true,
-  });
+  const [draft, setDraft] = useState<DiscountItem>(emptyDiscount);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   function resetDraft() {
-    setDraft({
-      id: '',
-      variationId: '',
-      discountName: '',
-      discountType: 'Percent',
-      amount: '',
-      minQuantity: '1',
-      maxQuantity: '',
-      branchName: '',
-      priceType: '',
-      priceCode: '',
-      calculationMethod: 'Cascading',
-      applySequence: '1',
-      discountGroup: '',
-      appliesTo: 'UnitPrice',
-      stackable: true,
-    });
+    setDraft(emptyDiscount);
     setEditingId(null);
   }
 

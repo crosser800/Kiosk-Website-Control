@@ -18,7 +18,7 @@ function buildDisplayProducts(products: TopProductRecord[], currentPage: number)
 
     return {
       rank,
-      itemCode: product?.itemCode ?? '',
+      productName: product?.productName ?? '',
       imageUrl: product?.imageUrl ?? '',
     };
   });
@@ -62,7 +62,10 @@ export default function TopProducts() {
   return (
     <div className={styles.container}>
       <div className={styles.header}>
-        <h2 className={styles.title}>TOP PRODUCTS</h2>
+        <div>
+          <h2 className={styles.title}>AVAILABLE PRODUCTS</h2>
+          <p className={styles.subtitle}>Current product lineup preview.</p>
+        </div>
         <div className={styles.dots}>
           {Array.from({ length: totalPages }).map((_, index) => (
             <button
@@ -78,24 +81,27 @@ export default function TopProducts() {
 
       <div className={styles.list}>
         {displayProducts.map((product) => (
-          <div key={product.rank} className={styles.item}>
-            <div className={styles.visualRow}>
-              <span className={styles.rank}>{product.rank}.</span>
+          <div key={product.rank} className={styles.itemWrap}>
+            <div className={styles.item}>
+              <div className={styles.visualRow}>
+                <div className={styles.rankBadge}>{product.rank}</div>
 
-              <div className={styles.imageWrapper}>
-                {product.imageUrl ? (
-                  <img
-                    src={product.imageUrl}
-                    alt={product.itemCode || `Top product ${product.rank}`}
-                    className={styles.image}
-                  />
-                ) : (
-                  <div className={styles.imagePlaceholder} />
-                )}
+                <div className={styles.imageWrapper}>
+                  {product.imageUrl ? (
+                    <img
+                      src={product.imageUrl}
+                      alt={product.productName || `Product ${product.rank}`}
+                      className={styles.image}
+                    />
+                  ) : (
+                    <div className={styles.imagePlaceholder}>
+                      <i className="fa-solid fa-box-open"></i>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-
-            <span className={styles.itemCode}>{product.itemCode || '\u00A0'}</span>
+            <span className={styles.productName}>{product.productName || '\u00A0'}</span>
           </div>
         ))}
       </div>

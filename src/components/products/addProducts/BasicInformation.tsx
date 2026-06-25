@@ -7,15 +7,26 @@ type OptionItem = {
 };
 
 type BasicInformationProps = {
-  onCancel: () => void;
-  onNext: () => void;
+  onCancel?: () => void;
+  onNext?: () => void;
   value: ProductFormState;
   categories: OptionItem[];
   brands: OptionItem[];
   onChange: (next: ProductFormState) => void;
+  showFooterActions?: boolean;
+  nextLabel?: string;
 };
 
-export default function BasicInformation({ onCancel, onNext, value, categories, brands, onChange }: BasicInformationProps) {
+export default function BasicInformation({
+  onCancel,
+  onNext,
+  value,
+  categories,
+  brands,
+  onChange,
+  showFooterActions = true,
+  nextLabel = 'Next',
+}: BasicInformationProps) {
   const statusClass =
     value.status === 'Active'
       ? styles.statusActive
@@ -80,24 +91,29 @@ export default function BasicInformation({ onCancel, onNext, value, categories, 
           />
         </div>
 
-        <div className={styles.field}>
+        <div className={`${styles.field} ${styles.categoryField}`}>
           <label htmlFor="category" className={styles.label}>
             Category<span className={styles.required}>*</span>
           </label>
-          <select
-            id="category"
-            value={value.categoryId}
-            onChange={(event) => handleFieldChange('categoryId', event.target.value)}
-            className={styles.select}
-            required
-          >
-            <option value="">Select category</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.label}
-              </option>
-            ))}
-          </select>
+          <div className={styles.categorySelectWrap}>
+            <span className={styles.categoryIcon} aria-hidden="true">
+              <i className="fa-solid fa-layer-group"></i>
+            </span>
+            <select
+              id="category"
+              value={value.categoryId}
+              onChange={(event) => handleFieldChange('categoryId', event.target.value)}
+              className={`${styles.select} ${styles.categorySelect}`}
+              required
+            >
+              <option value="">Select category</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className={`${styles.field} ${styles.descriptionField}`}>
@@ -132,14 +148,16 @@ export default function BasicInformation({ onCancel, onNext, value, categories, 
           </select>
         </div>
 
-        <div className={styles.actions}>
-          <button type="button" className={styles.cancelButton} onClick={onCancel}>
-            Cancel
-          </button>
-          <button type="button" className={styles.nextButton} onClick={onNext}>
-            Next
-          </button>
-        </div>
+        {showFooterActions ? (
+          <div className={styles.actions}>
+            <button type="button" className={styles.cancelButton} onClick={onCancel}>
+              Cancel
+            </button>
+            <button type="button" className={styles.nextButton} onClick={onNext}>
+              {nextLabel}
+            </button>
+          </div>
+        ) : null}
       </div>
     </form>
   );

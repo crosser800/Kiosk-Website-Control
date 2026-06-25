@@ -1,15 +1,38 @@
 .wrapper {
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
+  gap: 1rem;
 }
 
 .topHeader {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
+  padding: 1.2rem 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 16%, var(--card-border));
+  border-radius: 1rem;
+  background:
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.14), transparent 28%),
+    linear-gradient(180deg, color-mix(in srgb, var(--card-bg) 98%, white), var(--card-bg));
+  box-shadow: var(--card-shadow);
+}
+
+.topHeaderCopy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.sectionEyebrow {
+  margin: 0;
+  color: #0f9f6e;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08rem;
 }
 
 .container {
@@ -17,9 +40,10 @@
   flex-direction: column;
   gap: 1rem;
   padding: 1.5rem;
-  background-color: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: 0.5rem;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card-bg) 98%, white), var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--card-border) 85%, white);
+  border-radius: 1rem;
   box-shadow: var(--card-shadow);
 }
 
@@ -35,28 +59,41 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .dateFilterButton,
 .clearFilterButton {
-  border: 1px solid var(--card-border);
-  border-radius: 0.55rem;
-  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--card-border) 82%, white);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 90%, white);
   color: var(--text);
-  padding: 0.5rem 0.7rem;
+  padding: 0.65rem 0.95rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.5rem;
   cursor: pointer;
   font-family: 'Montserrat', sans-serif;
   font-size: 0.82rem;
   font-weight: 700;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 .dateFilterButton {
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: linear-gradient(135deg, #facc15 0%, #f59e0b 100%);
+  border-color: rgba(245, 158, 11, 0.58);
   color: #1f2937;
+  box-shadow: 0 10px 20px rgba(245, 158, 11, 0.16);
+}
+
+.dateFilterButton:hover,
+.clearFilterButton:hover {
+  transform: translateY(-1px);
+}
+
+.clearFilterButton:hover {
+  border-color: rgba(250, 204, 21, 0.34);
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.14), rgba(250, 204, 21, 0.04));
 }
 
 .filterIcon {
@@ -86,31 +123,34 @@
   width: min(520px, 100%);
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 0.8rem;
+  border-radius: 1rem;
   box-shadow: var(--card-shadow);
-  padding: 0.9rem;
+  padding: 1rem;
 }
 
 .dateModeTabs {
   display: inline-flex;
-  border: 1px solid var(--card-border);
-  border-radius: 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--card-border) 84%, white);
+  border-radius: 999px;
   overflow: hidden;
+  padding: 0.18rem;
+  background: color-mix(in srgb, var(--surface) 88%, white);
 }
 
 .dateModeTab {
   border: 0;
-  background: var(--surface);
+  background: transparent;
   color: var(--text-muted);
   font-family: 'Montserrat', sans-serif;
   font-size: 0.8rem;
   font-weight: 700;
-  padding: 0.45rem 0.8rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
   cursor: pointer;
 }
 
 .dateModeTabActive {
-  background: var(--yellow);
+  background: linear-gradient(135deg, #facc15 0%, #f59e0b 100%);
   color: #1f2937;
 }
 
@@ -121,14 +161,14 @@
 }
 
 .calendarControls select {
-  border: 1px solid var(--card-border);
-  border-radius: 0.5rem;
-  padding: 0.38rem 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--card-border) 84%, white);
+  border-radius: 0.7rem;
+  padding: 0.5rem 0.65rem;
   font-family: 'Montserrat', sans-serif;
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--text);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 90%, white);
 }
 
 .calendarGrid {
@@ -148,15 +188,21 @@
 }
 
 .calendarCell {
-  border: 1px solid var(--card-border);
-  border-radius: 0.45rem;
-  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--card-border) 82%, white);
+  border-radius: 0.7rem;
+  background: color-mix(in srgb, var(--surface) 92%, white);
   color: var(--text);
   min-height: 2rem;
   font-family: 'Montserrat', sans-serif;
   font-size: 0.75rem;
   font-weight: 700;
   cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+
+.calendarCell:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(250, 204, 21, 0.34);
 }
 
 .calendarCellEmpty {
@@ -165,8 +211,8 @@
 }
 
 .calendarCellSelected {
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: linear-gradient(135deg, #facc15 0%, #f59e0b 100%);
+  border-color: rgba(245, 158, 11, 0.58);
   color: #1f2937;
 }
 
@@ -203,8 +249,8 @@
   margin: 0;
   color: var(--text);
   font-family: 'Montserrat', sans-serif;
-  font-size: 1.05rem;
-  font-weight: 700;
+  font-size: 1.3rem;
+  font-weight: 800;
 }
 
 .loadingDetails {
@@ -215,45 +261,45 @@
 }
 
 .filterTabs {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 1.25rem;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  padding: 0.4rem;
+  border: 1px solid color-mix(in srgb, var(--card-border) 84%, white);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--surface) 92%, white);
 }
 
 .filterTab {
-  position: relative;
-  padding: 0 0 0.45rem;
-  border: 0;
+  padding: 0.7rem 0.95rem;
+  border: 1px solid transparent;
+  border-radius: 0.85rem;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   font-family: 'Montserrat', sans-serif;
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   font-weight: 700;
-}
-
-.filterTab::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 0.2rem;
-  border-radius: 999px;
-  background-color: var(--yellow);
-  opacity: 0;
-  transform: scaleX(0.35);
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
 }
 
 .filterTab:hover,
 .filterTabActive {
   color: var(--text);
+  transform: translateY(-1px);
 }
 
-.filterTabActive::after {
-  opacity: 1;
-  transform: scaleX(1);
+.filterTab:hover {
+  border-color: rgba(250, 204, 21, 0.24);
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.12), rgba(250, 204, 21, 0.04));
+}
+
+.filterTabActive {
+  background: linear-gradient(135deg, #facc15 0%, #f59e0b 100%);
+  border-color: rgba(245, 158, 11, 0.58);
+  color: #1f2937;
+  box-shadow: 0 10px 18px rgba(245, 158, 11, 0.14);
 }
 
 .addButton {
@@ -280,6 +326,9 @@
 .table {
   width: 100%;
   overflow-x: auto;
+  border: 1px solid color-mix(in srgb, var(--card-border) 82%, white);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--surface) 96%, white);
 }
 
 .tableHeader,
@@ -292,8 +341,9 @@
 }
 
 .tableHeader {
-  padding: 0.8rem 0.9rem;
-  border-bottom: 1px solid var(--card-border);
+  padding: 0.95rem 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--card-border) 82%, white);
+  background: linear-gradient(180deg, rgba(250, 204, 21, 0.08), rgba(250, 204, 21, 0.02));
   color: var(--text-muted);
   font-family: 'Montserrat', sans-serif;
   font-size: 0.68rem;
@@ -303,12 +353,17 @@
 }
 
 .tableRow {
-  padding: 0.9rem;
-  border-bottom: 1px solid var(--card-border);
+  padding: 0.95rem 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--card-border) 72%, white);
   color: var(--text);
   font-family: 'Montserrat', sans-serif;
   font-size: 0.78rem;
   font-weight: 600;
+  transition: background-color 0.18s ease;
+}
+
+.tableRow:hover {
+  background: color-mix(in srgb, var(--surface) 90%, white);
 }
 
 .tableRow:last-child {
@@ -326,17 +381,29 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--card-border);
-  border-radius: 0.5rem;
-  background-color: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--card-border) 82%, white);
+  border-radius: 0.7rem;
+  background-color: color-mix(in srgb, var(--surface) 94%, white);
   color: var(--text);
   cursor: pointer;
   font-size: 0.85rem;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
 .actionButton:hover {
-  border-color: var(--yellow);
-  color: var(--yellow);
+  transform: translateY(-1px);
+  border-color: rgba(250, 204, 21, 0.36);
+  color: #b7791f;
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.14), rgba(250, 204, 21, 0.04));
+}
+
+.rowSkeleton {
+  width: 100%;
+}
+
+.iconSkeleton {
+  justify-self: end;
+  border-radius: 0.5rem;
 }
 
 .emptyState {
@@ -672,9 +739,9 @@
 .pageButton,
 .pageInput {
   height: 2.4rem;
-  border-radius: 0.7rem;
-  border: 1px solid var(--card-border);
-  background-color: var(--surface);
+  border-radius: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--card-border) 82%, white);
+  background-color: color-mix(in srgb, var(--surface) 94%, white);
   color: var(--text);
   font-family: 'Montserrat', sans-serif;
   font-size: 0.9rem;
@@ -696,8 +763,8 @@
 }
 
 .pageButtonActive {
-  background-color: var(--yellow);
-  border-color: var(--yellow);
+  background: linear-gradient(135deg, #facc15 0%, #f59e0b 100%);
+  border-color: rgba(245, 158, 11, 0.58);
   color: #1f2937;
 }
 

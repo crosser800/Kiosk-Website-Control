@@ -1,16 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { AccountSummaryItem, AccountView } from './AccountsSummary';
-import {
-  getAccountHandlingOptions,
-  subscribeAccountHandlingOptions,
-} from '../../services/accountHandling';
 import { updateAccountItem } from '../../services/accounts';
 import { getBranchTypeOptions, subscribeBranchTypeOptions } from '../../services/branchTypes';
 import styles from './AccountModal.module.css';
 
 type EditAccountProps = {
   account: AccountSummaryItem;
-  onSave: (accounts: AccountSummaryItem[]) => void;
+  onSave: (accounts: Promise<AccountSummaryItem[]> | AccountSummaryItem[]) => void;
   onClose: () => void;
 };
 
@@ -57,13 +53,11 @@ function getInitialForm(account: AccountSummaryItem): AccountForm {
 
 export default function EditAccount({ account, onSave, onClose }: EditAccountProps) {
   const [form, setForm] = useState<AccountForm>(() => getInitialForm(account));
-  const [handlingOptions, setHandlingOptions] = useState<string[]>(() => getAccountHandlingOptions());
   const [branchOptions, setBranchOptions] = useState<string[]>(() => getBranchTypeOptions());
   const [isAccessOpen, setIsAccessOpen] = useState(false);
   const [validationError, setValidationError] = useState('');
   const accountLabel = form.role === 'admins' ? 'Admin' : 'Agent';
 
-  useEffect(() => subscribeAccountHandlingOptions(setHandlingOptions), []);
   useEffect(() => subscribeBranchTypeOptions(setBranchOptions), []);
 
   function updateField<Field extends keyof AccountForm>(
@@ -115,7 +109,7 @@ export default function EditAccount({ account, onSave, onClose }: EditAccountPro
       form.branch,
     ];
     const hasRoleSpecificValue =
-      form.role === 'admins' ? form.access.length > 0 : Boolean(form.handling);
+      form.role === 'admins' ? form.access.length > 0 : Boolean(form.handling.trim());
 
     if (requiredValues.some((value) => !value.trim()) || !hasRoleSpecificValue) {
       setValidationError('Complete all required fields except email address.');
@@ -131,7 +125,7 @@ export default function EditAccount({ account, onSave, onClose }: EditAccountPro
     return true;
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!validateForm()) {
       return;
     }
@@ -285,20 +279,15 @@ export default function EditAccount({ account, onSave, onClose }: EditAccountPro
               </div>
             ) : (
               <label className={styles.field}>
-                <span className={styles.label}>Handling</span>
-                <select
+                <span className={styles.label}>Agent Code</span>
+                <input
+                  type="text"
                   value={form.handling}
                   onChange={(event) => updateField('handling', event.target.value)}
-                  className={styles.select}
+                  placeholder="Enter agent code"
+                  className={styles.input}
                   required
-                >
-                  <option value=""></option>
-                  {handlingOptions.map((handling) => (
-                    <option key={handling} value={handling}>
-                      {handling}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
             )}
 
@@ -315,22 +304,36 @@ export default function EditAccount({ account, onSave, onClose }: EditAccountPro
               />
             </label>
 
-            <label className={styles.field}>
-              <span className={styles.label}>Choose Branch</span>
-              <select
-                value={form.branch}
-                onChange={(event) => updateField('branch', event.target.value)}
-                className={styles.select}
-                required
-              >
-                <option value=""></option>
-                {branchOptions.map((branch) => (
-                  <option key={branch} value={branch}>
-                    {branch}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {form.role === 'admins' ? (
+              <label className={styles.field}>
+                <span className={styles.label}>Choose Branch</span>
+                <select
+                  value={form.branch}
+                  onChange={(event) => updateField('branch', event.target.value)}
+                  className={styles.select}
+                  required
+                >
+                  <option value=""></option>
+                  {branchOptions.map((branch) => (
+                    <option key={branch} value={branch}>
+                      {branch}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label className={styles.field}>
+                <span className={styles.label}>Company Name</span>
+                <input
+                  type="text"
+                  value={form.branch}
+                  onChange={(event) => updateField('branch', event.target.value)}
+                  placeholder="Enter company name"
+                  className={styles.input}
+                  required
+                />
+              </label>
+            )}
 
             <label className={styles.field}>
               <span className={styles.label}>Password</span>
@@ -357,7 +360,7 @@ export default function EditAccount({ account, onSave, onClose }: EditAccountPro
         {validationError && <p className={styles.validationError}>{validationError}</p>}
 
         <div className={styles.actions}>
-          <button type="button" className={styles.createButton} onClick={handleSave}>
+          <button type="button" className={styles.createButton} onClick={() => void handleSave()}>
             Save Changes
           </button>
           <button type="button" className={styles.cancelButton} onClick={onClose}>

@@ -1,9 +1,10 @@
+import { supabase } from '../lib/supabase';
 import type { AccountSummaryItem, AccountView } from '../components/account/AccountsSummary';
 
 const STORAGE_KEY = 'kiosk.accounts';
 const CHANGE_EVENT = 'accounts-changed';
 
-type AccountStatus = 'Active' | 'Inactive';
+type AccountStatus = 'Active' | 'Inactive' | 'Blocked';
 
 export type AccountInput = {
   profileImage?: string;
@@ -15,6 +16,21 @@ export type AccountInput = {
   access: string;
   branch: string;
   status: AccountStatus;
+};
+
+type AgentAccountRow = {
+  id: string;
+  auth_user_id: string | null;
+  agent_code: string | null;
+  full_name: string;
+  company_name: string | null;
+  contact_number: string | null;
+  email: string | null;
+  address: string | null;
+  status: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 const defaultAccounts: AccountSummaryItem[] = [];
@@ -30,9 +46,14 @@ function normalizeRole(role: unknown): AccountView {
 }
 
 function normalizeStatus(status: unknown): AccountStatus {
-  return typeof status === 'string' && status.toLowerCase() === 'inactive'
-    ? 'Inactive'
-    : 'Active';
+  const normalized = String(status ?? '').toLowerCase();
+  if (normalized === 'inactive') {
+    return 'Inactive';
+  }
+  if (normalized === 'blocked') {
+    return 'Blocked';
+  }
+  return 'Active';
 }
 
 function normalizeAccounts(accounts: unknown[]) {
@@ -75,7 +96,7 @@ function normalizeAccounts(accounts: unknown[]) {
   }, []);
 }
 
-export function getAccountItems() {
+function getStoredAccounts() {
   if (typeof window === 'undefined') {
     return defaultAccounts;
   }
@@ -99,7 +120,11 @@ export function getAccountItems() {
   }
 }
 
-export function saveAccountItems(accounts: AccountSummaryItem[]) {
+function getStoredAdminAccounts() {
+  return getStoredAccounts().filter((account) => account.role === 'admins');
+}
+
+function saveStoredAccounts(accounts: AccountSummaryItem[]) {
   const normalizedAccounts = normalizeAccounts(accounts);
 
   if (typeof window !== 'undefined') {
@@ -110,51 +135,167 @@ export function saveAccountItems(accounts: AccountSummaryItem[]) {
   return normalizedAccounts;
 }
 
-export function addAccountItem(account: AccountInput) {
-  return saveAccountItems([
-    ...getAccountItems(),
-    {
-      ...account,
-      id: createId(),
-      createdAt: new Date().toISOString(),
-    },
-  ]);
+function mapAgentRowToAccount(row: AgentAccountRow): AccountSummaryItem {
+  return {
+    id: String(row.id),
+    name: String(row.full_name ?? '').trim(),
+    email: String(row.email ?? '').trim(),
+    contact: String(row.contact_number ?? '').trim(),
+    role: 'agents',
+    handle: String(row.agent_code ?? '').trim(),
+    access: '',
+    branch:
+      String(row.company_name ?? '').trim() ||
+      String(row.address ?? '').trim() ||
+      '-',
+    status: normalizeStatus(row.status),
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+  };
 }
 
-export function updateAccountItem(accountId: string, account: AccountInput) {
-  return saveAccountItems(
-    getAccountItems().map((currentAccount) =>
-      currentAccount.id === accountId
-        ? {
-            ...account,
-            id: accountId,
-            createdAt: currentAccount.createdAt,
-          }
-        : currentAccount,
-    ),
-  );
+async function fetchAgentAccounts() {
+  const { data, error } = await supabase
+    .from('agent_accounts')
+    .select(
+      'id, auth_user_id, agent_code, full_name, company_name, contact_number, email, address, status, notes, created_at, updated_at',
+    )
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []).map((row) => mapAgentRowToAccount(row as AgentAccountRow));
+}
+
+export function getAccountItems() {
+  return getStoredAdminAccounts();
+}
+
+export async function loadAccountItems() {
+  const admins = getStoredAdminAccounts();
+  const agents = await fetchAgentAccounts();
+  return [...admins, ...agents];
+}
+
+export async function addAccountItem(account: AccountInput) {
+  if (account.role === 'admins') {
+    saveStoredAccounts([
+      ...getStoredAdminAccounts(),
+      {
+        ...account,
+        id: createId(),
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+
+    return loadAccountItems();
+  }
+
+  const { error } = await supabase.from('agent_accounts').insert({
+    agent_code: account.handle.trim() || null,
+    full_name: account.name.trim(),
+    company_name: account.branch.trim() || null,
+    contact_number: account.contact.trim() || null,
+    email: account.email.trim() || null,
+    status: account.status,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return loadAccountItems();
+}
+
+export async function updateAccountItem(accountId: string, account: AccountInput) {
+  if (account.role === 'admins') {
+    saveStoredAccounts(
+      getStoredAdminAccounts().map((currentAccount) =>
+        currentAccount.id === accountId
+          ? {
+              ...account,
+              id: accountId,
+              createdAt: currentAccount.createdAt,
+            }
+          : currentAccount,
+      ),
+    );
+
+    return loadAccountItems();
+  }
+
+  const { error } = await supabase
+    .from('agent_accounts')
+    .update({
+      agent_code: account.handle.trim() || null,
+      full_name: account.name.trim(),
+      company_name: account.branch.trim() || null,
+      contact_number: account.contact.trim() || null,
+      email: account.email.trim() || null,
+      status: account.status,
+    })
+    .eq('id', accountId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return loadAccountItems();
 }
 
 export function subscribeAccountItems(callback: (accounts: AccountSummaryItem[]) => void) {
+  let disposed = false;
+
+  const syncAccounts = async () => {
+    try {
+      const accounts = await loadAccountItems();
+      if (!disposed) {
+        callback(accounts);
+      }
+    } catch {
+      if (!disposed) {
+        callback(getStoredAdminAccounts());
+      }
+    }
+  };
+
+  void syncAccounts();
+
   if (typeof window === 'undefined') {
-    return () => {};
+    return () => {
+      disposed = true;
+    };
   }
 
   const handleChange = () => {
-    callback(getAccountItems());
+    void syncAccounts();
   };
 
   const handleStorage = (event: StorageEvent) => {
     if (event.key === STORAGE_KEY) {
-      callback(getAccountItems());
+      void syncAccounts();
     }
   };
+
+  const agentChannel = supabase
+    .channel('agent-accounts-changes')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'agent_accounts' },
+      () => {
+        void syncAccounts();
+      },
+    )
+    .subscribe();
 
   window.addEventListener(CHANGE_EVENT, handleChange);
   window.addEventListener('storage', handleStorage);
 
   return () => {
+    disposed = true;
     window.removeEventListener(CHANGE_EVENT, handleChange);
     window.removeEventListener('storage', handleStorage);
+    void supabase.removeChannel(agentChannel);
   };
 }

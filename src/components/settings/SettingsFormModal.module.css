@@ -1,0 +1,132 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(15, 23, 42, 0.44);
+  backdrop-filter: blur(4px);
+  animation: overlayFadeIn 0.22s ease;
+}
+
+.card {
+  width: min(100%, 52rem);
+  max-height: min(100vh - 3rem, 48rem);
+  overflow: auto;
+  border: 1px solid var(--card-border);
+  border-radius: 0.9rem;
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  padding: 1rem;
+  animation: panelRiseIn 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform-origin: top left;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.title {
+  margin: 0;
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.subtitle {
+  margin: 0.25rem 0 0;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.closeButton {
+  width: 2.35rem;
+  height: 2.35rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.6rem;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.closeButton:hover {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.primaryButton,
+.secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.primaryButton {
+  min-height: 2.65rem;
+  padding: 0 1rem;
+  border: 1px solid var(--yellow);
+  background-color: var(--yellow);
+  color: #1f2937;
+}
+
+.secondaryButton {
+  min-height: 2.35rem;
+  padding: 0 0.9rem;
+  border: 1px solid var(--card-border);
+  background-color: var(--surface);
+  color: var(--text-muted);
+}
+
+.secondaryButton:hover {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+@keyframes overlayFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes panelRiseIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay,
+  .card {
+    animation: none;
+  }
+}

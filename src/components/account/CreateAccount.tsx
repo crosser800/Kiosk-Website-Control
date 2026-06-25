@@ -1,16 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { AccountSummaryItem, AccountView } from './AccountsSummary';
-import {
-  getAccountHandlingOptions,
-  subscribeAccountHandlingOptions,
-} from '../../services/accountHandling';
 import { addAccountItem } from '../../services/accounts';
 import { getBranchTypeOptions, subscribeBranchTypeOptions } from '../../services/branchTypes';
 import styles from './AccountModal.module.css';
 
 type CreateAccountProps = {
   accountType: AccountView;
-  onCreate: (accounts: AccountSummaryItem[]) => void;
+  onCreate: (accounts: Promise<AccountSummaryItem[]> | AccountSummaryItem[]) => void;
   onClose: () => void;
 };
 
@@ -57,13 +53,11 @@ function getInitialForm(accountType: AccountView): AccountForm {
 
 export default function CreateAccount({ accountType, onCreate, onClose }: CreateAccountProps) {
   const [form, setForm] = useState<AccountForm>(() => getInitialForm(accountType));
-  const [handlingOptions, setHandlingOptions] = useState<string[]>(() => getAccountHandlingOptions());
   const [branchOptions, setBranchOptions] = useState<string[]>(() => getBranchTypeOptions());
   const [isAccessOpen, setIsAccessOpen] = useState(false);
   const [validationError, setValidationError] = useState('');
   const accountLabel = form.role === 'admins' ? 'Admin' : 'Agent';
 
-  useEffect(() => subscribeAccountHandlingOptions(setHandlingOptions), []);
   useEffect(() => subscribeBranchTypeOptions(setBranchOptions), []);
 
   function updateField<Field extends keyof AccountForm>(
@@ -117,7 +111,7 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
       form.confirmPassword,
     ];
     const hasRoleSpecificValue =
-      form.role === 'admins' ? form.access.length > 0 : Boolean(form.handling);
+      form.role === 'admins' ? form.access.length > 0 : Boolean(form.handling.trim());
 
     if (requiredValues.some((value) => !value.trim()) || !hasRoleSpecificValue) {
       setValidationError('Complete all required fields except email address.');
@@ -133,7 +127,7 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
     return true;
   }
 
-  function handleCreate() {
+  async function handleCreate() {
     if (!validateForm()) {
       return;
     }
@@ -287,20 +281,15 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
               </div>
             ) : (
               <label className={styles.field}>
-                <span className={styles.label}>Handling</span>
-                <select
+                <span className={styles.label}>Agent Code</span>
+                <input
+                  type="text"
                   value={form.handling}
                   onChange={(event) => updateField('handling', event.target.value)}
-                  className={styles.select}
+                  placeholder="Enter agent code"
+                  className={styles.input}
                   required
-                >
-                  <option value=""></option>
-                  {handlingOptions.map((handling) => (
-                    <option key={handling} value={handling}>
-                      {handling}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
             )}
 
@@ -317,22 +306,36 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
               />
             </label>
 
-            <label className={styles.field}>
-              <span className={styles.label}>Choose Branch</span>
-              <select
-                value={form.branch}
-                onChange={(event) => updateField('branch', event.target.value)}
-                className={styles.select}
-                required
-              >
-                <option value=""></option>
-                {branchOptions.map((branch) => (
-                  <option key={branch} value={branch}>
-                    {branch}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {form.role === 'admins' ? (
+              <label className={styles.field}>
+                <span className={styles.label}>Choose Branch</span>
+                <select
+                  value={form.branch}
+                  onChange={(event) => updateField('branch', event.target.value)}
+                  className={styles.select}
+                  required
+                >
+                  <option value=""></option>
+                  {branchOptions.map((branch) => (
+                    <option key={branch} value={branch}>
+                      {branch}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label className={styles.field}>
+                <span className={styles.label}>Company Name</span>
+                <input
+                  type="text"
+                  value={form.branch}
+                  onChange={(event) => updateField('branch', event.target.value)}
+                  placeholder="Enter company name"
+                  className={styles.input}
+                  required
+                />
+              </label>
+            )}
 
             <label className={styles.field}>
               <span className={styles.label}>Password</span>
@@ -361,7 +364,7 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
         {validationError && <p className={styles.validationError}>{validationError}</p>}
 
         <div className={styles.actions}>
-          <button type="button" className={styles.createButton} onClick={handleCreate}>
+          <button type="button" className={styles.createButton} onClick={() => void handleCreate()}>
             Create Account
           </button>
           <button type="button" className={styles.cancelButton} onClick={onClose}>

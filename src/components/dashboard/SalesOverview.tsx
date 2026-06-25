@@ -6,8 +6,8 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
+  Cell,
 } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
@@ -19,6 +19,16 @@ type SalesOverviewProps = {
     yesterday: number;
   }[];
 };
+
+const EMPTY_CHART_DATA = [
+  { day: 'Mon', today: 0, yesterday: 0 },
+  { day: 'Tue', today: 0, yesterday: 0 },
+  { day: 'Wed', today: 0, yesterday: 0 },
+  { day: 'Thu', today: 0, yesterday: 0 },
+  { day: 'Fri', today: 0, yesterday: 0 },
+  { day: 'Sat', today: 0, yesterday: 0 },
+  { day: 'Sun', today: 0, yesterday: 0 },
+];
 
 const toNumber = (value: ValueType | undefined) => {
   if (typeof value === 'number') return value;
@@ -41,7 +51,47 @@ const formatTooltipValue = (value: ValueType | undefined, _name: NameType | unde
   return `PHP ${numericValue.toLocaleString()}`;
 };
 
+function CustomTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ color?: string; dataKey?: string; value?: ValueType }>;
+  label?: string;
+}) {
+  if (!active) {
+    return null;
+  }
+
+  const todayValue = toNumber(payload?.find((entry) => entry.dataKey === 'today')?.value);
+  const yesterdayValue = toNumber(payload?.find((entry) => entry.dataKey === 'yesterday')?.value);
+
+  return (
+    <div className={styles.tooltipCard}>
+      <p className={styles.tooltipLabel}>{label}</p>
+      <div className={styles.tooltipRow}>
+        <span className={styles.tooltipKey}>
+          <span className={styles.tooltipDotToday}></span>
+          Today
+        </span>
+        <strong>PHP {todayValue.toLocaleString()}</strong>
+      </div>
+      <div className={styles.tooltipRow}>
+        <span className={styles.tooltipKey}>
+          <span className={styles.tooltipDotYesterday}></span>
+          Yesterday
+        </span>
+        <strong>PHP {yesterdayValue.toLocaleString()}</strong>
+      </div>
+    </div>
+  );
+}
+
 export default function SalesOverview({ total, data }: SalesOverviewProps) {
+  const chartData = data.length > 0 ? data : EMPTY_CHART_DATA;
+  const hasRealData = data.some((entry) => entry.today > 0 || entry.yesterday > 0);
+
   return (
     <div className={styles.card}>
       <div className={styles.top}>
@@ -51,34 +101,61 @@ export default function SalesOverview({ total, data }: SalesOverviewProps) {
         </p>
       </div>
 
-      {data.length === 0 ? (
-        <div className={styles.empty}>
-          <i className="fa-solid fa-chart-simple"></i>
-          <p>No data yet</p>
-        </div>
-      ) : (
-        <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={data} barCategoryGap="30%" barGap={4}>
-            <CartesianGrid vertical={false} stroke="var(--card-border)" />
+      <div className={styles.legendRow}>
+        <span className={styles.legendItem}>
+          <span className={styles.legendDotToday}></span>
+          Today
+        </span>
+        <span className={styles.legendItem}>
+          <span className={styles.legendDotYesterday}></span>
+          Yesterday
+        </span>
+      </div>
+
+      <div className={styles.chartWrap}>
+        <ResponsiveContainer width="100%" height={280}>
+          <BarChart data={chartData} barCategoryGap="26%" barGap={6}>
+            <defs>
+              <linearGradient id="salesTodayFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#22c55e" stopOpacity="0.95" />
+                <stop offset="100%" stopColor="#16a34a" stopOpacity="0.7" />
+              </linearGradient>
+              <linearGradient id="salesYesterdayFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#facc15" stopOpacity="0.95" />
+                <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.7" />
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} stroke="var(--card-border)" strokeDasharray="4 4" />
             <XAxis dataKey="day" axisLine={false} tickLine={false} />
-            <YAxis tickFormatter={formatY} axisLine={false} tickLine={false} />
-            <Tooltip formatter={formatTooltipValue} />
-            <Legend />
-            <Bar
-              dataKey="today"
-              name="Today"
-              fill="#22c55e"
-              radius={[4, 4, 0, 0]}
+            <YAxis tickFormatter={formatY} axisLine={false} tickLine={false} allowDecimals={false} />
+            <Tooltip
+              cursor={{ fill: 'rgba(250, 204, 21, 0.08)' }}
+              content={<CustomTooltip />}
+              formatter={formatTooltipValue}
             />
-            <Bar
-              dataKey="yesterday"
-              name="Yesterday"
-              fill="#f5c518"
-              radius={[4, 4, 0, 0]}
-            />
+            <Bar dataKey="today" name="Today" fill="url(#salesTodayFill)" radius={[10, 10, 0, 0]}>
+              {chartData.map((entry) => (
+                <Cell
+                  key={`today-${entry.day}`}
+                  fillOpacity={hasRealData ? 1 : 0.45}
+                />
+              ))}
+            </Bar>
+            <Bar dataKey="yesterday" name="Yesterday" fill="url(#salesYesterdayFill)" radius={[10, 10, 0, 0]}>
+              {chartData.map((entry) => (
+                <Cell
+                  key={`yesterday-${entry.day}`}
+                  fillOpacity={hasRealData ? 0.9 : 0.3}
+                />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
-      )}
+      </div>
+
+      {!hasRealData ? (
+        <p className={styles.emptyHint}>No sales data yet. Hover the bars to preview daily values.</p>
+      ) : null}
     </div>
   );
 }
