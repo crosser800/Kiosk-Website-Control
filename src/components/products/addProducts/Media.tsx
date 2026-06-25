@@ -15,27 +15,119 @@ type MediaProps = {
 };
 
 const MAX_MEDIA_FILES = 30;
-const acceptedTypes = 'image/jpeg,image/jpg,image/png,video/mp4';
-const supportedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'video/mp4'];
+const acceptedTypes =
+  'image/jpeg,image/jpg,image/png,image/webp,video/mp4,video/webm';
+const supportedMimeTypes = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'video/mp4',
+  'video/webm',
+];
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_VIDEO_SIZE_BYTES = 25 * 1024 * 1024;
+const MAX_IMAGE_DIMENSION = 1920;
+const IMAGE_WEBP_QUALITY = 0.82;
 
-function createMediaItems(files: File[]) {
+function replaceFileExtension(fileName: string, extension: string) {
+  const lastDotIndex = fileName.lastIndexOf('.');
+  if (lastDotIndex === -1) {
+    return `${fileName}.${extension}`;
+  }
+  return `${fileName.slice(0, lastDotIndex)}.${extension}`;
+}
+
+function loadImageFile(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error(`Failed to read ${file.name}.`));
+    };
+
+    image.src = objectUrl;
+  });
+}
+
+function canvasToWebpBlob(canvas: HTMLCanvasElement) {
+  return new Promise<Blob | null>((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), 'image/webp', IMAGE_WEBP_QUALITY);
+  });
+}
+
+async function compressImageToWebp(file: File) {
+  if (file.type === 'image/webp') {
+    return file;
+  }
+
+  const image = await loadImageFile(file);
+  const scale = Math.min(1, MAX_IMAGE_DIMENSION / Math.max(image.width, image.height));
+  const targetWidth = Math.max(1, Math.round(image.width * scale));
+  const targetHeight = Math.max(1, Math.round(image.height * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+
+  const context = canvas.getContext('2d');
+  if (!context) {
+    return file;
+  }
+
+  context.drawImage(image, 0, 0, targetWidth, targetHeight);
+  const blob = await canvasToWebpBlob(canvas);
+  if (!blob) {
+    return file;
+  }
+
+  return new File([blob], replaceFileExtension(file.name, 'webp'), {
+    type: 'image/webp',
+    lastModified: Date.now(),
+  });
+}
+
+async function normalizeUploadFile(file: File) {
+  if (file.type.startsWith('image/')) {
+    return compressImageToWebp(file);
+  }
+
+  return file;
+}
+
+async function createMediaItems(files: File[]) {
   const nextItems: MediaItem[] = [];
   const rejectedFiles: string[] = [];
 
-  files.forEach((file) => {
-    if (!supportedMimeTypes.includes(file.type)) {
-      rejectedFiles.push(`${file.name} is not a supported file type.`);
-      return;
+  for (const originalFile of files) {
+    if (!supportedMimeTypes.includes(originalFile.type)) {
+      rejectedFiles.push(`${originalFile.name} is not a supported file type.`);
+      continue;
+    }
+
+    let file = originalFile;
+    try {
+      file = await normalizeUploadFile(originalFile);
+    } catch {
+      rejectedFiles.push(`${originalFile.name} could not be processed.`);
+      continue;
     }
 
     const isVideo = file.type.startsWith('video/');
     const maxSize = isVideo ? MAX_VIDEO_SIZE_BYTES : MAX_IMAGE_SIZE_BYTES;
 
     if (file.size > maxSize) {
-      rejectedFiles.push(`${file.name} exceeds the ${isVideo ? '25 MB video' : '5 MB image'} limit.`);
-      return;
+      rejectedFiles.push(
+        `${file.name} exceeds the ${isVideo ? '25 MB video' : '5 MB image'} limit.`,
+      );
+      continue;
     }
 
     nextItems.push({
@@ -49,7 +141,7 @@ function createMediaItems(files: File[]) {
       isExisting: false,
       mediaPath: null,
     });
-  });
+  }
 
   return { nextItems, rejectedFiles };
 }
@@ -82,7 +174,7 @@ export default function Media({
     };
   }, []);
 
-  function addFiles(files: File[]) {
+  async function addFiles(files: File[]) {
     if (files.length === 0) return;
 
     const remainingSlots = MAX_MEDIA_FILES - items.length;
@@ -91,7 +183,7 @@ export default function Media({
       return;
     }
 
-    const { nextItems: validItems, rejectedFiles } = createMediaItems(files);
+    const { nextItems: validItems, rejectedFiles } = await createMediaItems(files);
     const nextItems = validItems.slice(0, remainingSlots);
 
     if (validItems.length > remainingSlots) {
@@ -113,14 +205,14 @@ export default function Media({
 
   function handleFileSelection(event: ChangeEvent<HTMLInputElement>) {
     const selectedFiles = Array.from(event.target.files ?? []);
-    addFiles(selectedFiles);
+    void addFiles(selectedFiles);
     event.target.value = '';
   }
 
   function handleUploadDrop(event: DragEvent<HTMLLabelElement>) {
     event.preventDefault();
     setIsDragOverUpload(false);
-    addFiles(Array.from(event.dataTransfer.files));
+    void addFiles(Array.from(event.dataTransfer.files));
   }
 
   function handleDelete(itemId: string) {
@@ -172,7 +264,12 @@ export default function Media({
           <div className={styles.uploadContent}>
             <p className={styles.uploadHeadline}>Drag and drop your image or video here, or <span className={styles.browseText}>Browse</span></p>
             <p className={styles.uploadHint}>You can upload up to {MAX_MEDIA_FILES} media files</p>
-            <p className={styles.uploadFormats}>Accepted: JPEG, JPG, PNG up to 5 MB, MP4 up to 25 MB</p>
+            <p className={styles.uploadFormats}>
+              Accepted: JPEG, JPG, PNG, WEBP up to 5 MB, MP4 or WEBM up to 25 MB
+            </p>
+            <p className={styles.uploadFormats}>
+              New images are auto-optimized to WEBP before upload for better storage efficiency.
+            </p>
             {uploadMessage ? <p className={styles.uploadMessage}>{uploadMessage}</p> : null}
           </div>
         </label>
