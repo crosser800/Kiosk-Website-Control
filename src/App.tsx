@@ -22,6 +22,19 @@ export default function App() {
   const [productView, setProductView] = useState<ProductView>('summary');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isInitializingAuth, setIsInitializingAuth] = useState(true);
+  const [isCompactNavigation, setIsCompactNavigation] = useState(() =>
+    window.matchMedia('(max-width: 1024px)').matches,
+  );
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 1024px)');
+    const handleChange = (event: MediaQueryListEvent) => {
+      setIsCompactNavigation(event.matches);
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
   const toggleTheme = () => {
     setIsDark((current) => {
@@ -116,7 +129,8 @@ export default function App() {
       <Sidebar
         active={active}
         onNavigate={handleNavigate}
-        isCollapsed={isCollapsed}
+        isCollapsed={isCollapsed || isCompactNavigation}
+        canToggle={!isCompactNavigation}
         onToggle={setIsCollapsed}
         onLogout={handleLogout}
       />
@@ -124,9 +138,9 @@ export default function App() {
         active={headerTitle}
         isDark={isDark}
         onToggle={toggleTheme}
-        isCollapsed={isCollapsed}
+        isCollapsed={isCollapsed || isCompactNavigation}
       />
-      <MainContent isCollapsed={isCollapsed}>{renderPage()}</MainContent>
+      <MainContent isCollapsed={isCollapsed || isCompactNavigation}>{renderPage()}</MainContent>
     </div>
   );
 }

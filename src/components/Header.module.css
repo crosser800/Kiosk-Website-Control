@@ -19,3 +19,30 @@
   font-family: 'Montserrat', sans-serif;
   color: var(--text);
 }
+
+@media (max-width: 1024px) {
+  .header {
+    left: 72px !important;
+    padding: 0 1rem;
+    transition: none !important;
+  }
+
+  .title {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 1.1rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 600px) {
+  .header {
+    left: 64px !important;
+    padding: 0 0.75rem;
+  }
+
+  .title {
+    font-size: 1rem;
+  }
+}
