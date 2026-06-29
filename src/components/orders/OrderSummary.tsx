@@ -3,6 +3,12 @@ import Skeleton from '../common/Skeleton';
 import { supabase } from '../../lib/supabase';
 import styles from './OrderSummary.module.css';
 
+type OrderSummaryProps = {
+  appliedSingleDate: string | null;
+  appliedRangeStart: string | null;
+  appliedRangeEnd: string | null;
+};
+
 type OrderItem = {
   id: string;
   orderNo: string;
@@ -45,6 +51,51 @@ type OrderDetails = {
   surchargeTotal: number;
   grandTotal: number;
 };
+
+type OrderCatalogUnitOption = {
+  id: string;
+  unitCode: string;
+  unitLabel: string;
+  priceOverride: number | null;
+  minOrderQuantity: number;
+  sortOrder: number;
+  isDefault: boolean;
+};
+
+type OrderCatalogItem = {
+  id: string;
+  productId: string;
+  categoryId: string;
+  categoryName: string;
+  productName: string;
+  productCode: string;
+  variationLabel: string;
+  branchName: string;
+  priceType: string;
+  priceCode: string;
+  unitPrice: number;
+  availability: string;
+  unitOptions: OrderCatalogUnitOption[];
+};
+
+type AddOrderItemDraft = {
+  categoryId: string;
+  searchQuery: string;
+  selectedCatalogItemId: string;
+  selectedUnitOptionId: string;
+  quantity: string;
+  freeQuantity: string;
+};
+
+type EditOrderItemDraft = {
+  itemId: string;
+  productName: string;
+  variant: string;
+  quantity: string;
+  freeQuantity: string;
+  unitPrice: string;
+};
+
 type OrderStatusHistoryItem = {
   id: string;
   status: string;
@@ -56,14 +107,17 @@ type PendingStatusAction = {
 };
 type OrderStatusTab = 'All' | 'Placed' | 'Confirmed' | 'Preparing' | 'Ready' | 'Delivering' | 'Completed' | 'Cancelled';
 const ORDER_STATUS_TABS: OrderStatusTab[] = ['All', 'Placed', 'Confirmed', 'Preparing', 'Ready', 'Delivering', 'Completed', 'Cancelled'];
-type DateFilterMode = 'single' | 'range';
+const STATUS_HISTORY_DUPLICATE_WINDOW_MS = 5_000;
 
-function CalendarIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.filterIcon}>
-      <path d="M7 3v3M17 3v3M4 9h16M6 6h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
+function createAddOrderItemDraft(): AddOrderItemDraft {
+  return {
+    categoryId: 'all',
+    searchQuery: '',
+    selectedCatalogItemId: '',
+    selectedUnitOptionId: '',
+    quantity: '1',
+    freeQuantity: '0',
+  };
 }
 
 function ChevronLeftIcon() {
@@ -146,6 +200,16 @@ function toDisplayStatus(raw: string) {
   return raw || '-';
 }
 
+function getStatusTone(rawStatus: string) {
+  const normalized = String(rawStatus ?? '').trim().toLowerCase();
+  if (normalized === 'completed' || normalized === 'delivered') return 'success';
+  if (normalized === 'cancelled') return 'danger';
+  if (normalized === 'confirmed' || normalized === 'processing' || normalized === 'ready') {
+    return 'warning';
+  }
+  return 'neutral';
+}
+
 function getNextStatus(rawStatus: string): { dbStatus: string; label: string } | null {
   const status = String(rawStatus ?? '').trim().toLowerCase();
   if (status === 'placed') return { dbStatus: 'Confirmed', label: 'Proceed to Confirmed' };
@@ -155,10 +219,19 @@ function getNextStatus(rawStatus: string): { dbStatus: string; label: string } |
   return null;
 }
 
-function formatIsoDate(isoDate: string) {
-  if (!isoDate) return '-';
-  const parsed = new Date(isoDate);
-  return Number.isNaN(parsed.getTime()) ? isoDate : parsed.toLocaleDateString('en-PH');
+function dedupeStatusHistory(entries: OrderStatusHistoryItem[]) {
+  return entries.filter((entry, index, allEntries) => {
+    const previousEntry = allEntries[index - 1];
+    if (!previousEntry) return true;
+
+    if (previousEntry.status !== entry.status) return true;
+
+    const previousTime = Date.parse(previousEntry.changedAt);
+    const currentTime = Date.parse(entry.changedAt);
+    if (Number.isNaN(previousTime) || Number.isNaN(currentTime)) return true;
+
+    return currentTime - previousTime > STATUS_HISTORY_DUPLICATE_WINDOW_MS;
+  });
 }
 
 async function resolveCurrentAdminAccountId() {
@@ -185,7 +258,11 @@ async function resolveCurrentAdminAccountId() {
   return adminAccount?.id ? String(adminAccount.id) : null;
 }
 
-export default function OrderSummary() {
+export default function OrderSummary({
+  appliedSingleDate,
+  appliedRangeStart,
+  appliedRangeEnd,
+}: OrderSummaryProps) {
   const warnedMissingAgentIdsRef = useRef<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedOrder, setSelectedOrder] = useState<OrderDetails | null>(null);
@@ -198,17 +275,14 @@ export default function OrderSummary() {
   const [activeStatusTab, setActiveStatusTab] = useState<OrderStatusTab>('All');
   const [pendingStatusAction, setPendingStatusAction] = useState<PendingStatusAction | null>(null);
   const [snackbar, setSnackbar] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
-  const today = new Date();
-  const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
-  const [dateFilterMode, setDateFilterMode] = useState<DateFilterMode>('single');
-  const [calendarMonth, setCalendarMonth] = useState(today.getMonth());
-  const [calendarYear, setCalendarYear] = useState(today.getFullYear());
-  const [tempSingleDate, setTempSingleDate] = useState<string | null>(null);
-  const [tempRangeStart, setTempRangeStart] = useState<string | null>(null);
-  const [tempRangeEnd, setTempRangeEnd] = useState<string | null>(null);
-  const [appliedSingleDate, setAppliedSingleDate] = useState<string | null>(null);
-  const [appliedRangeStart, setAppliedRangeStart] = useState<string | null>(null);
-  const [appliedRangeEnd, setAppliedRangeEnd] = useState<string | null>(null);
+  const [catalogItems, setCatalogItems] = useState<OrderCatalogItem[]>([]);
+  const [isCatalogLoading, setIsCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState('');
+  const [isAddItemOpen, setIsAddItemOpen] = useState(false);
+  const [addItemDraft, setAddItemDraft] = useState<AddOrderItemDraft>(createAddOrderItemDraft);
+  const [isSavingAddedItem, setIsSavingAddedItem] = useState(false);
+  const [editItemDraft, setEditItemDraft] = useState<EditOrderItemDraft | null>(null);
+  const [isSavingEditedItem, setIsSavingEditedItem] = useState(false);
 
   const statusFilteredOrders = useMemo(() => {
     if (activeStatusTab === 'All') return orders;
@@ -253,6 +327,58 @@ export default function OrderSummary() {
         maximumFractionDigits: 2,
       }),
     [],
+  );
+  const categoryOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          catalogItems
+            .filter((item) => item.categoryId && item.categoryName)
+            .map((item) => [item.categoryId, item.categoryName] as const),
+        ).entries(),
+      )
+        .map(([id, label]) => ({ id, label }))
+        .sort((left, right) => left.label.localeCompare(right.label)),
+    [catalogItems],
+  );
+  const filteredCatalogItems = useMemo(() => {
+    const query = addItemDraft.searchQuery.trim().toLowerCase();
+
+    return catalogItems.filter((item) => {
+      if (addItemDraft.categoryId !== 'all' && item.categoryId !== addItemDraft.categoryId) {
+        return false;
+      }
+
+      if (!query) return true;
+
+      return [
+        item.categoryName,
+        item.productName,
+        item.productCode,
+        item.variationLabel,
+        item.priceCode,
+        item.priceType,
+        item.branchName,
+      ].some((value) => String(value ?? '').toLowerCase().includes(query));
+    });
+  }, [addItemDraft.categoryId, addItemDraft.searchQuery, catalogItems]);
+  const selectedCatalogItem = useMemo(
+    () =>
+      catalogItems.find((item) => item.id === addItemDraft.selectedCatalogItemId) ?? null,
+    [addItemDraft.selectedCatalogItemId, catalogItems],
+  );
+  const selectedUnitOption = useMemo(() => {
+    if (!selectedCatalogItem) return null;
+    return (
+      selectedCatalogItem.unitOptions.find((option) => option.id === addItemDraft.selectedUnitOptionId) ??
+      selectedCatalogItem.unitOptions.find((option) => option.isDefault) ??
+      selectedCatalogItem.unitOptions[0] ??
+      null
+    );
+  }, [addItemDraft.selectedUnitOptionId, selectedCatalogItem]);
+  const visibleCatalogItems = useMemo(
+    () => filteredCatalogItems.slice(0, 24),
+    [filteredCatalogItems],
   );
 
   async function loadOrders() {
@@ -373,10 +499,232 @@ export default function OrderSummary() {
     setCurrentPage(1);
   }, [activeStatusTab]);
   useEffect(() => {
+    setCurrentPage(1);
+  }, [appliedRangeEnd, appliedRangeStart, appliedSingleDate]);
+  useEffect(() => {
     if (!snackbar) return;
     const timeout = window.setTimeout(() => setSnackbar(null), 2500);
     return () => window.clearTimeout(timeout);
   }, [snackbar]);
+  useEffect(() => {
+    if (!selectedOrder) {
+      setIsAddItemOpen(false);
+      setAddItemDraft(createAddOrderItemDraft());
+    }
+  }, [selectedOrder]);
+  useEffect(() => {
+    if (!isAddItemOpen || catalogItems.length > 0 || isCatalogLoading) return;
+    void loadCatalogItems();
+  }, [catalogItems.length, isAddItemOpen, isCatalogLoading]);
+  useEffect(() => {
+    if (!selectedCatalogItem) return;
+    if (selectedCatalogItem.unitOptions.length === 0) {
+      if (addItemDraft.selectedUnitOptionId) {
+        setAddItemDraft((current) => ({ ...current, selectedUnitOptionId: '' }));
+      }
+      return;
+    }
+
+    const hasCurrentOption = selectedCatalogItem.unitOptions.some(
+      (option) => option.id === addItemDraft.selectedUnitOptionId,
+    );
+
+    if (!hasCurrentOption) {
+      const fallbackOption =
+        selectedCatalogItem.unitOptions.find((option) => option.isDefault) ??
+        selectedCatalogItem.unitOptions[0];
+      setAddItemDraft((current) => ({
+        ...current,
+        selectedUnitOptionId: fallbackOption?.id ?? '',
+        quantity:
+          Number(current.quantity || '0') > 0
+            ? current.quantity
+            : String(fallbackOption?.minOrderQuantity ?? 1),
+      }));
+    }
+  }, [addItemDraft.selectedUnitOptionId, selectedCatalogItem]);
+
+  function closeAddItemModal() {
+    setIsAddItemOpen(false);
+    setAddItemDraft(createAddOrderItemDraft());
+    setCatalogError('');
+  }
+
+  function openEditItemModal(item: OrderDetailItem) {
+    setEditItemDraft({
+      itemId: item.id,
+      productName: item.productName,
+      variant: item.variant,
+      quantity: String(item.quantity || 1),
+      freeQuantity: String(item.freeQuantity || 0),
+      unitPrice: String(item.unitPrice || 0),
+    });
+  }
+
+  function closeEditItemModal() {
+    setEditItemDraft(null);
+  }
+
+  async function loadCatalogItems() {
+    setIsCatalogLoading(true);
+    setCatalogError('');
+
+    const [productsRes, variationsRes, unitOptionsRes] = await Promise.all([
+      supabase
+        .from('products')
+        .select(`
+          id,
+          category_id,
+          product_name,
+          sku_code,
+          status,
+          product_categories(category_title)
+        `)
+        .eq('status', 'Active')
+        .order('product_name', { ascending: true }),
+      supabase
+        .from('product_variations')
+        .select(`
+          id,
+          product_id,
+          variation_name,
+          class_name,
+          branch_name,
+          price_type,
+          price_code,
+          price,
+          availability
+        `)
+        .order('variation_name', { ascending: true }),
+      supabase
+        .from('product_variation_unit_options')
+        .select(`
+          id,
+          variation_id,
+          unit_code,
+          unit_label,
+          price_override,
+          min_order_quantity,
+          is_default,
+          is_orderable,
+          status,
+          sort_order
+        `)
+        .eq('is_orderable', true)
+        .order('sort_order', { ascending: true }),
+    ]);
+
+    const combinedError =
+      productsRes.error ?? variationsRes.error ?? unitOptionsRes.error;
+
+    if (combinedError) {
+      setCatalogItems([]);
+      setCatalogError(combinedError.message);
+      setIsCatalogLoading(false);
+      return;
+    }
+
+    const unitOptionsByVariationId = new Map<string, OrderCatalogUnitOption[]>();
+    (unitOptionsRes.data ?? []).forEach((row: any) => {
+      if (String(row.status ?? 'Active').toLowerCase() !== 'active') return;
+      const variationId = String(row.variation_id ?? '');
+      if (!variationId) return;
+
+      const current = unitOptionsByVariationId.get(variationId) ?? [];
+      current.push({
+        id: String(row.id ?? ''),
+        unitCode: String(row.unit_code ?? '').trim(),
+        unitLabel: String(row.unit_label ?? row.unit_code ?? '').trim() || 'Unit',
+        priceOverride:
+          row.price_override === null || row.price_override === undefined
+            ? null
+            : Number(row.price_override ?? 0),
+        minOrderQuantity: Math.max(1, Number(row.min_order_quantity ?? 1) || 1),
+        sortOrder: Number(row.sort_order ?? 0) || 0,
+        isDefault: Boolean(row.is_default ?? false),
+      });
+      unitOptionsByVariationId.set(variationId, current);
+    });
+
+    const productById = new Map<string, { name: string; code: string; categoryId: string; categoryName: string }>();
+    (productsRes.data ?? []).forEach((row: any) => {
+      const categoryRef = Array.isArray(row.product_categories)
+        ? row.product_categories[0]
+        : row.product_categories;
+      productById.set(String(row.id), {
+        name: String(row.product_name ?? 'Untitled Product'),
+        code: String(row.sku_code ?? '-'),
+        categoryId: String(row.category_id ?? ''),
+        categoryName: String(categoryRef?.category_title ?? 'Uncategorized'),
+      });
+    });
+
+    const nextCatalogItems = (variationsRes.data ?? [])
+      .map((row: any) => {
+        const product = productById.get(String(row.product_id ?? ''));
+        if (!product) return null;
+
+        const variationId = String(row.id ?? '');
+        const unitOptions = (unitOptionsByVariationId.get(variationId) ?? []).sort(
+          (left, right) => left.sortOrder - right.sortOrder,
+        );
+
+        return {
+          id: variationId,
+          productId: String(row.product_id ?? ''),
+          categoryId: product.categoryId,
+          categoryName: product.categoryName,
+          productName: product.name,
+          productCode: product.code,
+          variationLabel: String(row.variation_name ?? row.class_name ?? 'Variation'),
+          branchName: String(row.branch_name ?? ''),
+          priceType: String(row.price_type ?? ''),
+          priceCode: String(row.price_code ?? ''),
+          unitPrice: Number(row.price ?? 0),
+          availability: String(row.availability ?? ''),
+          unitOptions,
+        } satisfies OrderCatalogItem;
+      })
+      .filter((item): item is OrderCatalogItem => Boolean(item));
+
+    setCatalogItems(nextCatalogItems);
+    setIsCatalogLoading(false);
+  }
+
+  async function refreshOrderTotals(orderId: string) {
+    const { data, error } = await supabase
+      .from('order_items')
+      .select('line_subtotal, discount_amount, surcharge_amount, line_total')
+      .eq('order_id', orderId);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const totals = (data ?? []).reduce(
+      (result, row: any) => ({
+        subtotal: result.subtotal + Number(row.line_subtotal ?? 0),
+        discountTotal: result.discountTotal + Number(row.discount_amount ?? 0),
+        surchargeTotal: result.surchargeTotal + Number(row.surcharge_amount ?? 0),
+        grandTotal: result.grandTotal + Number(row.line_total ?? 0),
+      }),
+      { subtotal: 0, discountTotal: 0, surchargeTotal: 0, grandTotal: 0 },
+    );
+
+    const { error: updateError } = await supabase
+      .from('orders')
+      .update({
+        subtotal: totals.subtotal,
+        discount_total: totals.discountTotal,
+        surcharge_total: totals.surchargeTotal,
+        grand_total: totals.grandTotal,
+      })
+      .eq('id', orderId);
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+  }
 
   function handlePageInputChange(value: string) {
     if (value === '') {
@@ -390,68 +738,6 @@ export default function OrderSummary() {
     }
 
     setCurrentPage(Math.min(Math.max(page, 1), totalPages));
-  }
-
-  function buildCalendarDays() {
-    const firstDay = new Date(calendarYear, calendarMonth, 1);
-    const startWeekday = firstDay.getDay();
-    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
-    const cells: Array<{ iso: string; day: number; isCurrentMonth: boolean }> = [];
-    for (let i = 0; i < startWeekday; i += 1) cells.push({ iso: '', day: 0, isCurrentMonth: false });
-    for (let day = 1; day <= daysInMonth; day += 1) {
-      const iso = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      cells.push({ iso, day, isCurrentMonth: true });
-    }
-    while (cells.length % 7 !== 0) cells.push({ iso: '', day: 0, isCurrentMonth: false });
-    return cells;
-  }
-
-  function handleCalendarDateClick(iso: string) {
-    if (!iso) return;
-    if (dateFilterMode === 'single') {
-      setTempSingleDate(iso);
-      return;
-    }
-    if (!tempRangeStart || (tempRangeStart && tempRangeEnd)) {
-      setTempRangeStart(iso);
-      setTempRangeEnd(null);
-      return;
-    }
-    if (iso < tempRangeStart) {
-      setTempRangeEnd(tempRangeStart);
-      setTempRangeStart(iso);
-      return;
-    }
-    setTempRangeEnd(iso);
-  }
-
-  function isInTempRange(iso: string) {
-    if (!iso || !tempRangeStart || !tempRangeEnd) return false;
-    return iso >= tempRangeStart && iso <= tempRangeEnd;
-  }
-
-  function applyDateFilter() {
-    if (dateFilterMode === 'single') {
-      setAppliedSingleDate(tempSingleDate);
-      setAppliedRangeStart(null);
-      setAppliedRangeEnd(null);
-    } else {
-      setAppliedSingleDate(null);
-      setAppliedRangeStart(tempRangeStart);
-      setAppliedRangeEnd(tempRangeEnd);
-    }
-    setIsDateFilterOpen(false);
-    setCurrentPage(1);
-  }
-
-  function clearDateFilter() {
-    setAppliedSingleDate(null);
-    setAppliedRangeStart(null);
-    setAppliedRangeEnd(null);
-    setTempSingleDate(null);
-    setTempRangeStart(null);
-    setTempRangeEnd(null);
-    setCurrentPage(1);
   }
 
   async function fetchOrderDetails(order: OrderItem) {
@@ -524,11 +810,13 @@ export default function OrderSummary() {
       throw new Error(error.message);
     }
 
-    return (historyRows ?? []).map((row: any) => ({
+    const mappedHistory = (historyRows ?? []).map((row: any) => ({
       id: String(row.id),
       status: toDisplayStatus(String(row.status ?? '-')),
       changedAt: String(row.changed_at ?? ''),
     })) satisfies OrderStatusHistoryItem[];
+
+    return dedupeStatusHistory(mappedHistory);
   }
 
   async function handleOpenOrder(order: OrderItem) {
@@ -628,93 +916,122 @@ export default function OrderSummary() {
     const { error } = await supabase.from('order_items').delete().eq('id', itemId);
     if (error) {
       setLoadError(error.message);
+      setSnackbar({ type: 'error', message: error.message });
       return;
     }
-    const refreshed = await fetchOrderDetails(selectedOrder.order);
-    setSelectedOrder(refreshed);
-    await loadOrders();
+
+    try {
+      await refreshOrderTotals(selectedOrder.order.id);
+      const refreshed = await fetchOrderDetails(selectedOrder.order);
+      setSelectedOrder(refreshed);
+      await loadOrders();
+      setSnackbar({ type: 'success', message: 'Order item removed.' });
+    } catch (refreshError) {
+      const message =
+        refreshError instanceof Error ? refreshError.message : 'Failed to refresh order after removing item.';
+      setLoadError(message);
+      setSnackbar({ type: 'error', message });
+    }
+  }
+
+  async function handleAddOrderItem() {
+    if (!selectedOrder || !selectedCatalogItem) return;
+
+    const quantity = Math.max(1, Number(addItemDraft.quantity || '1') || 1);
+    const freeQuantity = Math.max(0, Number(addItemDraft.freeQuantity || '0') || 0);
+    const unitPrice = selectedUnitOption?.priceOverride ?? selectedCatalogItem.unitPrice;
+    const selectedUnitLabel = selectedUnitOption?.unitLabel?.trim() || selectedUnitOption?.unitCode?.trim() || '';
+    const variantLabel = selectedUnitLabel
+      ? `${selectedCatalogItem.variationLabel} - ${selectedUnitLabel}`
+      : selectedCatalogItem.variationLabel;
+    setIsSavingAddedItem(true);
+    setLoadError('');
+
+    const { error } = await supabase.from('order_items').insert({
+      order_id: selectedOrder.order.id,
+      product_name: selectedCatalogItem.productName,
+      product_code: selectedCatalogItem.productCode || null,
+      variant_label: variantLabel || null,
+      branch_name: selectedCatalogItem.branchName || selectedOrder.order.branch || null,
+      preference_type: selectedCatalogItem.priceType || null,
+      price_code: selectedCatalogItem.priceCode || null,
+      unit_price: unitPrice,
+      quantity,
+      discount_amount: 0,
+      surcharge_amount: 0,
+      free_quantity: freeQuantity,
+      sort_order: selectedOrder.items.length,
+    });
+
+    if (error) {
+      setLoadError(error.message);
+      setSnackbar({ type: 'error', message: error.message });
+      setIsSavingAddedItem(false);
+      return;
+    }
+
+    try {
+      await refreshOrderTotals(selectedOrder.order.id);
+      const refreshed = await fetchOrderDetails(selectedOrder.order);
+      setSelectedOrder(refreshed);
+      await loadOrders();
+      closeAddItemModal();
+      setSnackbar({ type: 'success', message: 'Item added to order.' });
+    } catch (refreshError) {
+      const message =
+        refreshError instanceof Error ? refreshError.message : 'Item added, but totals could not be refreshed.';
+      setLoadError(message);
+      setSnackbar({ type: 'info', message });
+    } finally {
+      setIsSavingAddedItem(false);
+    }
+  }
+
+  async function handleSaveEditedItem() {
+    if (!selectedOrder || !editItemDraft) return;
+
+    const quantity = Math.max(1, Number(editItemDraft.quantity || '1') || 1);
+    const freeQuantity = Math.max(0, Number(editItemDraft.freeQuantity || '0') || 0);
+    const unitPrice = Math.max(0, Number(editItemDraft.unitPrice || '0') || 0);
+
+    setIsSavingEditedItem(true);
+    setLoadError('');
+
+    const { error } = await supabase
+      .from('order_items')
+      .update({
+        quantity,
+        free_quantity: freeQuantity,
+        unit_price: unitPrice,
+      })
+      .eq('id', editItemDraft.itemId);
+
+    if (error) {
+      setLoadError(error.message);
+      setSnackbar({ type: 'error', message: error.message });
+      setIsSavingEditedItem(false);
+      return;
+    }
+
+    try {
+      await refreshOrderTotals(selectedOrder.order.id);
+      const refreshed = await fetchOrderDetails(selectedOrder.order);
+      setSelectedOrder(refreshed);
+      await loadOrders();
+      closeEditItemModal();
+      setSnackbar({ type: 'success', message: 'Order item updated.' });
+    } catch (refreshError) {
+      const message =
+        refreshError instanceof Error ? refreshError.message : 'Item updated, but totals could not be refreshed.';
+      setLoadError(message);
+      setSnackbar({ type: 'info', message });
+    } finally {
+      setIsSavingEditedItem(false);
+    }
   }
 
   return (
     <section className={styles.wrapper}>
-      <div className={styles.topHeader}>
-        <div className={styles.topHeaderCopy}>
-          <p className={styles.sectionEyebrow}>Order controls</p>
-          <h2 className={styles.title}>Order Summary</h2>
-          <p className={styles.subtitle}>
-            Filter by date and keep the current order queue organized.
-          </p>
-        </div>
-        <div className={styles.headerActions}>
-          {appliedSingleDate || (appliedRangeStart && appliedRangeEnd) ? (
-            <button type="button" className={styles.clearFilterButton} onClick={clearDateFilter}>Clear Filter</button>
-          ) : null}
-          <button type="button" className={styles.dateFilterButton} onClick={() => setIsDateFilterOpen((prev) => !prev)}>
-            <CalendarIcon />
-            <span>Filter Date</span>
-          </button>
-        </div>
-      </div>
-
-      {isDateFilterOpen ? (
-        <div className={styles.dateFilterOverlay} role="presentation">
-          <div className={styles.dateFilterModal} role="dialog" aria-modal="true" aria-label="Filter orders by date">
-            <div className={styles.modalHeader}>
-              <h3 className={styles.modalTitle}>Filter Date</h3>
-              <button type="button" className={styles.modalClose} onClick={() => setIsDateFilterOpen(false)} aria-label="Close date filter">
-                <i className="fa-solid fa-xmark" aria-hidden="true"></i>
-              </button>
-            </div>
-            <div className={styles.dateFilterPopover}>
-          <div className={styles.dateModeTabs}>
-            <button type="button" className={`${styles.dateModeTab} ${dateFilterMode === 'single' ? styles.dateModeTabActive : ''}`} onClick={() => setDateFilterMode('single')}>Single</button>
-            <button type="button" className={`${styles.dateModeTab} ${dateFilterMode === 'range' ? styles.dateModeTabActive : ''}`} onClick={() => setDateFilterMode('range')}>Range</button>
-          </div>
-          <div className={styles.calendarControls}>
-            <select value={calendarMonth} onChange={(event) => setCalendarMonth(Number(event.target.value))}>
-              {['January','February','March','April','May','June','July','August','September','October','November','December'].map((month, index) => (
-                <option key={month} value={index}>{month}</option>
-              ))}
-            </select>
-            <select value={calendarYear} onChange={(event) => setCalendarYear(Number(event.target.value))}>
-              {Array.from({ length: 9 }, (_, i) => today.getFullYear() - 4 + i).map((year) => (
-                <option key={year} value={year}>{year}</option>
-              ))}
-            </select>
-          </div>
-          <div className={styles.calendarGrid}>
-            {['Su','Mo','Tu','We','Th','Fr','Sa'].map((day) => <span key={day} className={styles.calendarHead}>{day}</span>)}
-            {buildCalendarDays().map((cell, index) => {
-              const isSelectedSingle = dateFilterMode === 'single' && tempSingleDate === cell.iso;
-              const isStart = dateFilterMode === 'range' && tempRangeStart === cell.iso;
-              const isEnd = dateFilterMode === 'range' && tempRangeEnd === cell.iso;
-              const isRange = dateFilterMode === 'range' && isInTempRange(cell.iso);
-              return (
-                <button
-                  key={`${cell.iso}-${index}`}
-                  type="button"
-                  className={`${styles.calendarCell} ${!cell.isCurrentMonth ? styles.calendarCellEmpty : ''} ${isSelectedSingle || isStart || isEnd ? styles.calendarCellSelected : ''} ${isRange ? styles.calendarCellRange : ''}`}
-                  onClick={() => handleCalendarDateClick(cell.iso)}
-                  disabled={!cell.isCurrentMonth}
-                >
-                  {cell.day || ''}
-                </button>
-              );
-            })}
-          </div>
-          <div className={styles.dateFilterFooter}>
-            <span className={styles.datePreview}>
-              {dateFilterMode === 'single'
-                ? `Selected: ${tempSingleDate ? formatIsoDate(tempSingleDate) : '-'}`
-                : `Range: ${tempRangeStart ? formatIsoDate(tempRangeStart) : '-'} to ${tempRangeEnd ? formatIsoDate(tempRangeEnd) : '-'}`}
-            </span>
-            <button type="button" className={styles.confirmProceed} onClick={applyDateFilter}>Apply</button>
-          </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       <section className={styles.container}>
         <div className={styles.header}>
           {isLoadingDetails ? <span className={styles.loadingDetails}>Loading order details...</span> : null}
@@ -776,7 +1093,19 @@ export default function OrderSummary() {
               <span>{order.branch}</span>
               <span>{order.clientName}</span>
               <span>{order.terms}</span>
-              <span>{order.poStatus}</span>
+              <span
+                className={`${styles.statusBadge} ${
+                  getStatusTone(order.rawStatus) === 'success'
+                    ? styles.statusBadgeSuccess
+                    : getStatusTone(order.rawStatus) === 'danger'
+                      ? styles.statusBadgeDanger
+                      : getStatusTone(order.rawStatus) === 'warning'
+                        ? styles.statusBadgeWarning
+                        : styles.statusBadgeNeutral
+                }`}
+              >
+                {order.poStatus}
+              </span>
               <button
                 type="button"
                 className={styles.actionButton}
@@ -859,26 +1188,64 @@ export default function OrderSummary() {
               <span className={styles.infoCard}><strong>Time:</strong> {selectedOrder.order.time}</span>
               <span className={styles.infoCard}><strong>Branch:</strong> {selectedOrder.order.branch}</span>
               <span className={styles.infoCard}><strong>Terms:</strong> {selectedOrder.order.terms}</span>
-              <span className={styles.infoCard}><strong>Status:</strong> {selectedOrder.order.poStatus}</span>
+              <span className={styles.infoCard}>
+                <strong>Status:</strong>{' '}
+                <span
+                  className={`${styles.statusBadge} ${
+                    getStatusTone(selectedOrder.order.rawStatus) === 'success'
+                      ? styles.statusBadgeSuccess
+                      : getStatusTone(selectedOrder.order.rawStatus) === 'danger'
+                        ? styles.statusBadgeDanger
+                        : getStatusTone(selectedOrder.order.rawStatus) === 'warning'
+                          ? styles.statusBadgeWarning
+                          : styles.statusBadgeNeutral
+                  }`}
+                >
+                  {selectedOrder.order.poStatus}
+                </span>
+              </span>
             </div>
             <div className={styles.modalTable}>
               <div className={styles.modalTableHeader}>
-                <span>Product</span><span>Code</span><span>Variant</span><span>Qty</span><span>Unit</span><span>Discount</span><span>Surcharge</span><span>Total</span><span>Action</span>
+                <span>Product</span><span>Code</span><span>Variant</span><span>Qty</span><span>Free</span><span>Unit Price</span><span>Discount</span><span>Surcharge</span><span>Total</span><span>Action</span>
               </div>
               {selectedOrder.items.length === 0 ? (
                 <div className={styles.modalEmpty}>No order items found.</div>
               ) : (
                 selectedOrder.items.map((item) => (
                   <div key={item.id} className={styles.modalTableRow}>
-                    <span>{item.productName}</span>
+                    <span className={styles.productCell}>
+                      <span>{item.productName}</span>
+                      {item.freeQuantity > 0 ? (
+                        <span className={styles.promoBadge}>Free +{item.freeQuantity}</span>
+                      ) : null}
+                    </span>
                     <span>{item.code}</span>
                     <span>{item.variant}</span>
                     <span>{item.quantity}</span>
+                    <span>{item.freeQuantity > 0 ? item.freeQuantity : '-'}</span>
                     <span>{currency.format(item.unitPrice)}</span>
                     <span>{currency.format(item.discountAmount)}</span>
                     <span>{currency.format(item.surchargeAmount)}</span>
                     <span>{currency.format(item.lineTotal)}</span>
-                    <button type="button" className={styles.removeItemButton} onClick={() => void handleRemoveItem(item.id)}>Remove</button>
+                    <div className={styles.rowActions}>
+                      <button
+                        type="button"
+                        className={styles.editItemButton}
+                        aria-label={`Edit ${item.productName}`}
+                        onClick={() => openEditItemModal(item)}
+                      >
+                        <i className="fa-solid fa-pen" aria-hidden="true"></i>
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.removeItemButton}
+                        aria-label={`Remove ${item.productName}`}
+                        onClick={() => void handleRemoveItem(item.id)}
+                      >
+                        <i className="fa-solid fa-trash" aria-hidden="true"></i>
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
@@ -904,11 +1271,17 @@ export default function OrderSummary() {
                 </div>
               )}
             </div>
-            {getNextStatus(selectedOrder.order.rawStatus) ||
-            (selectedOrder.order.rawStatus.toLowerCase() !== 'delivered' &&
-              selectedOrder.order.rawStatus.toLowerCase() !== 'completed' &&
-              selectedOrder.order.rawStatus.toLowerCase() !== 'cancelled') ? (
-              <div className={styles.modalFooterActions}>
+            <div className={styles.modalFooterActions}>
+                <button
+                  type="button"
+                  className={styles.secondaryModalButton}
+                  onClick={() => {
+                    setIsAddItemOpen(true);
+                    setCatalogError('');
+                  }}
+                >
+                  Add Item
+                </button>
                 {getNextStatus(selectedOrder.order.rawStatus) ? (
                   <button
                     type="button"
@@ -940,7 +1313,283 @@ export default function OrderSummary() {
                   </button>
                 ) : null}
               </div>
-            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {selectedOrder && isAddItemOpen ? (
+        <div className={styles.confirmOverlay} role="presentation">
+          <div className={styles.addItemModal} role="dialog" aria-modal="true" aria-label="Add item to order">
+            <div className={styles.modalHeader}>
+              <div>
+                <h4 className={styles.modalTitle}>Add Item to Order {selectedOrder.order.orderNo}</h4>
+                <p className={styles.confirmText}>
+                  Search the active kiosk catalog by category, product, or variation, then add the exact row you need.
+                </p>
+              </div>
+              <button type="button" className={styles.modalClose} onClick={closeAddItemModal} aria-label="Close add item modal">
+                <i className="fa-solid fa-xmark" aria-hidden="true"></i>
+              </button>
+            </div>
+
+            <div className={styles.addItemFilters}>
+              <label className={styles.addItemField}>
+                <span>Category</span>
+                <select
+                  className={styles.addItemInput}
+                  value={addItemDraft.categoryId}
+                  onChange={(event) =>
+                    setAddItemDraft((current) => ({ ...current, categoryId: event.target.value }))
+                  }
+                >
+                  <option value="all">All categories</option>
+                  {categoryOptions.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className={styles.addItemField}>
+                <span>Search</span>
+                <input
+                  className={styles.addItemInput}
+                  placeholder="Search category, product, SKU, variation, or price code"
+                  value={addItemDraft.searchQuery}
+                  onChange={(event) =>
+                    setAddItemDraft((current) => ({ ...current, searchQuery: event.target.value }))
+                  }
+                />
+              </label>
+            </div>
+
+            {catalogError ? <p className={styles.catalogError}>{catalogError}</p> : null}
+
+            <div className={styles.addItemLayout}>
+              <div className={styles.catalogList}>
+                {isCatalogLoading ? (
+                  <p className={styles.catalogHint}>Loading active catalog...</p>
+                ) : visibleCatalogItems.length === 0 ? (
+                  <p className={styles.catalogHint}>No products matched the current search.</p>
+                ) : (
+                  visibleCatalogItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`${styles.catalogCard} ${
+                        addItemDraft.selectedCatalogItemId === item.id ? styles.catalogCardActive : ''
+                      }`}
+                      onClick={() =>
+                        setAddItemDraft((current) => {
+                          const fallbackOption =
+                            item.unitOptions.find((option) => option.isDefault) ??
+                            item.unitOptions[0] ??
+                            null;
+                          return {
+                            ...current,
+                            selectedCatalogItemId: item.id,
+                            selectedUnitOptionId: fallbackOption?.id ?? '',
+                            quantity: String(fallbackOption?.minOrderQuantity ?? 1),
+                          };
+                        })
+                      }
+                    >
+                      <span className={styles.catalogCardTitle}>{item.productName}</span>
+                      <span className={styles.catalogCardMeta}>
+                        {item.categoryName} · {item.variationLabel}
+                      </span>
+                      <span className={styles.catalogCardMeta}>
+                        {item.priceCode || 'No price code'} · {currency.format(item.unitPrice)}
+                      </span>
+                    </button>
+                  ))
+                )}
+                {!isCatalogLoading && filteredCatalogItems.length > visibleCatalogItems.length ? (
+                  <p className={styles.catalogHint}>
+                    Showing first {visibleCatalogItems.length} matches. Narrow the search to find a specific item faster.
+                  </p>
+                ) : null}
+              </div>
+
+              <div className={styles.addItemDetails}>
+                {selectedCatalogItem ? (
+                  <>
+                    <div className={styles.selectedCatalogCard}>
+                      <strong>{selectedCatalogItem.productName}</strong>
+                      <span>{selectedCatalogItem.categoryName}</span>
+                      <span>
+                        {selectedCatalogItem.variationLabel} · {selectedCatalogItem.priceCode || 'No price code'}
+                      </span>
+                    </div>
+
+                    <div className={styles.addItemGrid}>
+                      <label className={styles.addItemField}>
+                        <span>Unit Option</span>
+                        <select
+                          className={styles.addItemInput}
+                          value={selectedUnitOption?.id ?? ''}
+                          onChange={(event) =>
+                            setAddItemDraft((current) => ({
+                              ...current,
+                              selectedUnitOptionId: event.target.value,
+                            }))
+                          }
+                        >
+                          {selectedCatalogItem.unitOptions.length === 0 ? (
+                            <option value="">Base price only</option>
+                          ) : (
+                            selectedCatalogItem.unitOptions.map((option) => (
+                              <option key={option.id} value={option.id}>
+                                {option.unitLabel}
+                                {option.priceOverride !== null
+                                  ? ` - ${currency.format(option.priceOverride)}`
+                                  : ''}
+                              </option>
+                            ))
+                          )}
+                        </select>
+                      </label>
+
+                      <label className={styles.addItemField}>
+                        <span>Quantity</span>
+                        <input
+                          className={styles.addItemInput}
+                          value={addItemDraft.quantity}
+                          onChange={(event) =>
+                            setAddItemDraft((current) => ({
+                              ...current,
+                              quantity: event.target.value.replace(/[^\d.]/g, ''),
+                            }))
+                          }
+                        />
+                      </label>
+
+                      <label className={styles.addItemField}>
+                        <span>Free Qty</span>
+                        <input
+                          className={styles.addItemInput}
+                          value={addItemDraft.freeQuantity}
+                          onChange={(event) =>
+                            setAddItemDraft((current) => ({
+                              ...current,
+                              freeQuantity: event.target.value.replace(/[^\d.]/g, ''),
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+
+                    <div className={styles.addItemSummary}>
+                      <span>
+                        Unit price:{' '}
+                        <strong>
+                          {currency.format(selectedUnitOption?.priceOverride ?? selectedCatalogItem.unitPrice)}
+                        </strong>
+                      </span>
+                      <span>
+                        Price type: <strong>{selectedCatalogItem.priceType || '-'}</strong>
+                      </span>
+                      <span>
+                        Free item recognition: <strong>{Number(addItemDraft.freeQuantity || '0') || 0}</strong>
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <p className={styles.catalogHint}>
+                    Select a product variation from the catalog to continue.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className={styles.confirmActions}>
+              <button type="button" className={styles.confirmCancel} onClick={closeAddItemModal} disabled={isSavingAddedItem}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={styles.confirmProceed}
+                onClick={() => void handleAddOrderItem()}
+                disabled={!selectedCatalogItem || isSavingAddedItem}
+              >
+                {isSavingAddedItem ? 'Adding...' : 'Add to Order'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedOrder && editItemDraft ? (
+        <div className={styles.confirmOverlay} role="presentation">
+          <div className={styles.confirmModal} role="dialog" aria-modal="true" aria-label="Edit order item">
+            <div className={styles.modalHeader}>
+              <div>
+                <h4 className={styles.modalTitle}>Edit Order Item</h4>
+                <p className={styles.confirmText}>
+                  Update the selected row values for {editItemDraft.productName}.
+                </p>
+              </div>
+              <button type="button" className={styles.modalClose} onClick={closeEditItemModal} aria-label="Close edit item modal">
+                <i className="fa-solid fa-xmark" aria-hidden="true"></i>
+              </button>
+            </div>
+            <div className={styles.selectedCatalogCard}>
+              <strong>{editItemDraft.productName}</strong>
+              <span>{editItemDraft.variant}</span>
+            </div>
+            <div className={styles.addItemGrid}>
+              <label className={styles.addItemField}>
+                <span>Quantity</span>
+                <input
+                  className={styles.addItemInput}
+                  value={editItemDraft.quantity}
+                  onChange={(event) =>
+                    setEditItemDraft((current) =>
+                      current
+                        ? { ...current, quantity: event.target.value.replace(/[^\d.]/g, '') }
+                        : current,
+                    )
+                  }
+                />
+              </label>
+              <label className={styles.addItemField}>
+                <span>Free Qty</span>
+                <input
+                  className={styles.addItemInput}
+                  value={editItemDraft.freeQuantity}
+                  onChange={(event) =>
+                    setEditItemDraft((current) =>
+                      current
+                        ? { ...current, freeQuantity: event.target.value.replace(/[^\d.]/g, '') }
+                        : current,
+                    )
+                  }
+                />
+              </label>
+              <label className={styles.addItemField}>
+                <span>Unit Price</span>
+                <input
+                  className={styles.addItemInput}
+                  value={editItemDraft.unitPrice}
+                  onChange={(event) =>
+                    setEditItemDraft((current) =>
+                      current
+                        ? { ...current, unitPrice: event.target.value.replace(/[^\d.]/g, '') }
+                        : current,
+                    )
+                  }
+                />
+              </label>
+            </div>
+            <div className={styles.confirmActions}>
+              <button type="button" className={styles.confirmCancel} onClick={closeEditItemModal} disabled={isSavingEditedItem}>
+                Cancel
+              </button>
+              <button type="button" className={styles.confirmProceed} onClick={() => void handleSaveEditedItem()} disabled={isSavingEditedItem}>
+                {isSavingEditedItem ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

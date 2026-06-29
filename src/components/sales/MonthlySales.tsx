@@ -3,16 +3,26 @@ import styles from './MonthlySales.module.css';
 type MonthlySalesProps = {
   amount?: number;
   lastMonth?: number;
+  onClick?: () => void;
+  disabled?: boolean;
 };
 
 export default function MonthlySales({
   amount = 0,
   lastMonth = 0,
+  onClick,
+  disabled = false,
 }: MonthlySalesProps) {
   const isUp = amount >= lastMonth;
 
   return (
-    <div className={styles.card}>
+    <button
+      type="button"
+      className={styles.card}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label="Open monthly sales breakdown"
+    >
       <div className={styles.top}>
         <div>
           <p className={`${styles.trend} ${isUp ? styles.up : styles.down}`}>
@@ -39,6 +49,6 @@ export default function MonthlySales({
       <p className={`${styles.subtitle} ${isUp ? styles.up : styles.down}`}>
         {isUp ? 'Month-to-date revenue is improving.' : 'Month-to-date revenue is softer.'}
       </p>
-    </div>
+    </button>
   );
 }

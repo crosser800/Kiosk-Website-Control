@@ -3,13 +3,26 @@ import styles from './YtdSales.module.css';
 type YtdSalesProps = {
   amount?: number;
   lastYear?: number;
+  onClick?: () => void;
+  disabled?: boolean;
 };
 
-export default function YtdSales({ amount = 0, lastYear = 0 }: YtdSalesProps) {
+export default function YtdSales({
+  amount = 0,
+  lastYear = 0,
+  onClick,
+  disabled = false,
+}: YtdSalesProps) {
   const isUp = amount >= lastYear;
 
   return (
-    <div className={styles.card}>
+    <button
+      type="button"
+      className={styles.card}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label="Open year-to-date sales breakdown"
+    >
       <div className={styles.top}>
         <div>
           <p className={`${styles.trend} ${isUp ? styles.up : styles.down}`}>
@@ -36,6 +49,6 @@ export default function YtdSales({ amount = 0, lastYear = 0 }: YtdSalesProps) {
       <p className={`${styles.subtitle} ${isUp ? styles.up : styles.down}`}>
         {isUp ? 'Year-to-date sales are ahead of last year.' : 'Year-to-date sales are below last year.'}
       </p>
-    </div>
+    </button>
   );
 }

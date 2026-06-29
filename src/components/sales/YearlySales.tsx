@@ -3,16 +3,26 @@ import styles from './YearlySales.module.css';
 type YearlySalesProps = {
   amount?: number;
   lastYear?: number;
+  onClick?: () => void;
+  disabled?: boolean;
 };
 
 export default function YearlySales({
   amount = 0,
   lastYear = 0,
+  onClick,
+  disabled = false,
 }: YearlySalesProps) {
   const isUp = amount >= lastYear;
 
   return (
-    <div className={styles.card}>
+    <button
+      type="button"
+      className={styles.card}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label="Open yearly sales breakdown"
+    >
       <div className={styles.top}>
         <div>
           <p className={`${styles.trend} ${isUp ? styles.up : styles.down}`}>
@@ -39,6 +49,6 @@ export default function YearlySales({
       <p className={`${styles.subtitle} ${isUp ? styles.up : styles.down}`}>
         {isUp ? 'Annual revenue is holding strong.' : 'Annual revenue needs attention.'}
       </p>
-    </div>
+    </button>
   );
 }

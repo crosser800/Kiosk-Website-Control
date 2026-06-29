@@ -489,32 +489,97 @@
   inset: 0;
   background: rgba(10, 12, 18, 0.56);
   display: grid;
-  place-items: center;
+  place-items: start center;
   z-index: 50;
   padding: 1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .modal {
   width: min(100%, 64rem);
+  max-height: calc(100vh - 2rem);
   border-radius: 1rem;
   background: var(--surface);
   border: 1px solid var(--card-border);
   padding: 1rem;
   display: grid;
   gap: 0.8rem;
+  overflow-y: auto;
+  margin-block: auto;
+  box-shadow: var(--card-shadow);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
 }
 
 .modalTitle {
   margin: 0;
-  font-size: 1rem;
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 700;
   font-family: 'Montserrat', sans-serif;
+}
+
+.modalClose {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--surface) 88%, white);
+  color: var(--text);
+  cursor: pointer;
+  flex: 0 0 auto;
 }
 
 .confirmText {
   margin: 0;
-  color: var(--text);
+  color: var(--text-muted);
   font-size: 0.9rem;
   font-family: 'Montserrat', sans-serif;
+}
+
+.modalInfoGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.infoCard {
+  display: block;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.7rem;
+  background: color-mix(in srgb, var(--surface) 72%, white);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.infoCard strong {
+  color: var(--text);
+}
+
+.modalAlert {
+  margin: 0;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid #f5b5b5;
+  border-radius: 0.75rem;
+  background: #fff4f4;
+  color: #9f1d1d;
+  font-size: 0.84rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.modalContent {
+  display: grid;
+  gap: 0.9rem;
 }
 
 .modalGrid {
@@ -556,13 +621,15 @@
 .ruleList {
   display: grid;
   gap: 0.9rem;
-  margin: 1rem 0;
 }
 
 .ruleTabsHeader {
   display: grid;
   gap: 0.75rem;
-  margin: 1rem 0;
+  padding: 0.85rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--surface) 76%, white);
 }
 
 .ruleTabs {
@@ -593,7 +660,7 @@
 .ruleCard {
   border: 1px solid var(--card-border);
   border-radius: 0.9rem;
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 92%, white);
   padding: 0.95rem;
   display: grid;
   gap: 0.85rem;
@@ -670,6 +737,8 @@
 }
 
 .rowIndex {
+  min-width: 2.2rem;
+  min-height: 2.2rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -763,6 +832,15 @@
   flex-wrap: wrap;
 }
 
+.modalFooterActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  padding-top: 0.9rem;
+  border-top: 1px solid color-mix(in srgb, var(--card-border) 72%, white);
+}
+
 @keyframes riseIn {
   from {
     opacity: 0;
@@ -805,12 +883,25 @@
     grid-template-columns: 1fr;
   }
 
+  .modalInfoGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .ruleGrid {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 700px) {
+  .modal {
+    padding: 0.9rem;
+  }
+
+  .modalHeader {
+    align-items: center;
+  }
+
+  .modalInfoGrid,
   .unitSummaryGrid,
   .packagingRow {
     grid-template-columns: 1fr;

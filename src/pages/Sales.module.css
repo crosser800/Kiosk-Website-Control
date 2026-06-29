@@ -47,10 +47,324 @@
   font-family: 'Montserrat', sans-serif;
 }
 
+.helperText {
+  margin: 0.55rem 0 0;
+  color: #7c5300;
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
 .statsRow {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
   gap: 1rem;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(15, 23, 42, 0.36);
+  backdrop-filter: blur(6px);
+}
+
+.modal {
+  width: min(100%, 64rem);
+  border-radius: 1.5rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 34%, var(--card-border));
+  background:
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.18), transparent 28%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.99), rgba(255, 248, 220, 0.97));
+  box-shadow: 0 26px 70px rgba(15, 23, 42, 0.24);
+  padding: 1.5rem;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.modalEyebrow {
+  margin: 0 0 0.35rem;
+  color: #0f9f6e;
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+  letter-spacing: 0.08rem;
+  text-transform: uppercase;
+}
+
+.modalTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.7rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.modalSubtitle {
+  margin: 0.45rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.modalClose {
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #6b7280;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  cursor: pointer;
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.summaryCard {
+  border: 1px solid rgba(212, 175, 55, 0.34);
+  border-radius: 1.15rem;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 1.15rem;
+  box-shadow: 0 14px 30px rgba(250, 204, 21, 0.12);
+}
+
+.summaryLabel {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.05rem;
+}
+
+.summaryValue {
+  margin: 0.5rem 0 0;
+  color: var(--text);
+  font-size: 1.75rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.summaryNote {
+  margin: 0.5rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+  line-height: 1.45;
+}
+
+.modalMetaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1.2rem;
+  flex-wrap: wrap;
+}
+
+.metaPill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: rgba(250, 204, 21, 0.18);
+  color: #7c5300;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.metaWarning {
+  color: #b91c1c;
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.breakdownSection {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.2rem;
+}
+
+.agentSection {
+  display: grid;
+  grid-template-columns: minmax(17rem, 22rem) minmax(0, 1fr);
+  gap: 1rem;
+  margin-top: 1.2rem;
+}
+
+.agentListBlock,
+.agentDetailsBlock {
+  border: 1px solid rgba(212, 175, 55, 0.28);
+  border-radius: 1.15rem;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 1rem;
+}
+
+.agentList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.agentButton {
+  appearance: none;
+  width: 100%;
+  border: 1px solid rgba(212, 175, 55, 0.18);
+  border-radius: 0.95rem;
+  background: rgba(250, 204, 21, 0.06);
+  padding: 0.9rem 0.95rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agentButtonActive {
+  border-color: rgba(245, 158, 11, 0.48);
+  background: rgba(250, 204, 21, 0.14);
+}
+
+.selectedAgentHero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.95rem 1rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.12), rgba(255, 255, 255, 0.9));
+  border: 1px solid rgba(245, 158, 11, 0.18);
+}
+
+.selectedAgentTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.08rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.selectedAgentMeta {
+  margin: 0.3rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.selectedAgentTotals {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  color: #7c5300;
+  font-size: 0.8rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+  white-space: nowrap;
+}
+
+.breakdownBlock {
+  border: 1px solid rgba(212, 175, 55, 0.28);
+  border-radius: 1.15rem;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 1rem;
+}
+
+.breakdownHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.8rem;
+}
+
+.breakdownTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.breakdownCount {
+  color: #7c5300;
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.breakdownList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.breakdownRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+  padding: 0.9rem 0.95rem;
+  border-radius: 0.95rem;
+  background: rgba(250, 204, 21, 0.08);
+}
+
+.breakdownName {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.breakdownMeta {
+  margin: 0.24rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+  line-height: 1.4;
+}
+
+.breakdownAmount {
+  color: #0f9f6e;
+  font-size: 0.88rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+  white-space: nowrap;
+}
+
+.emptyBreakdown {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
 }
 
 @media (max-width: 768px) {
@@ -73,5 +387,39 @@
 
   .subtitle {
     font-size: 0.88rem;
+  }
+
+  .modalOverlay {
+    padding: 0.9rem;
+  }
+
+  .modal {
+    padding: 1.1rem;
+    border-radius: 1.15rem;
+  }
+
+  .modalTitle {
+    font-size: 1.35rem;
+  }
+
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .agentSection {
+    grid-template-columns: 1fr;
+  }
+
+  .breakdownSection {
+    grid-template-columns: 1fr;
+  }
+
+  .selectedAgentHero {
+    flex-direction: column;
+  }
+
+  .selectedAgentTotals {
+    align-items: flex-start;
+    white-space: normal;
   }
 }

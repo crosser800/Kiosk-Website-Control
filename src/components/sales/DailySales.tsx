@@ -3,13 +3,26 @@ import styles from './DailySales.module.css';
 type DailySalesProps = {
   amount?: number;
   yesterday?: number;
+  onClick?: () => void;
+  disabled?: boolean;
 };
 
-export default function DailySales({ amount = 0, yesterday = 0 }: DailySalesProps) {
+export default function DailySales({
+  amount = 0,
+  yesterday = 0,
+  onClick,
+  disabled = false,
+}: DailySalesProps) {
   const isUp = amount >= yesterday;
 
   return (
-    <div className={styles.card}>
+    <button
+      type="button"
+      className={styles.card}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label="Open daily sales breakdown"
+    >
       <div className={styles.top}>
         <div>
           <p className={`${styles.trend} ${isUp ? styles.up : styles.down}`}>
@@ -36,6 +49,6 @@ export default function DailySales({ amount = 0, yesterday = 0 }: DailySalesProp
       <p className={`${styles.subtitle} ${isUp ? styles.up : styles.down}`}>
         {isUp ? 'Today is pacing above yesterday.' : 'Today is pacing below yesterday.'}
       </p>
-    </div>
+    </button>
   );
 }

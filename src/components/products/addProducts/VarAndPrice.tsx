@@ -1795,306 +1795,340 @@ export default function VarAndPrice({
 
       {discountContext ? (
         <div className={styles.modalOverlay}>
-          <div className={styles.modal}>
-            <h4 className={styles.modalTitle}>Manage Discount: {discountContext.code}</h4>
-            <p className={styles.confirmText}>
-              Configure unit-aware discount rules for this price class.
-            </p>
-            {discountModalError ? <p className={styles.confirmText}>{discountModalError}</p> : null}
+          <div className={styles.modal} role="dialog" aria-modal="true" aria-label="Manage discount rules">
             {(() => {
+              const currentCard = cards.find((card) => card.id === discountContext.variationId);
               const orderableOptions = getOrderableUnitOptions(discountContext.variationId);
               const activeTier =
                 discountDraft.find((item) => item.id === activeDiscountTabId) ?? discountDraft[0] ?? null;
               return (
                 <>
-                  <div className={styles.ruleTabsHeader}>
-                    <div className={styles.ruleTabs}>
-                      {discountDraft.map((tier, index) => (
-                        <button
-                          key={tier.id}
-                          type="button"
-                          className={`${styles.ruleTab} ${
-                            activeDiscountTabId === tier.id ? styles.ruleTabActive : ''
-                          }`}
-                          onClick={() => setActiveDiscountTabId(tier.id)}
-                        >
-                          {tier.discountName.trim() || `Discount ${index + 1}`}
-                        </button>
-                      ))}
+                  <div className={styles.modalHeader}>
+                    <div>
+                      <h4 className={styles.modalTitle}>Manage Discount: {discountContext.code}</h4>
+                      <p className={styles.confirmText}>
+                        Configure unit-aware discount rules for this price class.
+                      </p>
                     </div>
                     <button
                       type="button"
-                      className={styles.secondaryAction}
+                      className={styles.modalClose}
                       onClick={() => {
-                        const nextRule = createEmptyDiscountDraft();
-                        setDiscountDraft((current) => [...current, nextRule]);
-                        setActiveDiscountTabId(nextRule.id);
+                        setDiscountContext(null);
+                        setDiscountDraft([]);
+                        setActiveDiscountTabId('');
+                        setDiscountModalError('');
                       }}
+                      aria-label="Close discount modal"
                     >
-                      Add Discount Rule
+                      <i className="fa-solid fa-xmark" aria-hidden="true"></i>
                     </button>
                   </div>
+                  <div className={styles.modalInfoGrid}>
+                    <span className={styles.infoCard}>
+                      <strong>Variation:</strong> {currentCard?.variationName || 'Variation'}
+                    </span>
+                    <span className={styles.infoCard}>
+                      <strong>SKU:</strong> {currentCard?.baseSku || '-'}
+                    </span>
+                    <span className={styles.infoCard}>
+                      <strong>Price Class:</strong> {discountContext.code}
+                    </span>
+                    <span className={styles.infoCard}>
+                      <strong>Rules:</strong> {discountDraft.length}
+                    </span>
+                  </div>
+                  {discountModalError ? <p className={styles.modalAlert}>{discountModalError}</p> : null}
 
-                  <div className={styles.ruleList}>
-                    {activeTier ? (() => {
-                      const tier = activeTier;
-                      const index = discountDraft.findIndex((item) => item.id === tier.id);
-                      const selectedOption = getDraftUnitOption(
-                        discountContext.variationId,
-                        tier.unitOptionId,
-                      );
-                      const rewardUnitOption = getRewardUnitOption(tier.id, tier);
-                      const rewardUnitLabel =
-                        getUnitOptionLabel(rewardUnitOption) ||
-                        tier.promoRewardUnitCode ||
-                        'unit';
-                      const minBasePreview = computeBaseQuantityPreview(
-                        discountContext.variationId,
-                        tier.unitCondition,
-                        tier.unitOptionId,
-                        tier.minOrderQuantity,
-                      );
-                      const maxBasePreview = computeBaseQuantityPreview(
-                        discountContext.variationId,
-                        tier.unitCondition,
-                        tier.unitOptionId,
-                        tier.maxOrderQuantity,
-                      );
-                      return (
-                        <div key={tier.id} className={styles.ruleCard}>
-                          <div className={styles.ruleCardHeader}>
-                            <span className={styles.rowIndex}>{index + 1}</span>
-                            <span className={styles.ruleSummary}>{buildDiscountSummary({
-                              id: tier.id,
-                              discountRecordId: '',
-                              discountClassId: '',
-                              variationId: discountContext.variationId,
-                              discountName: tier.discountName,
-                              discountType: tier.discountType,
-                              amount: tier.amount,
-                              minQuantity: tier.minOrderQuantity,
-                              maxQuantity: tier.maxOrderQuantity,
-                              branchName: '' as DiscountItem['branchName'],
-                              priceType: '' as DiscountItem['priceType'],
-                              priceCode: '' as DiscountItem['priceCode'],
-                              calculationMethod: 'Single',
-                              applySequence: String(index + 1),
-                              discountGroup: '',
-                              appliesTo: 'UnitPrice',
-                              stackable: tier.stackable,
-                              description: '',
-                              status: tier.status,
-                              priority: String(index),
-                              startsAt: '',
-                              endsAt: '',
-                              unitOptionId: tier.unitOptionId,
-                              orderUnitCode: selectedOption?.unitCode ?? '',
-                              unitCondition: tier.unitCondition,
-                              minOrderQuantity: tier.minOrderQuantity,
-                              maxOrderQuantity: tier.maxOrderQuantity,
-                              minBaseQuantity: minBasePreview.split(' ')[0] || '',
-                              maxBaseQuantity: maxBasePreview.split(' ')[0] || '',
-                              unitRuleLabel: '',
-                              unitRuleNotes: '',
-                              hasPromo: tier.hasPromo,
-                              promoType: tier.promoType,
-                              promoRewardUnitCode: tier.promoRewardUnitCode,
-                              promoRewardQuantity: tier.promoRewardQuantity,
-                              promoRewardLabel: '',
-                              promoSourceSurchargeId: '',
-                              promoRewardTargetType: tier.promoRewardTargetType,
-                              promoRewardProductId: tier.promoRewardProductId,
-                              promoRewardProductLabel: tier.promoRewardProductLabel,
-                              promoRewardVariationId: tier.promoRewardVariationId,
-                              promoRewardVariationLabel: tier.promoRewardVariationLabel,
-                              promoRewardUnitOptionId: tier.promoRewardUnitOptionId,
-                              promoRewardRepeatMode: tier.promoRewardRepeatMode,
-                              promoRewardEveryQuantity: tier.promoRewardEveryQuantity,
-                            })}</span>
-                            <button
-                              type="button"
-                              className={styles.deleteAction}
-                              onClick={() => {
-                                setDiscountDraft((current) => current.filter((item) => item.id !== tier.id));
-                              }}
-                            >
-                              Remove
-                            </button>
-                          </div>
+                  <div className={styles.modalContent}>
+                    <div className={styles.ruleTabsHeader}>
+                      <div className={styles.ruleTabs}>
+                        {discountDraft.map((tier, index) => (
+                          <button
+                            key={tier.id}
+                            type="button"
+                            className={`${styles.ruleTab} ${
+                              activeDiscountTabId === tier.id ? styles.ruleTabActive : ''
+                            }`}
+                            onClick={() => setActiveDiscountTabId(tier.id)}
+                          >
+                            {tier.discountName.trim() || `Discount ${index + 1}`}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        className={styles.secondaryAction}
+                        onClick={() => {
+                          const nextRule = createEmptyDiscountDraft();
+                          setDiscountDraft((current) => [...current, nextRule]);
+                          setActiveDiscountTabId(nextRule.id);
+                        }}
+                      >
+                        Add Discount Rule
+                      </button>
+                    </div>
 
-                          <div className={styles.ruleGrid}>
-                            <input
-                              className={styles.input}
-                              placeholder="Discount Name"
-                              value={tier.discountName}
-                              onChange={(event) =>
-                                setDiscountDraft((current) =>
-                                  current.map((item) =>
-                                    item.id === tier.id ? { ...item, discountName: event.target.value } : item,
-                                  ),
-                                )
-                              }
-                            />
-                            <select
-                              className={styles.select}
-                              value={tier.discountType}
-                              onChange={(event) =>
-                                setDiscountDraft((current) =>
-                                  current.map((item) =>
-                                    item.id === tier.id
-                                      ? { ...item, discountType: event.target.value as DiscountItem['discountType'] }
-                                      : item,
-                                  ),
-                                )
-                              }
-                            >
-                              <option value="Percent">Percent</option>
-                              <option value="Amount">Amount</option>
-                            </select>
-                            <input
-                              className={styles.input}
-                              placeholder={tier.discountType === 'Percent' ? 'Discount %' : 'Discount Amount'}
-                              value={tier.amount}
-                              onChange={(event) =>
-                                setDiscountDraft((current) =>
-                                  current.map((item) =>
-                                    item.id === tier.id ? { ...item, amount: event.target.value } : item,
-                                  ),
-                                )
-                              }
-                            />
-                            <select
-                              className={styles.select}
-                              value={tier.unitCondition}
-                              onChange={(event) =>
-                                setDiscountDraft((current) =>
-                                  current.map((item) =>
-                                    item.id === tier.id
-                                      ? {
-                                          ...item,
-                                          unitCondition: event.target.value as UnitCondition,
-                                          unitOptionId:
-                                            event.target.value === 'selected_unit'
-                                              ? item.unitOptionId
-                                              : '',
-                                        }
-                                      : item,
-                                  ),
-                                )
-                              }
-                            >
-                              <option value="any_unit">Any unit</option>
-                              <option value="selected_unit">Selected unit only</option>
-                            </select>
-                            {tier.unitCondition === 'selected_unit' ? (
-                              <select
-                                className={styles.select}
-                                value={tier.unitOptionId}
+                    <div className={styles.ruleList}>
+                      {activeTier ? (() => {
+                        const tier = activeTier;
+                        const index = discountDraft.findIndex((item) => item.id === tier.id);
+                        const selectedOption = getDraftUnitOption(
+                          discountContext.variationId,
+                          tier.unitOptionId,
+                        );
+                        const rewardUnitOption = getRewardUnitOption(tier.id, tier);
+                        const rewardUnitLabel =
+                          getUnitOptionLabel(rewardUnitOption) ||
+                          tier.promoRewardUnitCode ||
+                          'unit';
+                        const minBasePreview = computeBaseQuantityPreview(
+                          discountContext.variationId,
+                          tier.unitCondition,
+                          tier.unitOptionId,
+                          tier.minOrderQuantity,
+                        );
+                        const maxBasePreview = computeBaseQuantityPreview(
+                          discountContext.variationId,
+                          tier.unitCondition,
+                          tier.unitOptionId,
+                          tier.maxOrderQuantity,
+                        );
+                        return (
+                          <div key={tier.id} className={styles.ruleCard}>
+                            <div className={styles.ruleCardHeader}>
+                              <span className={styles.rowIndex}>{index + 1}</span>
+                              <span className={styles.ruleSummary}>{buildDiscountSummary({
+                                id: tier.id,
+                                discountRecordId: '',
+                                discountClassId: '',
+                                variationId: discountContext.variationId,
+                                discountName: tier.discountName,
+                                discountType: tier.discountType,
+                                amount: tier.amount,
+                                minQuantity: tier.minOrderQuantity,
+                                maxQuantity: tier.maxOrderQuantity,
+                                branchName: '' as DiscountItem['branchName'],
+                                priceType: '' as DiscountItem['priceType'],
+                                priceCode: '' as DiscountItem['priceCode'],
+                                calculationMethod: 'Single',
+                                applySequence: String(index + 1),
+                                discountGroup: '',
+                                appliesTo: 'UnitPrice',
+                                stackable: tier.stackable,
+                                description: '',
+                                status: tier.status,
+                                priority: String(index),
+                                startsAt: '',
+                                endsAt: '',
+                                unitOptionId: tier.unitOptionId,
+                                orderUnitCode: selectedOption?.unitCode ?? '',
+                                unitCondition: tier.unitCondition,
+                                minOrderQuantity: tier.minOrderQuantity,
+                                maxOrderQuantity: tier.maxOrderQuantity,
+                                minBaseQuantity: minBasePreview.split(' ')[0] || '',
+                                maxBaseQuantity: maxBasePreview.split(' ')[0] || '',
+                                unitRuleLabel: '',
+                                unitRuleNotes: '',
+                                hasPromo: tier.hasPromo,
+                                promoType: tier.promoType,
+                                promoRewardUnitCode: tier.promoRewardUnitCode,
+                                promoRewardQuantity: tier.promoRewardQuantity,
+                                promoRewardLabel: '',
+                                promoSourceSurchargeId: '',
+                                promoRewardTargetType: tier.promoRewardTargetType,
+                                promoRewardProductId: tier.promoRewardProductId,
+                                promoRewardProductLabel: tier.promoRewardProductLabel,
+                                promoRewardVariationId: tier.promoRewardVariationId,
+                                promoRewardVariationLabel: tier.promoRewardVariationLabel,
+                                promoRewardUnitOptionId: tier.promoRewardUnitOptionId,
+                                promoRewardRepeatMode: tier.promoRewardRepeatMode,
+                                promoRewardEveryQuantity: tier.promoRewardEveryQuantity,
+                              })}</span>
+                              <button
+                                type="button"
+                                className={styles.deleteAction}
+                                onClick={() => {
+                                  setDiscountDraft((current) => current.filter((item) => item.id !== tier.id));
+                                }}
+                              >
+                                Remove
+                              </button>
+                            </div>
+
+                            <div className={styles.ruleGrid}>
+                              <input
+                                className={styles.input}
+                                placeholder="Discount Name"
+                                value={tier.discountName}
                                 onChange={(event) =>
                                   setDiscountDraft((current) =>
                                     current.map((item) =>
-                                      item.id === tier.id ? { ...item, unitOptionId: event.target.value } : item,
+                                      item.id === tier.id ? { ...item, discountName: event.target.value } : item,
+                                    ),
+                                  )
+                                }
+                              />
+                              <select
+                                className={styles.select}
+                                value={tier.discountType}
+                                onChange={(event) =>
+                                  setDiscountDraft((current) =>
+                                    current.map((item) =>
+                                      item.id === tier.id
+                                        ? { ...item, discountType: event.target.value as DiscountItem['discountType'] }
+                                        : item,
                                     ),
                                   )
                                 }
                               >
-                                <option value="">Select order unit</option>
-                                {orderableOptions.map((option) => (
-                                  <option key={option.id} value={option.id}>
-                                    {getUnitOptionLabel(option)}
-                                  </option>
-                                ))}
+                                <option value="Percent">Percent</option>
+                                <option value="Amount">Amount</option>
                               </select>
-                            ) : null}
-                            <input
-                              className={styles.input}
-                              placeholder="Min Order Qty"
-                              value={tier.minOrderQuantity}
-                              onChange={(event) =>
-                                setDiscountDraft((current) =>
-                                  current.map((item) =>
-                                    item.id === tier.id ? { ...item, minOrderQuantity: event.target.value.replace(/[^\d.]/g, '') } : item,
-                                  ),
-                                )
-                              }
-                            />
-                            <input
-                              className={styles.input}
-                              placeholder="Max Order Qty (optional)"
-                              value={tier.maxOrderQuantity}
-                              onChange={(event) =>
-                                setDiscountDraft((current) =>
-                                  current.map((item) =>
-                                    item.id === tier.id ? { ...item, maxOrderQuantity: event.target.value.replace(/[^\d.]/g, '') } : item,
-                                  ),
-                                )
-                              }
-                            />
-                            <select
-                              className={styles.select}
-                              value={tier.status}
-                              onChange={(event) =>
-                                setDiscountDraft((current) =>
-                                  current.map((item) =>
-                                    item.id === tier.id
-                                      ? { ...item, status: event.target.value as DiscountItem['status'] }
-                                      : item,
-                                  ),
-                                )
-                              }
-                            >
-                              <option value="Active">Active</option>
-                              <option value="Inactive">Inactive</option>
-                            </select>
-                          </div>
-
-                          <div className={styles.promoSection}>
-                            <label className={styles.toggleField}>
-                              <span className={styles.fieldLabel}>Enable Promo</span>
                               <input
-                                type="checkbox"
-                                checked={tier.hasPromo}
+                                className={styles.input}
+                                placeholder={tier.discountType === 'Percent' ? 'Discount %' : 'Discount Amount'}
+                                value={tier.amount}
+                                onChange={(event) =>
+                                  setDiscountDraft((current) =>
+                                    current.map((item) =>
+                                      item.id === tier.id ? { ...item, amount: event.target.value } : item,
+                                    ),
+                                  )
+                                }
+                              />
+                              <select
+                                className={styles.select}
+                                value={tier.unitCondition}
                                 onChange={(event) =>
                                   setDiscountDraft((current) =>
                                     current.map((item) =>
                                       item.id === tier.id
                                         ? {
                                             ...item,
-                                            hasPromo: event.target.checked,
-                                            promoRewardUnitCode: event.target.checked
-                                              ? item.promoRewardUnitCode
-                                              : '',
-                                            promoRewardQuantity: event.target.checked
-                                              ? item.promoRewardQuantity
-                                              : '1',
-                                            promoRewardProductId: event.target.checked
-                                              ? item.promoRewardProductId
-                                              : '',
-                                            promoRewardProductLabel: event.target.checked
-                                              ? item.promoRewardProductLabel
-                                              : '',
-                                            promoRewardVariationId: event.target.checked
-                                              ? item.promoRewardVariationId
-                                              : '',
-                                            promoRewardVariationLabel: event.target.checked
-                                              ? item.promoRewardVariationLabel
-                                              : '',
-                                            promoRewardUnitOptionId: event.target.checked
-                                              ? item.promoRewardUnitOptionId
-                                              : '',
-                                            promoRewardRepeatMode: event.target.checked
-                                              ? item.promoRewardRepeatMode
-                                              : 'one_time',
-                                            promoRewardEveryQuantity: event.target.checked
-                                              ? item.promoRewardEveryQuantity
-                                              : '',
+                                            unitCondition: event.target.value as UnitCondition,
+                                            unitOptionId:
+                                              event.target.value === 'selected_unit'
+                                                ? item.unitOptionId
+                                                : '',
                                           }
                                         : item,
                                     ),
                                   )
                                 }
+                              >
+                                <option value="any_unit">Any unit</option>
+                                <option value="selected_unit">Selected unit only</option>
+                              </select>
+                              {tier.unitCondition === 'selected_unit' ? (
+                                <select
+                                  className={styles.select}
+                                  value={tier.unitOptionId}
+                                  onChange={(event) =>
+                                    setDiscountDraft((current) =>
+                                      current.map((item) =>
+                                        item.id === tier.id ? { ...item, unitOptionId: event.target.value } : item,
+                                      ),
+                                    )
+                                  }
+                                >
+                                  <option value="">Select order unit</option>
+                                  {orderableOptions.map((option) => (
+                                    <option key={option.id} value={option.id}>
+                                      {getUnitOptionLabel(option)}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : null}
+                              <input
+                                className={styles.input}
+                                placeholder="Min Order Qty"
+                                value={tier.minOrderQuantity}
+                                onChange={(event) =>
+                                  setDiscountDraft((current) =>
+                                    current.map((item) =>
+                                      item.id === tier.id ? { ...item, minOrderQuantity: event.target.value.replace(/[^\d.]/g, '') } : item,
+                                    ),
+                                  )
+                                }
                               />
-                            </label>
+                              <input
+                                className={styles.input}
+                                placeholder="Max Order Qty (optional)"
+                                value={tier.maxOrderQuantity}
+                                onChange={(event) =>
+                                  setDiscountDraft((current) =>
+                                    current.map((item) =>
+                                      item.id === tier.id ? { ...item, maxOrderQuantity: event.target.value.replace(/[^\d.]/g, '') } : item,
+                                    ),
+                                  )
+                                }
+                              />
+                              <select
+                                className={styles.select}
+                                value={tier.status}
+                                onChange={(event) =>
+                                  setDiscountDraft((current) =>
+                                    current.map((item) =>
+                                      item.id === tier.id
+                                        ? { ...item, status: event.target.value as DiscountItem['status'] }
+                                        : item,
+                                    ),
+                                  )
+                                }
+                              >
+                                <option value="Active">Active</option>
+                                <option value="Inactive">Inactive</option>
+                              </select>
+                            </div>
+
+                            <div className={styles.promoSection}>
+                              <label className={styles.toggleField}>
+                                <span className={styles.fieldLabel}>Enable Promo</span>
+                                <input
+                                  type="checkbox"
+                                  checked={tier.hasPromo}
+                                  onChange={(event) =>
+                                    setDiscountDraft((current) =>
+                                      current.map((item) =>
+                                        item.id === tier.id
+                                          ? {
+                                              ...item,
+                                              hasPromo: event.target.checked,
+                                              promoRewardUnitCode: event.target.checked
+                                                ? item.promoRewardUnitCode
+                                                : '',
+                                              promoRewardQuantity: event.target.checked
+                                                ? item.promoRewardQuantity
+                                                : '1',
+                                              promoRewardProductId: event.target.checked
+                                                ? item.promoRewardProductId
+                                                : '',
+                                              promoRewardProductLabel: event.target.checked
+                                                ? item.promoRewardProductLabel
+                                                : '',
+                                              promoRewardVariationId: event.target.checked
+                                                ? item.promoRewardVariationId
+                                                : '',
+                                              promoRewardVariationLabel: event.target.checked
+                                                ? item.promoRewardVariationLabel
+                                                : '',
+                                              promoRewardUnitOptionId: event.target.checked
+                                                ? item.promoRewardUnitOptionId
+                                                : '',
+                                              promoRewardRepeatMode: event.target.checked
+                                                ? item.promoRewardRepeatMode
+                                                : 'one_time',
+                                              promoRewardEveryQuantity: event.target.checked
+                                                ? item.promoRewardEveryQuantity
+                                                : '',
+                                            }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                />
+                              </label>
 
                             {tier.hasPromo ? (
                               <>
@@ -2371,48 +2405,49 @@ export default function VarAndPrice({
                               </div>
                               </>
                             ) : null}
-                          </div>
+                            </div>
 
-                          {tier.unitCondition === 'selected_unit' && orderableOptions.length === 0 ? (
-                            <p className={styles.ruleNote}>
-                              Define order units first before adding unit-specific discounts.
-                            </p>
-                          ) : null}
-                          {minBasePreview ? (
-                            <p className={styles.ruleNote}>
-                              Applies when customer orders at least {formatQuantityLabel(
-                                tier.minOrderQuantity || '1',
-                                getUnitOptionLabel(selectedOption),
-                              )} ({minBasePreview}).
-                              {maxBasePreview ? ` Max preview: ${maxBasePreview}.` : ''}
-                              {tier.hasPromo && rewardUnitLabel
-                                ? ` Promo: ${buildPromoPreview(
-                                    tier,
-                                    getUnitOptionLabel(selectedOption),
-                                    rewardUnitLabel,
-                                  )}`
-                                : ''}
-                            </p>
-                          ) : tier.unitCondition === 'any_unit' ? (
-                            <p className={styles.ruleNote}>
-                              Applies to any unit. Minimum order quantity defaults to 1.
-                              {tier.hasPromo && rewardUnitLabel
-                                ? ` Promo: ${buildPromoPreview(
-                                    tier,
-                                    getUnitOptionLabel(selectedOption),
-                                    rewardUnitLabel,
-                                  )}`
-                                : ''}
-                            </p>
-                          ) : null}
-                        </div>
-                      );
-                    })() : null}
+                            {tier.unitCondition === 'selected_unit' && orderableOptions.length === 0 ? (
+                              <p className={styles.ruleNote}>
+                                Define order units first before adding unit-specific discounts.
+                              </p>
+                            ) : null}
+                            {minBasePreview ? (
+                              <p className={styles.ruleNote}>
+                                Applies when customer orders at least {formatQuantityLabel(
+                                  tier.minOrderQuantity || '1',
+                                  getUnitOptionLabel(selectedOption),
+                                )} ({minBasePreview}).
+                                {maxBasePreview ? ` Max preview: ${maxBasePreview}.` : ''}
+                                {tier.hasPromo && rewardUnitLabel
+                                  ? ` Promo: ${buildPromoPreview(
+                                      tier,
+                                      getUnitOptionLabel(selectedOption),
+                                      rewardUnitLabel,
+                                    )}`
+                                  : ''}
+                              </p>
+                            ) : tier.unitCondition === 'any_unit' ? (
+                              <p className={styles.ruleNote}>
+                                Applies to any unit. Minimum order quantity defaults to 1.
+                                {tier.hasPromo && rewardUnitLabel
+                                  ? ` Promo: ${buildPromoPreview(
+                                      tier,
+                                      getUnitOptionLabel(selectedOption),
+                                      rewardUnitLabel,
+                                    )}`
+                                  : ''}
+                              </p>
+                            ) : null}
+                          </div>
+                        );
+                      })() : null}
+                    </div>
                   </div>
                 </>
               );
             })()}
-            <div className={styles.actions}>
+            <div className={styles.modalFooterActions}>
               <button type="button" className={styles.cancelButton} onClick={() => {
                 setDiscountContext(null);
                 setDiscountDraft([]);
