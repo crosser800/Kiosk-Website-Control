@@ -5,6 +5,7 @@ import CategoriesSettingsSection from '../components/settings/CategoriesSettings
 import DeliveryTermsSettingsSection from '../components/settings/DeliveryTermsSettingsSection';
 import PreferenceTypesSettingsSection from '../components/settings/PreferenceTypesSettingsSection';
 import PriceClassesSettingsSection from '../components/settings/PriceClassesSettingsSection';
+import ThemeToggle from '../components/ThemeToggle';
 import {
   type SettingPanel,
   type StatusValue,
@@ -25,7 +26,12 @@ type PreferenceTypeRecord = {
   sort_order: number;
 };
 
-export default function Settings() {
+type SettingsProps = {
+  isDark: boolean;
+  onToggleTheme: () => void;
+};
+
+export default function Settings({ isDark, onToggleTheme }: SettingsProps) {
   const [activePanel, setActivePanel] = useState<SettingPanel | null>(null);
   const [preferenceTypeRecords, setPreferenceTypeRecords] = useState<PreferenceTypeRecord[]>([]);
 
@@ -53,6 +59,40 @@ export default function Settings() {
           </p>
         </div>
       </section>
+
+      <div className={`${styles.settingContainer} ${activePanel === 'appearance' ? styles.active : ''}`}>
+        <button
+          type="button"
+          className={styles.dropdownButton}
+          onClick={() => togglePanel('appearance')}
+          aria-expanded={activePanel === 'appearance'}
+          aria-controls="appearance-panel"
+        >
+          <span className={styles.leadingIcon}>
+            <i className="fa-solid fa-palette" aria-hidden="true"></i>
+          </span>
+          <span className={styles.buttonText}>Appearance</span>
+          <i className={`fa-solid fa-chevron-down ${styles.chevron}`} aria-hidden="true"></i>
+        </button>
+
+        <div
+          id="appearance-panel"
+          className={styles.panelWrap}
+          aria-hidden={activePanel !== 'appearance'}
+        >
+          <div className={styles.panelInner}>
+            <div className={styles.appearancePanel}>
+              <div>
+                <p className={styles.appearanceTitle}>Dark mode</p>
+                <p className={styles.appearanceText}>
+                  Switch the admin workspace between light and dark appearance.
+                </p>
+              </div>
+              <ThemeToggle isDark={isDark} onToggle={onToggleTheme} />
+            </div>
+          </div>
+        </div>
+      </div>
 
       <BranchesSettingsSection activePanel={activePanel} onToggle={togglePanel} />
       <PreferenceTypesSettingsSection

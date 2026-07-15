@@ -299,10 +299,6 @@ export default function ProductCategoryWorkspace() {
   const filteredCategories = useMemo(() => {
     const normalizedSearch = searchValue.trim().toLowerCase();
 
-    if (!normalizedSearch) {
-      return categories;
-    }
-
     return categories.filter((category) => {
       if (
         [category.title, category.slug, category.status].some((value) =>
@@ -440,15 +436,17 @@ export default function ProductCategoryWorkspace() {
               </p>
             </div>
 
-            <label className={styles.searchField}>
-              <i className="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-              <input
-                type="text"
-                value={searchValue}
-                onChange={(event) => setSearchValue(event.target.value)}
-                placeholder="Search products or categories..."
-              />
-            </label>
+            <div className={styles.catalogControls}>
+              <label className={styles.searchField}>
+                <i className="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <input
+                  type="text"
+                  value={searchValue}
+                  onChange={(event) => setSearchValue(event.target.value)}
+                  placeholder="Search categories..."
+                />
+              </label>
+            </div>
           </div>
 
           {isLoading ? (
@@ -503,13 +501,17 @@ export default function ProductCategoryWorkspace() {
                     <div className={styles.statsRow}>
                       <span className={styles.statPill}>
                         <i className="fa-solid fa-box-open" aria-hidden="true"></i>
-                        {category.productCount} Product
-                        {category.productCount === 1 ? '' : 's'}
+                        <span>{category.productCount}</span>
+                        <span className={styles.statLabel}>
+                          Product{category.productCount === 1 ? '' : 's'}
+                        </span>
                       </span>
                       <span className={styles.statPill}>
                         <i className="fa-solid fa-layer-group" aria-hidden="true"></i>
-                        {category.variationCount} Variation
-                        {category.variationCount === 1 ? '' : 's'}
+                        <span>{category.variationCount}</span>
+                        <span className={styles.statLabel}>
+                          Variation{category.variationCount === 1 ? '' : 's'}
+                        </span>
                       </span>
                     </div>
 
@@ -517,9 +519,10 @@ export default function ProductCategoryWorkspace() {
                       type="button"
                       className={styles.viewButton}
                       onClick={() => openCategory(category.id)}
+                      aria-label={`View products in ${category.title}`}
+                      title={`View products in ${category.title}`}
                     >
-                      View Products
-                      <i className="fa-solid fa-arrow-right" aria-hidden="true"></i>
+                      <i className="fa-solid fa-eye" aria-hidden="true"></i>
                     </button>
                   </div>
                 </article>

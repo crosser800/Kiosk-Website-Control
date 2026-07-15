@@ -159,6 +159,17 @@
   overflow-x: auto;
 }
 
+@media (max-width: 768px) {
+  .table {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .table::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 .tableHeader,
 .tableRow,
 .emptyState {

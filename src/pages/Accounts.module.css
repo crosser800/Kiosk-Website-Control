@@ -46,6 +46,25 @@
   font-family: 'Montserrat', sans-serif;
 }
 
+:global(:root.dark) .hero {
+  border-color: color-mix(in srgb, var(--yellow) 42%, var(--card-border));
+  background:
+    radial-gradient(circle at top right, rgba(245, 197, 24, 0.2), transparent 34%),
+    linear-gradient(135deg, #1f1f1f 0%, #171717 100%);
+  box-shadow:
+    0 0 0 1px rgba(245, 197, 24, 0.08),
+    0 18px 46px rgba(245, 197, 24, 0.16),
+    var(--card-shadow);
+}
+
+:global(:root.dark) .title {
+  color: #ffffff;
+}
+
+:global(:root.dark) .subtitle {
+  color: #d1d5db;
+}
+
 .statsRow {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));

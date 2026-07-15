@@ -113,7 +113,7 @@ export default function SalesOverview({ total, data }: SalesOverviewProps) {
       </div>
 
       <div className={styles.chartWrap}>
-        <ResponsiveContainer width="100%" height={280}>
+        <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} barCategoryGap="26%" barGap={6}>
             <defs>
               <linearGradient id="salesTodayFill" x1="0" y1="0" x2="0" y2="1">

@@ -171,6 +171,27 @@
   background: color-mix(in srgb, var(--surface) 90%, white);
 }
 
+:global(:root.dark) .dateModeTabs,
+:global(:root.dark) .calendarControls select,
+:global(:root.dark) .filterTabs {
+  border-color: color-mix(in srgb, var(--yellow) 24%, var(--card-border));
+  background:
+    radial-gradient(circle at top right, rgba(245, 197, 24, 0.1), transparent 36%),
+    linear-gradient(180deg, #202020 0%, #171717 100%);
+  box-shadow:
+    0 0 0 1px rgba(245, 197, 24, 0.05),
+    0 10px 28px rgba(245, 197, 24, 0.08);
+}
+
+:global(:root.dark) .calendarControls select {
+  color: #f9fafb;
+}
+
+:global(:root.dark) .calendarControls select option {
+  background-color: #171717;
+  color: #f9fafb;
+}
+
 .calendarGrid {
   margin-top: 0.7rem;
   display: grid;
@@ -782,6 +803,35 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--yellow) 25%, transparent);
 }
 
+:global(:root.dark) .paginationButton,
+:global(:root.dark) .pageButton,
+:global(:root.dark) .pageInput {
+  border-color: color-mix(in srgb, var(--yellow) 24%, var(--card-border));
+  background:
+    radial-gradient(circle at top right, rgba(245, 197, 24, 0.08), transparent 42%),
+    linear-gradient(180deg, #202020 0%, #171717 100%);
+  color: #f9fafb;
+  box-shadow:
+    0 0 0 1px rgba(245, 197, 24, 0.04),
+    0 8px 20px rgba(245, 197, 24, 0.08);
+}
+
+:global(:root.dark) .paginationButton:hover:not(:disabled),
+:global(:root.dark) .pageButton:hover,
+:global(:root.dark) .pageInput:focus {
+  border-color: var(--yellow);
+  box-shadow:
+    0 0 0 1px rgba(245, 197, 24, 0.18),
+    0 10px 26px rgba(245, 197, 24, 0.14);
+}
+
+:global(:root.dark) .pageButtonActive {
+  background: linear-gradient(135deg, #facc15 0%, #f59e0b 100%);
+  border-color: #facc15;
+  color: #1f2937;
+  box-shadow: 0 12px 26px rgba(245, 158, 11, 0.22);
+}
+
 .paginationIcon {
   width: 1rem;
   height: 1rem;
@@ -811,6 +861,17 @@
 
   .pagination {
     justify-content: flex-start;
+  }
+
+  .table,
+  .modal {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .table::-webkit-scrollbar,
+  .modal::-webkit-scrollbar {
+    display: none;
   }
 
   .modalFooterActions {

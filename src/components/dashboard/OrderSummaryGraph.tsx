@@ -76,15 +76,15 @@ export default function OrderSummaryGraph({
         {/* Retail */}
         <div className={styles.item}>
           <div className={styles.donut}>
-            <ResponsiveContainer width={160} height={160}>
+            <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Tooltip content={renderTooltip} />
                 <Pie
                   data={retailData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={50}
-                  outerRadius={68}
+                  innerRadius="52%"
+                  outerRadius="72%"
                   startAngle={90}
                   endAngle={-270}
                   dataKey="value"
@@ -118,15 +118,15 @@ export default function OrderSummaryGraph({
         {/* Wholesale */}
         <div className={styles.item}>
           <div className={styles.donut}>
-            <ResponsiveContainer width={160} height={160}>
+            <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Tooltip content={renderTooltip} />
                 <Pie
                   data={wholesaleData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={50}
-                  outerRadius={68}
+                  innerRadius="52%"
+                  outerRadius="72%"
                   startAngle={90}
                   endAngle={-270}
                   dataKey="value"

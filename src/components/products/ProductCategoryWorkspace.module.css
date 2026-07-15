@@ -35,8 +35,15 @@
   font-family: 'Montserrat', sans-serif;
 }
 
+.catalogControls {
+  width: min(100%, 22rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
 .searchField {
-  min-width: min(100%, 22rem);
+  width: 100%;
   display: inline-flex;
   align-items: center;
   gap: 0.7rem;
@@ -217,7 +224,10 @@
 }
 
 .viewButton {
-  width: 100%;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  align-self: flex-end;
   margin-top: auto;
 }
 
@@ -619,10 +629,83 @@
   }
 
   .searchField {
-    min-width: 100%;
+    width: 100%;
+  }
+
+  .catalogControls {
+    width: 100%;
   }
 
   .cardGrid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.35rem;
+  }
+
+  .categoryCard,
+  .categoryCardSkeleton {
+    border-radius: 0.55rem;
+  }
+
+  .categoryCardSkeleton {
+    min-height: 8.5rem;
+  }
+
+  .categoryImage,
+  .categoryPlaceholder {
+    height: 4rem;
+  }
+
+  .categoryPlaceholder {
+    font-size: 0.8rem;
+  }
+
+  .categoryBody {
+    gap: 0.28rem;
+    padding: 0.35rem;
+  }
+
+  .cardHeader {
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .categoryTitle {
+    width: 100%;
+    font-size: 0.52rem;
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .statusBadge {
+    padding: 0.1rem 0.25rem;
+    font-size: 0.4rem;
+  }
+
+  .statsRow {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+    min-height: 0;
+  }
+
+  .statPill {
+    gap: 0.16rem;
+    padding: 0.16rem 0.25rem;
+    font-size: 0.45rem;
+  }
+
+  .statLabel {
+    display: none;
+  }
+
+  .viewButton {
+    width: 100%;
+    height: 1.6rem;
+    align-self: stretch;
+    border-radius: 0.4rem;
+    font-size: 0.55rem;
   }
 }

@@ -1,6 +1,7 @@
 import sectionStyles from './SupabaseSettingsSection.module.css';
 
 export type SettingPanel =
+  | 'appearance'
   | 'branches'
   | 'preferenceTypes'
   | 'priceClasses'

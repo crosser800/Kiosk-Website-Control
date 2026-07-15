@@ -5,14 +5,19 @@ import {
   type TopProductRecord,
 } from '../../services/topProducts';
 
-const SLOT_COUNT = 5;
+const DESKTOP_SLOT_COUNT = 5;
+const MOBILE_SLOT_COUNT = 10;
 const FALLBACK_ITEM_COUNT = 20;
 const INTERVAL = 3000;
 
-function buildDisplayProducts(products: TopProductRecord[], currentPage: number) {
-  const startIndex = currentPage * SLOT_COUNT;
+function buildDisplayProducts(
+  products: TopProductRecord[],
+  currentPage: number,
+  slotCount: number,
+) {
+  const startIndex = currentPage * slotCount;
 
-  return Array.from({ length: SLOT_COUNT }, (_, index) => {
+  return Array.from({ length: slotCount }, (_, index) => {
     const product = products[startIndex + index];
     const rank = startIndex + index + 1;
 
@@ -27,9 +32,25 @@ function buildDisplayProducts(products: TopProductRecord[], currentPage: number)
 export default function TopProducts() {
   const [products, setProducts] = useState<TopProductRecord[]>([]);
   const [currentPage, setCurrentPage] = useState(0);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 700px)').matches,
+  );
 
+  const slotCount = isMobile ? MOBILE_SLOT_COUNT : DESKTOP_SLOT_COUNT;
   const itemCount = Math.max(products.length, FALLBACK_ITEM_COUNT);
-  const totalPages = Math.ceil(itemCount / SLOT_COUNT);
+  const totalPages = Math.ceil(itemCount / slotCount);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 700px)');
+    const handleViewportChange = (event: MediaQueryListEvent) => {
+      setIsMobile(event.matches);
+      setCurrentPage(0);
+    };
+
+    setIsMobile(mediaQuery.matches);
+    mediaQuery.addEventListener('change', handleViewportChange);
+    return () => mediaQuery.removeEventListener('change', handleViewportChange);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -57,7 +78,7 @@ export default function TopProducts() {
     return () => clearInterval(timer);
   }, [totalPages]);
 
-  const displayProducts = buildDisplayProducts(products, currentPage);
+  const displayProducts = buildDisplayProducts(products, currentPage, slotCount);
 
   return (
     <div className={styles.container}>

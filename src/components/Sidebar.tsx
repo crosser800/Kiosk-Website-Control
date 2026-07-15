@@ -58,7 +58,7 @@ export default function Sidebar({ active, onNavigate, isCollapsed, onToggle, onL
             <span className={styles.iconWrap}>
               <i className={`${item.icon} ${styles.icon}`}></i>
             </span>
-            {!isCollapsed && <span className={styles.label}>{item.name}</span>}
+            <span className={styles.label}>{item.name}</span>
           </button>
         ))}
       </nav>
@@ -67,7 +67,7 @@ export default function Sidebar({ active, onNavigate, isCollapsed, onToggle, onL
         <span className={styles.iconWrap}>
           <i className="fa-solid fa-right-from-bracket"></i>
         </span>
-        {!isCollapsed && <span className={styles.label}>Logout</span>}
+        <span className={styles.label}>Logout</span>
       </button>
     </div>
   );

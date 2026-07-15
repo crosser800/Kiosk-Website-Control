@@ -170,23 +170,60 @@
 
 @media (max-width: 768px) {
   .card {
-    padding: 1rem;
+    padding: 0.8rem;
+    border-radius: 0.8rem;
+  }
+
+  .header {
+    margin-bottom: 0.55rem;
+    gap: 0.4rem;
   }
 
   .title {
-    font-size: 1rem;
+    font-size: 0.9rem;
+  }
+
+  .total {
+    font-size: 0.7rem;
   }
 
   .charts {
-    gap: 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem;
+  }
+
+  .item {
+    min-width: 0;
+    gap: 0.25rem;
+    padding: 0.25rem;
   }
 
   .donut {
-    width: 8rem;
-    height: 8rem;
+    width: min(6.8rem, 100%);
+    height: 6.8rem;
   }
 
   .percentage {
-    font-size: 1.125rem;
+    font-size: 1rem;
+  }
+
+  .centerCaption,
+  .vs {
+    font-size: 0.62rem;
+  }
+
+  .label {
+    margin: 0;
+    font-size: 0.72rem;
+  }
+
+  .valueText {
+    font-size: 0.66rem;
+  }
+
+  .emptyHint {
+    margin-top: 0.4rem;
+    font-size: 0.68rem;
   }
 }

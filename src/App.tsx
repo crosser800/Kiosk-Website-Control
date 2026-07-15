@@ -20,6 +20,7 @@ export default function App() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isInitializingAuth, setIsInitializingAuth] = useState(true);
+  const [authInitError, setAuthInitError] = useState('');
   const [isLoginTransitionActive, setIsLoginTransitionActive] = useState(false);
   const [isAppReadyAfterLogin, setIsAppReadyAfterLogin] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
@@ -47,11 +48,31 @@ export default function App() {
     let mounted = true;
 
     const initAuth = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!mounted) return;
-      setIsAuthenticated(Boolean(data.session));
-      setIsAppReadyAfterLogin(Boolean(data.session));
-      setIsInitializingAuth(false);
+      try {
+        const { data } = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise<never>((_, reject) => {
+            window.setTimeout(() => {
+              reject(new Error('Authentication check timed out. Please refresh and try again.'));
+            }, 8000);
+          }),
+        ]);
+
+        if (!mounted) return;
+        setIsAuthenticated(Boolean(data.session));
+        setIsAppReadyAfterLogin(Boolean(data.session));
+      } catch (error) {
+        if (!mounted) return;
+        setAuthInitError(
+          error instanceof Error
+            ? error.message
+            : 'Unable to check your login session. Please refresh and try again.',
+        );
+      } finally {
+        if (mounted) {
+          setIsInitializingAuth(false);
+        }
+      }
     };
 
     void initAuth();
@@ -109,14 +130,29 @@ export default function App() {
       case 'Accounts':
         return <Accounts />;
       case 'Settings':
-        return <Settings />;
+        return <Settings isDark={isDark} onToggleTheme={toggleTheme} />;
       default:
         return <Dashboard />;
     }
   };
 
   if (isInitializingAuth) {
-    return null;
+    return (
+      <div className="auth-status-screen" role="status" aria-live="polite">
+        <img src={logo} alt="BESTBUILT logo" className="auth-status-logo" />
+        <p>Loading admin workspace...</p>
+      </div>
+    );
+  }
+
+  if (authInitError) {
+    return (
+      <div className="auth-status-screen auth-status-screen--error" role="alert">
+        <img src={logo} alt="BESTBUILT logo" className="auth-status-logo" />
+        <h1>Unable to start the admin workspace</h1>
+        <p>{authInitError}</p>
+      </div>
+    );
   }
 
   if (!isAuthenticated && !isLoginTransitionActive) {
@@ -136,8 +172,6 @@ export default function App() {
           />
           <Header
             active={active}
-            isDark={isDark}
-            onToggle={toggleTheme}
             isCollapsed={isCollapsed}
           />
           <MainContent

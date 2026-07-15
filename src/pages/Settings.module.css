@@ -46,6 +46,25 @@
   font-family: 'Montserrat', sans-serif;
 }
 
+:global(:root.dark) .hero {
+  border-color: color-mix(in srgb, var(--yellow) 42%, var(--card-border));
+  background:
+    radial-gradient(circle at top right, rgba(245, 197, 24, 0.2), transparent 34%),
+    linear-gradient(135deg, #1f1f1f 0%, #171717 100%);
+  box-shadow:
+    0 0 0 1px rgba(245, 197, 24, 0.08),
+    0 18px 46px rgba(245, 197, 24, 0.16),
+    var(--card-shadow);
+}
+
+:global(:root.dark) .title {
+  color: #ffffff;
+}
+
+:global(:root.dark) .subtitle {
+  color: #d1d5db;
+}
+
 .settingContainer {
   width: 100%;
   display: flex;
@@ -120,6 +139,45 @@
   flex: 0 0 auto;
 }
 
+.appearancePanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid color-mix(in srgb, var(--yellow) 12%, var(--card-border));
+  background:
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.1), transparent 28%),
+    color-mix(in srgb, var(--card-bg) 96%, white);
+}
+
+.appearanceTitle {
+  margin: 0;
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.96rem;
+  font-weight: 800;
+}
+
+.appearanceText {
+  margin: 0.25rem 0 0;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+:global(:root.dark) .appearancePanel {
+  border-top-color: color-mix(in srgb, var(--yellow) 20%, var(--card-border));
+  background:
+    radial-gradient(circle at top right, rgba(245, 197, 24, 0.1), transparent 34%),
+    linear-gradient(180deg, #202020 0%, #171717 100%);
+}
+
+:global(:root.dark) .appearanceText {
+  color: #d1d5db;
+}
+
 .countPill {
   min-height: 1.55rem;
   display: inline-flex;
@@ -133,6 +191,25 @@
   font-size: 0.76rem;
   font-weight: 700;
   white-space: nowrap;
+}
+
+:global(:root.dark) .countPill {
+  border-color: color-mix(in srgb, var(--yellow) 28%, var(--card-border));
+  background:
+    radial-gradient(circle at top right, rgba(245, 197, 24, 0.12), transparent 42%),
+    linear-gradient(180deg, #202020 0%, #171717 100%);
+  color: #f9fafb;
+  box-shadow:
+    0 0 0 1px rgba(245, 197, 24, 0.05),
+    0 8px 20px rgba(245, 197, 24, 0.1);
+}
+
+:global(:root.dark) .settingContainer:hover .countPill,
+:global(:root.dark) .settingContainer.active .countPill {
+  border-color: var(--yellow);
+  box-shadow:
+    0 0 0 1px rgba(245, 197, 24, 0.16),
+    0 10px 24px rgba(245, 197, 24, 0.14);
 }
 
 .chevron {
@@ -214,5 +291,10 @@
     justify-content: flex-start;
     flex-wrap: wrap;
     padding-left: 3.25rem;
+  }
+
+  .appearancePanel {
+    align-items: flex-start;
+    padding: 1rem;
   }
 }
