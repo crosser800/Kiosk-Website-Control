@@ -7,6 +7,14 @@ type DailySalesProps = {
   disabled?: boolean;
 };
 
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat('en-PH', {
+    style: 'currency',
+    currency: 'PHP',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+
 export default function DailySales({
   amount = 0,
   yesterday = 0,
@@ -32,10 +40,10 @@ export default function DailySales({
               }`}
               aria-hidden="true"
             ></i>{' '}
-            {yesterday.toLocaleString()} vs yesterday
+            {formatCurrency(yesterday)} yesterday
           </p>
           <p className={styles.label}>Daily Sales</p>
-          <h2 className={styles.count}>₱{amount.toLocaleString()}</h2>
+          <h2 className={styles.count}>{formatCurrency(amount)}</h2>
         </div>
         <div className={styles.iconBadge}>
           <i className="fa-solid fa-sun"></i>
@@ -47,7 +55,7 @@ export default function DailySales({
       </div>
 
       <p className={`${styles.subtitle} ${isUp ? styles.up : styles.down}`}>
-        {isUp ? 'Today is pacing above yesterday.' : 'Today is pacing below yesterday.'}
+        {isUp ? 'Today is tracking ahead of yesterday.' : 'Today is trailing yesterday.'}
       </p>
     </button>
   );

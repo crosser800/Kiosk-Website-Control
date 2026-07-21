@@ -40,6 +40,7 @@
 
 .addButton,
 .secondaryAction,
+.iconAction,
 .deleteAction,
 .cancelButton,
 .registerButton,
@@ -67,6 +68,23 @@
   color: var(--text);
 }
 
+.iconAction {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.actionIcon {
+  width: 1rem;
+  height: 1rem;
+}
+
 .deleteAction {
   border: 1px solid #b91c1c;
   background: #dc2626;
@@ -81,11 +99,24 @@
 
 .addButton:hover,
 .secondaryAction:hover,
+.iconAction:hover,
 .deleteAction:hover,
 .cancelButton:hover,
 .registerButton:hover,
 .smallAction:hover {
   transform: translateY(-1px);
+}
+
+.addButton:disabled,
+.secondaryAction:disabled,
+.iconAction:disabled,
+.deleteAction:disabled,
+.cancelButton:disabled,
+.registerButton:disabled,
+.smallAction:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
 }
 
 .cardGrid {
@@ -193,17 +224,16 @@
   gap: 0.9rem;
 }
 
-.templatePanel {
+.variationPreviewPanel {
   border: 1px solid var(--card-border);
   border-radius: 0.9rem;
   padding: 1rem;
-  background: color-mix(in srgb, var(--surface) 92%, white);
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
+  background: color-mix(in srgb, var(--surface) 90%, white);
+  display: grid;
+  gap: 0.85rem;
 }
 
-.templateTitle {
+.variationPreviewTitle {
   margin: 0;
   color: var(--text);
   font-size: 0.95rem;
@@ -211,16 +241,64 @@
   font-family: 'Montserrat', sans-serif;
 }
 
-.templateActions {
-  display: flex;
-  justify-content: flex-start;
+.variationPreviewContent {
+  display: grid;
+  grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr);
+  gap: 0.9rem;
+  align-items: center;
 }
 
-.templateHint {
-  margin: 0;
+.variationPreviewThumbWrap,
+.mediaSelectorThumbWrap {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--surface) 88%, white);
+}
+
+.variationPreviewThumbWrap {
+  aspect-ratio: 4 / 3;
+}
+
+.variationPreviewThumb,
+.mediaSelectorThumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.variationPreviewFallback {
+  min-height: 6.5rem;
+  display: flex;
+  align-items: center;
+  padding: 0.9rem;
+  border: 1px dashed var(--card-border);
+  border-radius: 0.75rem;
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.variationPreviewActions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.mediaBadge {
+  position: absolute;
+  top: 0.55rem;
+  left: 0.55rem;
+  padding: 0.25rem 0.45rem;
+  border-radius: 999px;
+  background: #facc15;
+  color: #1f2937;
+  font-size: 0.68rem;
+  font-weight: 800;
   font-family: 'Montserrat', sans-serif;
 }
 
@@ -303,16 +381,13 @@
     0.55fr
     minmax(6.75rem, 1fr)
     minmax(13rem, 1.9fr)
-    minmax(8.5rem, 1.05fr)
+    minmax(16rem, 1.8fr)
     0.8fr
-    0.85fr
     minmax(6rem, 0.9fr)
-    minmax(6rem, 0.9fr)
-    minmax(7.5rem, 1fr)
-    minmax(6.5rem, 0.9fr);
+    minmax(7.5rem, 1fr);
   gap: 0.85rem;
   align-items: start;
-  min-width: 74rem;
+  min-width: 78rem;
 }
 
 .orderUnitsHeader {
@@ -411,17 +486,34 @@
   height: 1rem;
 }
 
-.computedPrice {
-  min-height: 2.95rem;
-  display: flex;
-  align-items: center;
-  padding: 0.8rem 1rem;
+.basePriceSummaryGrid,
+.computedPriceGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.basePriceSummaryItem,
+.computedPriceItem {
+  min-height: 2.45rem;
+  display: grid;
+  align-content: center;
+  gap: 0.15rem;
+  padding: 0.45rem 0.55rem;
   border: 1px solid var(--card-border);
-  border-radius: 0.75rem;
+  border-radius: 0.65rem;
   background: color-mix(in srgb, var(--yellow) 12%, white);
   color: #7c5300;
-  font-weight: 800;
+  font-size: 0.74rem;
+  font-weight: 700;
   font-family: 'Montserrat', sans-serif;
+}
+
+.basePriceSummaryItem strong,
+.computedPriceItem strong {
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 800;
 }
 
 .unitOptionActions {
@@ -487,10 +579,12 @@
 .modalOverlay {
   position: fixed;
   inset: 0;
+  width: 100vw;
+  height: 100vh;
   background: rgba(10, 12, 18, 0.56);
   display: grid;
-  place-items: start center;
-  z-index: 50;
+  place-items: center;
+  z-index: 5000;
   padding: 1rem;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -582,10 +676,92 @@
   gap: 0.9rem;
 }
 
+.mediaSelectorGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.8rem;
+}
+
+.mediaSelectorItem {
+  border: 1px solid var(--card-border);
+  border-radius: 0.85rem;
+  padding: 0.55rem;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  display: grid;
+  gap: 0.5rem;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.mediaSelectorItemSelected {
+  border-color: #eab308;
+  box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.22);
+}
+
+.mediaSelectorThumbWrap {
+  aspect-ratio: 1;
+}
+
+.mediaSelectorLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .modalGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.65rem;
+  gap: 0.9rem 0.75rem;
+}
+
+.modalGridSpacer {
+  min-height: 1px;
+}
+
+.modalSectionTitle {
+  grid-column: 1 / -1;
+  margin: 0.15rem 0 0;
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.priceInputGroup {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.pricePrefix {
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.85rem;
+  border-right: 1px solid var(--card-border);
+  background: color-mix(in srgb, var(--surface) 82%, white);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.priceInput {
+  border: 0;
+  border-radius: 0;
+  min-width: 0;
+}
+
+.priceInput:focus {
+  outline: none;
 }
 
 .modalRowHeader,
@@ -671,6 +847,28 @@
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+.discountBasisPreview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.discountBasisPreview span {
+  display: block;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--yellow) 9%, white);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.discountBasisPreview strong {
+  color: var(--text);
 }
 
 .ruleSummary {
@@ -883,11 +1081,19 @@
     grid-template-columns: 1fr;
   }
 
+  .modalGridSpacer {
+    display: none;
+  }
+
   .modalInfoGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .ruleGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .discountBasisPreview {
     grid-template-columns: 1fr;
   }
 }
@@ -903,7 +1109,8 @@
 
   .modalInfoGrid,
   .unitSummaryGrid,
-  .packagingRow {
+  .packagingRow,
+  .variationPreviewContent {
     grid-template-columns: 1fr;
   }
 

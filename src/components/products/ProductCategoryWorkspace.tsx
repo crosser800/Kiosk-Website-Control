@@ -29,6 +29,8 @@ type ProductMediaRow = {
   media_type: string | null;
   is_primary: boolean | null;
   sort_order: number | null;
+  variation_id: string | null;
+  status: string | null;
 };
 
 type ProductVariationRow = {
@@ -139,7 +141,7 @@ export default function ProductCategoryWorkspace() {
         .order('created_at', { ascending: false }),
       supabase
         .from('product_media')
-        .select('id, product_id, media_url, media_type, is_primary, sort_order')
+        .select('id, product_id, media_url, media_type, is_primary, sort_order, variation_id, status')
         .order('sort_order', { ascending: true }),
       supabase
         .from('product_variations')
@@ -175,7 +177,9 @@ export default function ProductCategoryWorkspace() {
       const categoryId = String(row.category_id ?? '');
       if (!categoryId) return;
 
-      const mediaItems = mediaByProductId.get(String(row.id)) ?? [];
+      const mediaItems = (mediaByProductId.get(String(row.id)) ?? []).filter(
+        (item) => !item.variation_id && String(item.status ?? 'Active') === 'Active',
+      );
       const primaryMedia =
         mediaItems.find((item) => item.is_primary && item.media_type === 'image') ??
         mediaItems.find((item) => item.media_type === 'image') ??

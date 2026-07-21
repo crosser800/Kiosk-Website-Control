@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import styles from './VarAndPrice.module.css';
 import { supabase } from '../../../lib/supabase';
 import type {
@@ -9,6 +10,7 @@ import type {
   RewardTargetType,
   SurchargeItem,
   UnitCondition,
+  MediaItem,
   VariationItem,
   VariationUnitOptionItem,
 } from './types';
@@ -24,10 +26,14 @@ type VarAndPriceProps = {
   unitDefinitions: ProductUnitDefinition[];
   unitAliases: ProductUnitAliasDefinition[];
   unitOptions: VariationUnitOptionItem[];
+  mediaItems: MediaItem[];
+  mainMediaId: string | null;
+  variationPreviewMediaByCardId: Record<string, string>;
   discounts: DiscountItem[];
   surcharges: SurchargeItem[];
   onChange: (items: VariationItem[]) => void;
   onUnitOptionsChange: (items: VariationUnitOptionItem[]) => void;
+  onVariationPreviewMediaChange: (items: Record<string, string>) => void;
   onDiscountsChange: (items: DiscountItem[]) => void;
   onSurchargesChange: (items: SurchargeItem[]) => void;
   showFooterActions?: boolean;
@@ -92,6 +98,29 @@ type RewardVariationOption = {
   label: string;
 };
 
+function DuplicateIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.actionIcon}>
+      <path
+        d="M8 8h10v10H8V8z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+      <path
+        d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
 const PRICE_CODES: Array<{
   code: PriceCode;
   label: string;
@@ -120,13 +149,6 @@ const FALLBACK_UNIT_ALIASES: Record<string, string> = {
   packs: 'pack',
   units: 'unit',
 };
-
-const PACKAGING_PRESETS = [
-  '10pcs/pack:20pack/box:200pack/ctn',
-  '100pcs/box:1000pcs/ctn',
-  '180pcs/box:900pcs/ctn',
-  '12pairs/pack:120pairs/ctn',
-];
 
 function buildVariationKey(variationName: string, baseSku: string) {
   return `${variationName.trim().toLowerCase()}::${baseSku.trim().toLowerCase()}`;
@@ -171,6 +193,24 @@ function formatCurrency(value: number) {
     minimumFractionDigits: value % 1 === 0 ? 0 : 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+function getComputedUnitPrice(card: VariationCard, priceCode: PriceCode, quantityInBaseUnit: string) {
+  const basePrice = parseNumberInput(card.prices[priceCode]);
+  const unitQuantity = Number(quantityInBaseUnit) || 1;
+  return basePrice * unitQuantity;
+}
+
+function getDiscountAmountPreview(
+  baseAmount: number,
+  discountType: DiscountItem['discountType'],
+  discountValue: string,
+) {
+  const amount = parseNumberInput(discountValue);
+  if (!baseAmount || !amount) {
+    return 0;
+  }
+  return discountType === 'Percent' ? baseAmount * (amount / 100) : Math.min(amount, baseAmount);
 }
 
 function formatSignedValue(type: DiscountItem['discountType'] | SurchargeItem['surchargeType'], value: string) {
@@ -272,13 +312,6 @@ function flattenCards(cards: VariationCard[]): VariationItem[] {
   );
 }
 
-function getPreferredBasePriceCode(card: VariationCard): PriceCode {
-  return (
-    PRICE_CODES.find((entry) => card.prices[entry.code].trim())?.code ??
-    'R1'
-  );
-}
-
 function createDefaultUnitOption(
   variationId: string,
   baseUnitCode: string,
@@ -372,10 +405,14 @@ export default function VarAndPrice({
   unitDefinitions,
   unitAliases,
   unitOptions,
+  mediaItems,
+  mainMediaId,
+  variationPreviewMediaByCardId,
   discounts,
   surcharges,
   onChange,
   onUnitOptionsChange,
+  onVariationPreviewMediaChange,
   onDiscountsChange,
   onSurchargesChange,
   showFooterActions = true,
@@ -386,6 +423,17 @@ export default function VarAndPrice({
       unitDefinitions.filter((unit) => String(unit.status).toLowerCase() === 'active'),
     [unitDefinitions],
   );
+  const selectableMediaItems = useMemo(
+    () =>
+      mediaItems.filter(
+        (item) =>
+          item.type === 'image' &&
+          item.isExisting &&
+          !item.variationId &&
+          String(item.status ?? 'Active').toLowerCase() === 'active',
+      ),
+    [mediaItems],
+  );
   const [variationModalError, setVariationModalError] = useState('');
   const [activeCard, setActiveCard] = useState<VariationCard | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<VariationCard | null>(null);
@@ -394,17 +442,34 @@ export default function VarAndPrice({
   const [activeVariationTabId, setActiveVariationTabId] = useState<string>('');
   const [packagingInputs, setPackagingInputs] = useState<Record<string, string>>({});
   const [parserMessages, setParserMessages] = useState<Record<string, string>>({});
+  const [duplicateTarget, setDuplicateTarget] = useState<VariationCard | null>(null);
+  const [imageSelectorCardId, setImageSelectorCardId] = useState<string | null>(null);
 
   const [discountDraft, setDiscountDraft] = useState<DiscountDraftRow[]>([]);
   const [activeDiscountTabId, setActiveDiscountTabId] = useState<string>('');
   const [discountModalError, setDiscountModalError] = useState('');
-  const [selectedPackagingPresets, setSelectedPackagingPresets] = useState<Record<string, string>>({});
   const [rewardSearchResults, setRewardSearchResults] = useState<Record<string, RewardProductSearchItem[]>>({});
   const [rewardVariationOptions, setRewardVariationOptions] = useState<Record<string, RewardVariationOption[]>>({});
   const [rewardUnitOptions, setRewardUnitOptions] = useState<Record<string, VariationUnitOptionItem[]>>({});
   const [, setRewardSearchLoading] = useState<Record<string, boolean>>({});
   const [, setRewardVariationLoading] = useState<Record<string, boolean>>({});
   const [, setRewardUnitLoading] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!isVariationModalOpen) {
+      return;
+    }
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousDocumentOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousDocumentOverflow;
+    };
+  }, [isVariationModalOpen]);
 
   useEffect(() => {
     const activeSearchRows = discountDraft.filter(
@@ -604,11 +669,10 @@ export default function VarAndPrice({
     const { data, error } = await supabase
       .from('product_variation_unit_options')
       .select(
-        'id, variation_id, unit_code, unit_label, base_unit_code, quantity_in_base_unit, price_override, packaging_text, min_order_quantity, order_increment, is_default, is_orderable, status, sort_order, notes',
+        'id, variation_id, unit_code, unit_label, base_unit_code, quantity_in_base_unit, price_override, packaging_text, min_order_quantity, order_increment, is_default, status, sort_order, notes',
       )
       .eq('variation_id', variationId)
       .eq('status', 'Active')
-      .eq('is_orderable', true)
       .order('sort_order', { ascending: true });
 
     if (error) {
@@ -629,8 +693,8 @@ export default function VarAndPrice({
       minOrderQuantity: String(row.min_order_quantity ?? '1'),
       orderIncrement: String(row.order_increment ?? '1'),
       isDefault: Boolean(row.is_default ?? false),
-      isOrderable: Boolean(row.is_orderable ?? true),
       status: String(row.status ?? 'Active') === 'Inactive' ? 'Inactive' : 'Active',
+      isOrderable: String(row.status ?? 'Active') !== 'Inactive',
       sortOrder: String(row.sort_order ?? '0'),
       notes: String(row.notes ?? ''),
     } satisfies VariationUnitOptionItem));
@@ -650,10 +714,124 @@ export default function VarAndPrice({
     return cardUnitOptions;
   }
 
+  function getVariationLabel(cardId: string) {
+    const card = cards.find((item) => item.id === cardId);
+    if (!card) {
+      return 'selected variation';
+    }
+    return card.baseSku ? `${card.variationName} (${card.baseSku})` : card.variationName;
+  }
+
+  function getSelectedPreviewMedia(cardId: string) {
+    const mediaId = variationPreviewMediaByCardId[cardId];
+    if (!mediaId) {
+      return null;
+    }
+    return selectableMediaItems.find((item) => item.id === mediaId) ?? null;
+  }
+
+  function setVariationPreviewMedia(cardId: string, mediaId: string) {
+    onVariationPreviewMediaChange({
+      ...variationPreviewMediaByCardId,
+      [cardId]: mediaId,
+    });
+  }
+
+  function clearVariationPreviewMedia(cardId: string) {
+    const nextSelections = { ...variationPreviewMediaByCardId };
+    delete nextSelections[cardId];
+    onVariationPreviewMediaChange(nextSelections);
+  }
+
+  function getUniqueCopyName(originalName: string) {
+    const baseName = `${originalName || 'Variation'} Copy`;
+    const existingNames = new Set(cards.map((card) => card.variationName.trim().toLowerCase()));
+    if (!existingNames.has(baseName.toLowerCase())) {
+      return baseName;
+    }
+    let suffix = 2;
+    while (existingNames.has(`${baseName} ${suffix}`.toLowerCase())) {
+      suffix += 1;
+    }
+    return `${baseName} ${suffix}`;
+  }
+
+  function getUniqueCopySku(originalSku: string, copyName: string) {
+    const sourceToken = toSkuToken(originalSku) || toSkuToken(copyName) || 'VARIATION';
+    const baseSku = sourceToken.endsWith('-COPY') ? sourceToken : `${sourceToken}-COPY`;
+    const existingSkus = new Set(cards.map((card) => card.baseSku.trim().toUpperCase()));
+    if (!existingSkus.has(baseSku)) {
+      return baseSku;
+    }
+    let suffix = 2;
+    while (existingSkus.has(`${baseSku}-${suffix}`)) {
+      suffix += 1;
+    }
+    return `${baseSku}-${suffix}`;
+  }
+
+  function duplicateVariation(card: VariationCard) {
+    const nextName = getUniqueCopyName(card.variationName);
+    const nextSku = getUniqueCopySku(card.baseSku, nextName);
+    const nextId = buildVariationKey(nextName, nextSku);
+    const sourceOptions = getCardUnitOptions(card.id);
+    const defaultIndex = Math.max(0, sourceOptions.findIndex((item) => item.isDefault));
+    const unitIdMap = new Map<string, string>();
+    const copiedUnitOptions = sourceOptions.map((item, index) => {
+      const nextUnitId = crypto.randomUUID();
+      unitIdMap.set(item.id, nextUnitId);
+      return {
+        ...item,
+        id: nextUnitId,
+        variationId: nextId,
+        priceOverride: '',
+        isDefault: index === defaultIndex,
+        isOrderable: item.status !== 'Inactive',
+        sortOrder: String(index),
+      };
+    });
+    const copiedDiscounts = discounts
+      .filter((item) => matchesVariation(card.id, card.rowIds[item.priceCode as PriceCode]))
+      .map((item, index) => ({
+        ...item,
+        id: crypto.randomUUID(),
+        discountRecordId: '',
+        discountClassId: '',
+        variationId: nextId,
+        unitOptionId: unitIdMap.get(item.unitOptionId) ?? item.unitOptionId,
+        promoRewardUnitOptionId: unitIdMap.get(item.promoRewardUnitOptionId) ?? item.promoRewardUnitOptionId,
+        promoSourceSurchargeId: '',
+        discountGroup: `${nextId}-${item.priceCode}`,
+        applySequence: item.applySequence || String(index + 1),
+      }));
+    const nextCard = {
+      ...card,
+      id: nextId,
+      variationName: nextName,
+      baseSku: nextSku,
+      rowIds: {},
+    };
+
+    pushCards([...cards, nextCard]);
+    onUnitOptionsChange([...unitOptions, ...copiedUnitOptions]);
+    if (copiedDiscounts.length > 0) {
+      onDiscountsChange([...discounts, ...copiedDiscounts]);
+    }
+    setPackagingInputs((current) => ({
+      ...current,
+      [nextId]: copiedUnitOptions.find((item) => item.packagingText)?.packagingText ?? '',
+    }));
+    clearVariationPreviewMedia(nextId);
+    setActiveVariationTabId(nextId);
+    setActiveCard(nextCard);
+    setVariationModalError('');
+    setVariationModalOpen(true);
+    setDuplicateTarget(null);
+  }
+
   function getOrderableUnitOptions(cardId: string) {
     return getCardUnitOptions(cardId).filter(
       (item) =>
-        item.isOrderable &&
         String(item.status).toLowerCase() === 'active' &&
         item.unitCode.trim(),
     );
@@ -803,6 +981,7 @@ export default function VarAndPrice({
       ...item,
       baseUnitCode: normalizedBaseUnitCode,
       isDefault: item.isDefault ? true : false,
+      isOrderable: item.status !== 'Inactive',
       sortOrder: String(index),
     }));
 
@@ -891,96 +1070,6 @@ export default function VarAndPrice({
         ...parsedRows,
       ];
     });
-  }
-
-  function handleApplyPackagingPreset(card: VariationCard) {
-    const presetValue = selectedPackagingPresets[card.id] ?? '';
-    if (!presetValue) {
-      setParserMessages((current) => ({
-        ...current,
-        [card.id]: 'Select a quick-fill template first.',
-      }));
-      return;
-    }
-
-    setPackagingInputs((current) => ({
-      ...current,
-      [card.id]: presetValue,
-    }));
-
-    const baseUnitCode = getCardBaseUnitCode(card.id);
-    const { generatedOptions, message } = parsePackagingText(
-      presetValue,
-      baseUnitCode,
-      activeUnits,
-      unitAliases,
-    );
-
-    setParserMessages((current) => ({ ...current, [card.id]: message }));
-    if (generatedOptions.length === 0) {
-      return;
-    }
-
-    updateCardUnitOptions(card.id, (currentOptions) => {
-      const baseRow =
-        currentOptions.find((item) => item.isDefault) ??
-        createDefaultUnitOption(card.id, baseUnitCode);
-      const parsedRows = generatedOptions.map((item, index) => ({
-        id: crypto.randomUUID(),
-        variationId: card.id,
-        unitCode: item.unitCode,
-        unitLabel: item.unitLabel,
-        baseUnitCode,
-        quantityInBaseUnit: item.quantityInBaseUnit,
-        priceOverride: '',
-        packagingText: item.packagingText,
-        minOrderQuantity: '1',
-        orderIncrement: '1',
-        isDefault: false,
-        isOrderable: true,
-        status: 'Active' as const,
-        sortOrder: String(index + 1),
-        notes: item.notes,
-      }));
-
-      return [
-        {
-          ...baseRow,
-          unitCode: baseUnitCode,
-          unitLabel: baseUnitCode,
-          baseUnitCode,
-          quantityInBaseUnit: '1',
-          packagingText: presetValue,
-          isDefault: true,
-        },
-        ...parsedRows,
-      ];
-    });
-  }
-
-  function updateCardBasePrice(cardId: string, rawValue: string) {
-    const priceCode = getPreferredBasePriceCode(cards.find((card) => card.id === cardId) ?? {
-      id: cardId,
-      variationName: '',
-      baseSku: '',
-      stockQuantity: '0',
-      availability: 'Available',
-      rowIds: {},
-      prices: { R1: '', R2: '', W1: '', W2: '', SP: '', CP: '' },
-    });
-    pushCards(
-      cards.map((card) =>
-        card.id === cardId
-          ? {
-              ...card,
-              prices: {
-                ...card.prices,
-                [priceCode]: formatPriceInput(rawValue),
-              },
-            }
-          : card,
-      ),
-    );
   }
 
   function openAddModal() {
@@ -1312,9 +1401,8 @@ export default function VarAndPrice({
               return null;
             }
             const baseUnitCode = getCardBaseUnitCode(card.id);
-            const cardBasePriceCode = getPreferredBasePriceCode(card);
-            const basePrice = card.prices[cardBasePriceCode];
             const cardUnitOptions = getCardUnitOptions(card.id);
+            const selectedPreviewMedia = getSelectedPreviewMedia(card.id);
             const packagingValue =
               packagingInputs[card.id] ??
               cardUnitOptions.find((item) => item.packagingText)?.packagingText ??
@@ -1334,6 +1422,15 @@ export default function VarAndPrice({
                       onClick={() => openEditModal(card.id)}
                     >
                       Edit
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.iconAction}
+                      aria-label="Duplicate Variation"
+                      title="Duplicate Variation"
+                      onClick={() => setDuplicateTarget(card)}
+                    >
+                      <DuplicateIcon />
                     </button>
                     <button
                       type="button"
@@ -1376,18 +1473,20 @@ export default function VarAndPrice({
                           </span>
                         </label>
 
-                        <label className={styles.fieldGroup}>
-                          <span className={styles.fieldLabel}>Base Price / {baseUnitCode}</span>
-                          <input
-                            className={styles.input}
-                            value={basePrice}
-                            onChange={(event) => updateCardBasePrice(card.id, event.target.value)}
-                            placeholder="0.00"
-                          />
+                        <div className={styles.fieldGroup}>
+                          <span className={styles.fieldLabel}>Base Prices / {baseUnitCode}</span>
+                          <div className={styles.basePriceSummaryGrid}>
+                            {PRICE_CODES.map((entry) => (
+                              <span key={entry.code} className={styles.basePriceSummaryItem}>
+                                <strong>{entry.code}</strong>
+                                {card.prices[entry.code] ? formatCurrency(parseNumberInput(card.prices[entry.code])) : '-'}
+                              </span>
+                            ))}
+                          </div>
                           <span className={styles.fieldHelper}>
-                            Price of 1 {baseUnitCode}.
+                            Read-only summary from this variation's price classes.
                           </span>
-                        </label>
+                        </div>
                       </div>
 
                       <div className={styles.packagingRow}>
@@ -1418,48 +1517,50 @@ export default function VarAndPrice({
                       </div>
                     </div>
 
-                    <div className={styles.templatePanel}>
+                    <div className={styles.variationPreviewPanel}>
                       <div>
-                        <h6 className={styles.templateTitle}>Packaging Template (Quick Fill)</h6>
+                        <h6 className={styles.variationPreviewTitle}>Variation Preview Image</h6>
                         <p className={styles.subsectionText}>
-                          Choose a preset format to auto-generate order units for this variation.
+                          Select the product image to display when this variation is selected in the kiosk.
                         </p>
                       </div>
 
-                      <label className={styles.fieldGroup}>
-                        <span className={styles.fieldLabel}>Select Template</span>
-                        <select
-                          className={styles.select}
-                          value={selectedPackagingPresets[card.id] ?? ''}
-                          onChange={(event) =>
-                            setSelectedPackagingPresets((current) => ({
-                              ...current,
-                              [card.id]: event.target.value,
-                            }))
-                          }
-                        >
-                          <option value="">Choose template</option>
-                          {PACKAGING_PRESETS.map((preset) => (
-                            <option key={preset} value={preset}>
-                              {preset}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <div className={styles.templateActions}>
-                        <button
-                          type="button"
-                          className={styles.secondaryAction}
-                          onClick={() => handleApplyPackagingPreset(card)}
-                        >
-                          Apply Template
-                        </button>
+                      <div className={styles.variationPreviewContent}>
+                        {selectedPreviewMedia ? (
+                          <div className={styles.variationPreviewThumbWrap}>
+                            <img
+                              src={selectedPreviewMedia.previewUrl}
+                              alt={selectedPreviewMedia.altText || selectedPreviewMedia.title || selectedPreviewMedia.fileName}
+                              className={styles.variationPreviewThumb}
+                            />
+                            {selectedPreviewMedia.id === mainMediaId ? (
+                              <span className={styles.mediaBadge}>Primary</span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <div className={styles.variationPreviewFallback}>
+                            No specific image selected. The kiosk will use the product's default image.
+                          </div>
+                        )}
+                        <div className={styles.variationPreviewActions}>
+                          <button
+                            type="button"
+                            className={styles.secondaryAction}
+                            onClick={() => setImageSelectorCardId(card.id)}
+                          >
+                            Select Image
+                          </button>
+                          {selectedPreviewMedia ? (
+                            <button
+                              type="button"
+                              className={styles.cancelButton}
+                              onClick={() => clearVariationPreviewMedia(card.id)}
+                            >
+                              Clear Selection
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
-
-                      <p className={styles.templateHint}>
-                        You can still edit the generated units before saving.
-                      </p>
                     </div>
                   </div>
 
@@ -1505,19 +1606,13 @@ export default function VarAndPrice({
                         <span>#</span>
                         <span>Unit</span>
                         <span>Contains</span>
-                        <span>Computed Price</span>
+                        <span>Computed Prices</span>
                         <span>Default</span>
-                        <span>Orderable</span>
-                        <span>Min Qty</span>
                         <span>Status</span>
                         <span>Actions</span>
                       </div>
 
-                      {cardUnitOptions.map((option) => {
-                        const computedPrice =
-                          parseNumberInput(basePrice) * (Number(option.quantityInBaseUnit) || 1);
-
-                        return (
+                      {cardUnitOptions.map((option) => (
                           <div key={option.id} className={styles.orderUnitRow}>
                             <div className={styles.orderUnitCellIndex}>
                               {cardUnitOptions.findIndex((item) => item.id === option.id) + 1}
@@ -1584,8 +1679,15 @@ export default function VarAndPrice({
                             </div>
 
                             <div className={styles.fieldGroup}>
-                                <span className={styles.fieldLabel}>Computed Price</span>
-                                <div className={styles.computedPrice}>{formatCurrency(computedPrice)}</div>
+                                <span className={styles.fieldLabel}>Computed Prices</span>
+                                <div className={styles.computedPriceGrid}>
+                                  {PRICE_CODES.map((entry) => (
+                                    <span key={entry.code} className={styles.computedPriceItem}>
+                                      <strong>{entry.code}</strong>
+                                      {formatCurrency(getComputedUnitPrice(card, entry.code, option.quantityInBaseUnit))}
+                                    </span>
+                                  ))}
+                                </div>
                             </div>
 
                             <label className={styles.toggleField}>
@@ -1605,54 +1707,25 @@ export default function VarAndPrice({
                                 />
                             </label>
 
-                            <label className={styles.toggleField}>
-                                <span className={styles.fieldLabel}>Orderable</span>
-                                <input
-                                  type="checkbox"
-                                  checked={option.isOrderable}
-                                  onChange={(event) =>
-                                    updateCardUnitOptions(card.id, (currentOptions) =>
-                                      currentOptions.map((item) =>
-                                        item.id === option.id
-                                          ? { ...item, isOrderable: event.target.checked }
-                                          : item,
-                                        ),
-                                    )
-                                  }
-                                />
-                            </label>
-
-                            <label className={styles.fieldGroup}>
-                                <span className={styles.fieldLabel}>Min Order Qty</span>
-                                <input
-                                  className={styles.input}
-                                  value={option.minOrderQuantity}
-                                  onChange={(event) =>
-                                    updateCardUnitOptions(card.id, (currentOptions) =>
-                                      currentOptions.map((item) =>
-                                        item.id === option.id
-                                          ? { ...item, minOrderQuantity: event.target.value.replace(/[^\d.]/g, '') }
-                                          : item,
-                                        ),
-                                    )
-                                  }
-                                />
-                            </label>
-
                             <label className={styles.fieldGroup}>
                                 <span className={styles.fieldLabel}>Status</span>
                                 <select
                                   className={styles.select}
                                   value={option.status}
-                                  onChange={(event) =>
+                                  onChange={(event) => {
+                                    const nextStatus = event.target.value === 'Inactive' ? 'Inactive' : 'Active';
                                     updateCardUnitOptions(card.id, (currentOptions) =>
                                       currentOptions.map((item) =>
                                         item.id === option.id
-                                          ? { ...item, status: event.target.value === 'Inactive' ? 'Inactive' : 'Active' }
+                                          ? {
+                                              ...item,
+                                              status: nextStatus,
+                                              isOrderable: nextStatus === 'Active',
+                                            }
                                           : item,
                                       ),
-                                    )
-                                  }
+                                    );
+                                  }}
                                 >
                                   <option value="Active">Active</option>
                                   <option value="Inactive">Inactive</option>
@@ -1673,11 +1746,10 @@ export default function VarAndPrice({
                               </button>
                             </div>
                           </div>
-                        );
-                      })}
+                      ))}
 
                       <p className={styles.orderUnitsFooterNote}>
-                        You can adjust the order rows per variation before saving. The computed price is based on the variation base price.
+                        You can adjust the order rows per variation before saving. Computed prices use each price class base price multiplied by the unit contains quantity.
                       </p>
                     </div>
                   </div>
@@ -1737,29 +1809,87 @@ export default function VarAndPrice({
           })}
       </div>
 
-      {isVariationModalOpen && activeCard ? (
+      {isVariationModalOpen && activeCard ? createPortal((
         <div className={styles.modalOverlay}>
           <div className={styles.modal}>
             <h4 className={styles.modalTitle}>Variation Details</h4>
             {variationModalError ? <p className={styles.confirmText}>{variationModalError}</p> : null}
             <div className={styles.modalGrid}>
-              <input className={styles.input} placeholder="Variation name" value={activeCard.variationName} onChange={(event) => setActiveCard({ ...activeCard, variationName: event.target.value })} />
-              <input className={styles.input} placeholder="Base SKU code" value={activeCard.baseSku} onChange={(event) => setActiveCard({ ...activeCard, baseSku: event.target.value.toUpperCase() })} />
-              <input className={styles.input} placeholder="Stock quantity" value={activeCard.stockQuantity} onChange={(event) => setActiveCard({ ...activeCard, stockQuantity: event.target.value.replace(/[^\d]/g, '') })} />
-              {PRICE_CODES.map((entry) => (
+              <label className={styles.fieldGroup}>
+                <span className={styles.fieldLabel}>Variation Name</span>
                 <input
-                  key={entry.code}
                   className={styles.input}
-                  placeholder={`${entry.code} price`}
-                  value={activeCard.prices[entry.code]}
-                  onChange={(event) =>
-                    setActiveCard({
-                      ...activeCard,
-                      prices: { ...activeCard.prices, [entry.code]: formatPriceInput(event.target.value) },
-                    })
-                  }
+                  placeholder="Enter variation name"
+                  value={activeCard.variationName}
+                  onChange={(event) => setActiveCard({ ...activeCard, variationName: event.target.value })}
                 />
-              ))}
+                <span className={styles.fieldHelper}>
+                  Name shown for this product option in admin lists and order selection.
+                </span>
+              </label>
+
+              <label className={styles.fieldGroup}>
+                <span className={styles.fieldLabel}>Variation SKU</span>
+                <input
+                  className={styles.input}
+                  placeholder="Enter variation SKU"
+                  value={activeCard.baseSku}
+                  onChange={(event) => setActiveCard({ ...activeCard, baseSku: event.target.value.toUpperCase() })}
+                />
+                <span className={styles.fieldHelper}>
+                  Code used to identify and group this variation across its price classes.
+                </span>
+              </label>
+
+              <label className={styles.fieldGroup}>
+                <span className={styles.fieldLabel}>Stock Quantity</span>
+                <input
+                  className={styles.input}
+                  inputMode="numeric"
+                  placeholder="Enter quantity"
+                  value={activeCard.stockQuantity}
+                  onChange={(event) => setActiveCard({ ...activeCard, stockQuantity: event.target.value.replace(/[^\d]/g, '') })}
+                />
+                <span className={styles.fieldHelper}>
+                  Inventory quantity saved for this variation.
+                </span>
+              </label>
+
+              <div className={styles.modalGridSpacer} aria-hidden="true"></div>
+
+              <h5 className={styles.modalSectionTitle}>Pricing</h5>
+
+              {PRICE_CODES.map((entry) => {
+                const priceLabels: Record<PriceCode, { label: string; helper: string }> = {
+                  R1: { label: 'R1 Price', helper: 'Retail price for Manila.' },
+                  R2: { label: 'R2 Price', helper: 'Retail price for Cebu.' },
+                  W1: { label: 'W1 Price', helper: 'Wholesale price for Manila.' },
+                  W2: { label: 'W2 Price', helper: 'Wholesale price for Cebu.' },
+                  SP: { label: 'Special Price', helper: 'Special price used for both branches.' },
+                  CP: { label: 'Concept Store Price', helper: 'Concept Store price used for both branches.' },
+                };
+                return (
+                  <label key={entry.code} className={styles.fieldGroup}>
+                    <span className={styles.fieldLabel}>{priceLabels[entry.code].label}</span>
+                    <span className={styles.priceInputGroup}>
+                      <span className={styles.pricePrefix}>PHP</span>
+                      <input
+                        className={`${styles.input} ${styles.priceInput}`}
+                        inputMode="decimal"
+                        placeholder="Enter price"
+                        value={activeCard.prices[entry.code]}
+                        onChange={(event) =>
+                          setActiveCard({
+                            ...activeCard,
+                            prices: { ...activeCard.prices, [entry.code]: formatPriceInput(event.target.value) },
+                          })
+                        }
+                      />
+                    </span>
+                    <span className={styles.fieldHelper}>{priceLabels[entry.code].helper}</span>
+                  </label>
+                );
+              })}
             </div>
             <div className={styles.actions}>
               <button type="button" className={styles.cancelButton} onClick={() => setVariationModalOpen(false)}>Cancel</button>
@@ -1767,7 +1897,66 @@ export default function VarAndPrice({
             </div>
           </div>
         </div>
-      ) : null}
+      ), document.body) : null}
+
+      {imageSelectorCardId ? createPortal((
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <div className={styles.modalHeader}>
+              <div>
+                <h4 className={styles.modalTitle}>Select Variation Preview Image</h4>
+                <p className={styles.confirmText}>
+                  Choose an uploaded product image for {getVariationLabel(imageSelectorCardId)}.
+                </p>
+              </div>
+              <button
+                type="button"
+                className={styles.modalClose}
+                aria-label="Close image selector"
+                onClick={() => setImageSelectorCardId(null)}
+              >
+                x
+              </button>
+            </div>
+            {selectableMediaItems.length === 0 ? (
+              <div className={styles.variationPreviewFallback}>
+                No active product images are available yet. Upload product images first.
+              </div>
+            ) : (
+              <div className={styles.mediaSelectorGrid}>
+                {selectableMediaItems.map((item) => {
+                  const isSelected = variationPreviewMediaByCardId[imageSelectorCardId] === item.id;
+                  const mediaLabel = item.title || item.altText || item.fileName;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`${styles.mediaSelectorItem} ${isSelected ? styles.mediaSelectorItemSelected : ''}`}
+                      onClick={() => {
+                        setVariationPreviewMedia(imageSelectorCardId, item.id);
+                        setImageSelectorCardId(null);
+                      }}
+                    >
+                      <span className={styles.mediaSelectorThumbWrap}>
+                        <img
+                          src={item.previewUrl}
+                          alt={item.altText || item.title || item.fileName}
+                          className={styles.mediaSelectorThumb}
+                        />
+                        {item.id === mainMediaId ? <span className={styles.mediaBadge}>Primary</span> : null}
+                      </span>
+                      {mediaLabel ? <span className={styles.mediaSelectorLabel}>{mediaLabel}</span> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div className={styles.actions}>
+              <button type="button" className={styles.cancelButton} onClick={() => setImageSelectorCardId(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      ), document.body) : null}
 
       {deleteTarget ? (
         <div className={styles.modalOverlay}>
@@ -1787,6 +1976,27 @@ export default function VarAndPrice({
                 }}
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {duplicateTarget ? (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <h4 className={styles.modalTitle}>Duplicate Variation</h4>
+            <p className={styles.confirmText}>
+              Create a copy of "{duplicateTarget.variationName}"? The duplicated variation will keep the same pricing and packaging setup and can be edited before saving.
+            </p>
+            <div className={styles.actions}>
+              <button type="button" className={styles.cancelButton} onClick={() => setDuplicateTarget(null)}>Cancel</button>
+              <button
+                type="button"
+                className={styles.registerButton}
+                onClick={() => duplicateVariation(duplicateTarget)}
+              >
+                Duplicate
               </button>
             </div>
           </div>
@@ -1877,6 +2087,26 @@ export default function VarAndPrice({
                           discountContext.variationId,
                           tier.unitOptionId,
                         );
+                        const discountBasisQuantity =
+                          tier.unitCondition === 'selected_unit' && selectedOption
+                            ? selectedOption.quantityInBaseUnit
+                            : '1';
+                        const discountBasisUnit =
+                          tier.unitCondition === 'selected_unit' && selectedOption
+                            ? getUnitOptionLabel(selectedOption)
+                            : getCardBaseUnitCode(discountContext.variationId);
+                        const discountBasisPrice = currentCard
+                          ? getComputedUnitPrice(
+                              currentCard,
+                              discountContext.code,
+                              discountBasisQuantity,
+                            )
+                          : 0;
+                        const discountAmountPreview = getDiscountAmountPreview(
+                          discountBasisPrice,
+                          tier.discountType,
+                          tier.amount,
+                        );
                         const rewardUnitOption = getRewardUnitOption(tier.id, tier);
                         const rewardUnitLabel =
                           getUnitOptionLabel(rewardUnitOption) ||
@@ -1954,6 +2184,19 @@ export default function VarAndPrice({
                               >
                                 Remove
                               </button>
+                            </div>
+
+                            <div className={styles.discountBasisPreview}>
+                              <span>
+                                <strong>{discountContext.code} basis:</strong>{' '}
+                                {formatCurrency(discountBasisPrice)} per {discountBasisUnit}
+                              </span>
+                              <span>
+                                <strong>Discount preview:</strong>{' '}
+                                {discountAmountPreview
+                                  ? `${formatCurrency(discountAmountPreview)} off`
+                                  : '-'}
+                              </span>
                             </div>
 
                             <div className={styles.ruleGrid}>

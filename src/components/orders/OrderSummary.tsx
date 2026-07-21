@@ -606,11 +606,10 @@ export default function OrderSummary({
           price_override,
           min_order_quantity,
           is_default,
-          is_orderable,
           status,
           sort_order
         `)
-        .eq('is_orderable', true)
+        .eq('status', 'Active')
         .order('sort_order', { ascending: true }),
     ]);
 
@@ -626,7 +625,6 @@ export default function OrderSummary({
 
     const unitOptionsByVariationId = new Map<string, OrderCatalogUnitOption[]>();
     (unitOptionsRes.data ?? []).forEach((row: any) => {
-      if (String(row.status ?? 'Active').toLowerCase() !== 'active') return;
       const variationId = String(row.variation_id ?? '');
       if (!variationId) return;
 

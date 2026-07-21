@@ -301,14 +301,14 @@ function buildPeriodBreakdown(rows: SalesOrderRow[], allItems: SalesOrderItemRow
 const periodTitles: Record<PeriodKey, string> = {
   daily: 'Daily Sales',
   monthly: 'Monthly Sales',
-  yearly: 'Year Sales',
+  yearly: 'Yearly Sales',
   ytd: 'YTD Sales',
 };
 
 const periodSubtitles: Record<PeriodKey, string> = {
-  daily: "Select an agent to see today's sales content.",
-  monthly: 'Select an agent to see this month sales content.',
-  yearly: 'Select an agent to see this year sales content.',
+  daily: "Select an agent to see today's sales details.",
+  monthly: "Select an agent to see this month's sales details.",
+  yearly: "Select an agent to see this year's sales details.",
   ytd: 'Select an agent to see year-to-date sales content.',
 };
 
