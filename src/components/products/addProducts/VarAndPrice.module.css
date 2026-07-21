@@ -811,13 +811,206 @@
 }
 
 @media (max-width: 700px) {
+  .wrapper,
+  .cardGrid {
+    gap: 0.55rem;
+  }
+
+  .sectionHeader,
+  .subsectionHeader {
+    gap: 0.45rem;
+  }
+
+  .variationTabs,
+  .ruleTabs {
+    flex-wrap: nowrap;
+    gap: 0.3rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .variationTabs::-webkit-scrollbar,
+  .ruleTabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .variationTab,
+  .ruleTab {
+    flex: 0 0 auto;
+    padding: 0.4rem 0.58rem;
+    font-size: 0.62rem;
+  }
+
+  .addButton,
+  .secondaryAction,
+  .deleteAction,
+  .cancelButton,
+  .registerButton,
+  .smallAction {
+    padding: 0.45rem 0.58rem;
+    border-radius: 0.5rem;
+    font-size: 0.62rem;
+  }
+
+  .variationCard,
+  .variationCardSkeleton {
+    border-radius: 0.65rem;
+  }
+
+  .cardHeader {
+    gap: 0.45rem;
+    padding: 0.55rem 0.6rem;
+  }
+
+  .cardTitle,
+  .templateTitle,
+  .subsectionTitle,
+  .emptyStateTitle,
+  .modalTitle {
+    font-size: 0.72rem;
+  }
+
+  .cardMeta,
+  .subsectionText,
+  .templateHint,
+  .parserMessage,
+  .orderUnitsFooterNote,
+  .emptyStateText,
+  .confirmText,
+  .ruleNote {
+    font-size: 0.6rem;
+  }
+
+  .unitSection,
+  .priceSection {
+    gap: 0.55rem;
+    padding: 0.6rem;
+  }
+
+  .priceSection {
+    padding-top: 0;
+  }
+
   .unitSummaryGrid,
   .packagingRow {
     grid-template-columns: 1fr;
   }
 
+  .unitSummaryGrid,
+  .packagingSetupGrid,
+  .packagingSetupMain,
+  .unitOptionList,
+  .ruleList,
+  .ruleTabsHeader,
+  .ruleCard,
+  .promoSection {
+    gap: 0.5rem;
+  }
+
+  .templatePanel,
+  .unitOptionsPanel,
+  .unitOptionCard,
+  .ruleCard {
+    gap: 0.5rem;
+    padding: 0.55rem;
+    border-radius: 0.6rem;
+  }
+
+  .fieldGroup,
+  .toggleField {
+    gap: 0.22rem;
+  }
+
+  .fieldLabel,
+  .subsectionMiniTitle,
+  .orderUnitsHeader span,
+  .modalRowHeader,
+  .modalRowHeaderPromo,
+  .ruleSummary {
+    font-size: 0.58rem;
+  }
+
+  .fieldHelper,
+  .priceHint {
+    font-size: 0.54rem;
+  }
+
+  .input,
+  .select {
+    padding: 0.5rem 0.58rem;
+    border-radius: 0.5rem;
+    font-size: 0.65rem;
+  }
+
+  .parserMessage {
+    padding: 0.45rem 0.5rem;
+    border-radius: 0.5rem;
+  }
+
+  .orderUnitsTable {
+    border-radius: 0.55rem;
+  }
+
+  .orderUnitsHeader,
+  .orderUnitRow {
+    min-width: 56rem;
+    grid-template-columns:
+      0.4fr
+      minmax(5rem, 0.8fr)
+      minmax(9rem, 1.5fr)
+      minmax(6.5rem, 0.9fr)
+      0.65fr
+      0.7fr
+      minmax(4.8rem, 0.75fr)
+      minmax(4.8rem, 0.75fr)
+      minmax(5.8rem, 0.85fr)
+      minmax(5rem, 0.75fr);
+    gap: 0.4rem;
+  }
+
+  .orderUnitsHeader {
+    padding: 0.55rem 0.55rem 0.45rem;
+  }
+
+  .orderUnitRow {
+    padding: 0.5rem 0.55rem;
+  }
+
+  .orderUnitCellIndex,
+  .containsSuffix,
+  .computedPrice,
+  .unitOptionActions {
+    min-height: 2.15rem;
+    font-size: 0.62rem;
+  }
+
+  .containsSuffix,
+  .computedPrice {
+    padding: 0.45rem 0.55rem;
+    border-radius: 0.5rem;
+  }
+
   .priceGrid {
     grid-template-columns: 1fr;
+    gap: 0.4rem;
+  }
+
+  .priceCell {
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+  }
+
+  .priceLabel {
+    font-size: 0.62rem;
+  }
+
+  .priceValue {
+    font-size: 0.72rem;
+  }
+
+  .priceActions,
+  .searchResults {
+    gap: 0.3rem;
   }
 
   .discountRow,
@@ -825,5 +1018,54 @@
   .modalRowHeader,
   .modalRowHeaderPromo {
     grid-template-columns: 1fr;
+  }
+
+  .modalOverlay {
+    padding: 0.5rem;
+  }
+
+  .modal {
+    gap: 0.5rem;
+    padding: 0.6rem;
+    border-radius: 0.65rem;
+    max-height: calc(100dvh - 1rem);
+    overflow-y: auto;
+  }
+
+  .modalGrid,
+  .discountRow,
+  .promoRow,
+  .ruleGrid {
+    gap: 0.4rem;
+  }
+
+  .readOnlyValue,
+  .searchResultItem {
+    min-height: 2.15rem;
+    padding: 0.45rem 0.55rem;
+    border-radius: 0.5rem;
+    font-size: 0.62rem;
+  }
+
+  .emptyState {
+    min-height: 4rem;
+    border-radius: 0.6rem;
+  }
+
+  .emptyStateContent {
+    gap: 0.4rem;
+    padding: 0.65rem;
+  }
+
+  .skeletonHeader {
+    height: 2.25rem;
+  }
+
+  .skeletonBody {
+    height: 7rem;
+  }
+
+  .actions {
+    gap: 0.4rem;
   }
 }

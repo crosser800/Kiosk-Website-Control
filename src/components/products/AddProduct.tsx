@@ -1602,7 +1602,11 @@ export default function AddProduct({
   const isEditorLoading = isLoadingProduct || isLoadingLookups;
 
   return (
-    <section className={`${styles.container} ${isEmbedded ? styles.containerEmbedded : ''}`}>
+    <section
+      className={`${styles.container} ${isEmbedded ? styles.containerEmbedded : ''} ${
+        isEditMode ? styles.containerEdit : ''
+      }`}
+    >
       <div className={styles.header}>
         <div className={styles.headerCopy}>
           <h2 className={styles.title}>{isEditMode ? 'Edit Product' : 'Add Product'}</h2>

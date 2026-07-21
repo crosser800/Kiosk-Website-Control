@@ -15,6 +15,10 @@
   min-height: 100%;
 }
 
+.containerEdit {
+  min-width: 0;
+}
+
 .header {
   display: flex;
   flex-direction: column;
@@ -259,6 +263,108 @@
 
   .skeletonGrid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .containerEdit,
+  .containerEdit.containerEmbedded {
+    gap: 0.6rem;
+    padding: 0.55rem;
+    border-radius: 0.7rem;
+    box-shadow: none;
+  }
+
+  .containerEdit .header {
+    gap: 0.55rem;
+  }
+
+  .containerEdit .headerCopy {
+    gap: 0.15rem;
+  }
+
+  .containerEdit .title {
+    font-size: 0.95rem;
+  }
+
+  .containerEdit .subtitle {
+    font-size: 0.67rem;
+    line-height: 1.3;
+  }
+
+  .containerEdit .navigation {
+    flex-wrap: nowrap;
+    gap: 0.25rem;
+    padding-bottom: 0.35rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .containerEdit .navigation::-webkit-scrollbar {
+    display: none;
+  }
+
+  .containerEdit .navButton {
+    flex: 0 0 auto;
+    padding: 0.3rem 0.38rem 0.42rem;
+    font-size: 0.62rem;
+    white-space: nowrap;
+  }
+
+  .containerEdit .navButton::after {
+    height: 2px;
+  }
+
+  .containerEdit .content,
+  .containerEdit .editorSection {
+    gap: 0.55rem;
+  }
+
+  .containerEdit .editorSection {
+    padding: 0.55rem;
+    border-radius: 0.65rem;
+  }
+
+  .containerEdit .sectionTitle {
+    font-size: 0.78rem;
+  }
+
+  .containerEdit .placeholderText,
+  .containerEdit .saveNotice {
+    padding: 0.5rem 0.6rem;
+    border-radius: 0.55rem;
+    font-size: 0.65rem;
+  }
+
+  .containerEdit .skeletonGrid,
+  .containerEdit .skeletonField,
+  .containerEdit .skeletonFooter {
+    gap: 0.45rem;
+  }
+
+  .containerEdit .skeletonInput {
+    height: 2.25rem;
+  }
+
+  .containerEdit .skeletonTextarea {
+    height: 5rem;
+  }
+
+  .containerEdit .skeletonButtonSecondary,
+  .containerEdit .skeletonButtonPrimary {
+    width: 5rem;
+    height: 2.15rem;
+  }
+
+  .snackbar {
+    right: 0.5rem;
+    bottom: 0.5rem;
+    left: 0.5rem;
+    min-width: 0;
+    max-width: none;
+    padding: 0.55rem 0.65rem;
+    border-radius: 0.6rem;
+    font-size: 0.7rem;
   }
 }
 

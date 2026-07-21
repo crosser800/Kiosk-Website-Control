@@ -536,7 +536,11 @@
 }
 
 .productCardActive {
-  background: #fffaf0;
+  background: color-mix(in srgb, var(--surface) 82%, white);
+  border-color: var(--yellow);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--yellow) 32%, transparent),
+    0 12px 24px rgba(15, 23, 42, 0.08);
 }
 
 .productThumbWrap {
@@ -622,6 +626,13 @@
 }
 
 @media (max-width: 700px) {
+  .workspace,
+  .catalogPanel,
+  .detailLayout,
+  .managementGrid {
+    gap: 0.6rem;
+  }
+
   .topBar,
   .bannerHeadingRow {
     align-items: stretch;
@@ -707,5 +718,173 @@
     align-self: stretch;
     border-radius: 0.4rem;
     font-size: 0.55rem;
+  }
+
+  .detailHeader {
+    gap: 0.3rem;
+    font-size: 0.65rem;
+  }
+
+  .categoryBanner {
+    gap: 0.55rem;
+    padding: 0.55rem;
+    border-radius: 0.7rem;
+    box-shadow: none;
+  }
+
+  .bannerVisual,
+  .bannerImage,
+  .bannerPlaceholder {
+    min-height: 5.5rem;
+    max-height: 7rem;
+    border-radius: 0.6rem;
+  }
+
+  .bannerPlaceholder {
+    font-size: 1.1rem;
+  }
+
+  .bannerCopy,
+  .bannerHeadingRow {
+    gap: 0.45rem;
+  }
+
+  .bannerTitle {
+    font-size: 0.85rem;
+  }
+
+  .bannerDescription {
+    margin-top: 0.15rem;
+    font-size: 0.62rem;
+  }
+
+  .bannerStats {
+    gap: 0.35rem;
+  }
+
+  .bannerStat {
+    min-width: 0;
+    column-gap: 0.35rem;
+    padding: 0.4rem 0.5rem;
+    border-radius: 0.55rem;
+  }
+
+  .bannerStat strong {
+    font-size: 0.75rem;
+  }
+
+  .bannerStat small {
+    font-size: 0.52rem;
+  }
+
+  .productSidebar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.55rem;
+    padding: 0.55rem;
+    border-radius: 0.7rem;
+    box-shadow: none;
+  }
+
+  .sidebarHeader {
+    display: contents;
+  }
+
+  .sidebarHeader > div {
+    grid-column: 1 / -1;
+  }
+
+  .sidebarHeader .addButton {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: stretch;
+    padding: 0.5rem 0.65rem;
+    border-radius: 0.55rem;
+    font-size: 0.62rem;
+    white-space: nowrap;
+  }
+
+  .productSidebar > .searchField {
+    grid-column: 1;
+    grid-row: 2;
+    min-width: 0;
+    padding: 0.5rem 0.6rem;
+    border-radius: 0.55rem;
+    box-shadow: none;
+  }
+
+  .productSidebar > .searchField input {
+    min-width: 0;
+    font-size: 0.65rem;
+  }
+
+  .productSidebar > .searchField i {
+    font-size: 0.65rem;
+  }
+
+  .sidebarTitle {
+    font-size: 0.76rem;
+  }
+
+  .sidebarText {
+    margin-top: 0.1rem;
+    font-size: 0.6rem;
+  }
+
+  .productList {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem;
+  }
+
+  .productCard {
+    grid-template-columns: 2.5rem minmax(0, 1fr);
+    gap: 0.4rem;
+    padding: 0.4rem;
+    border-radius: 0.6rem;
+  }
+
+  .productThumbWrap {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 0.5rem;
+  }
+
+  .productMeta {
+    gap: 0.16rem;
+  }
+
+  .productNameRow {
+    gap: 0.25rem;
+  }
+
+  .productName {
+    font-size: 0.62rem;
+  }
+
+  .productSubtext {
+    gap: 0.2rem;
+    font-size: 0.52rem;
+  }
+
+  .pagination {
+    grid-column: 1 / -1;
+    gap: 0.4rem;
+  }
+
+  .paginationButton {
+    padding: 0.42rem 0.55rem;
+    border-radius: 0.5rem;
+    font-size: 0.58rem;
+  }
+
+  .paginationText {
+    font-size: 0.55rem;
+  }
+
+  .editorPanel {
+    border-radius: 0.7rem;
+    box-shadow: none;
   }
 }
