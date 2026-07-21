@@ -102,6 +102,7 @@ export default function AddProduct({
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [mainMediaId, setMainMediaId] = useState<string | null>(null);
   const [variations, setVariations] = useState<VariationItem[]>([]);
+  const [variationPreviewMediaByCardId, setVariationPreviewMediaByCardId] = useState<Record<string, string>>({});
   const [unitDefinitions, setUnitDefinitions] = useState<ProductUnitDefinition[]>([]);
   const [unitAliases, setUnitAliases] = useState<ProductUnitAliasDefinition[]>([]);
   const [variationUnitOptions, setVariationUnitOptions] = useState<VariationUnitOptionItem[]>([]);
@@ -231,6 +232,7 @@ export default function AddProduct({
     setMediaItems([]);
     setMainMediaId(null);
     setVariations([]);
+    setVariationPreviewMediaByCardId({});
     setVariationUnitOptions([]);
     setDiscounts([]);
     setSurcharges([]);
@@ -265,7 +267,7 @@ export default function AddProduct({
           .single(),
         supabase
           .from('product_media')
-          .select('id, media_url, media_type, media_path, title, alt_text, is_primary')
+          .select('id, media_url, media_type, media_path, thumbnail_url, thumbnail_path, title, alt_text, is_primary, variation_id, status')
           .eq('product_id', editProductId)
           .order('sort_order', { ascending: true }),
         supabase
@@ -344,7 +346,10 @@ export default function AddProduct({
       });
       setDraftProductId(editProductId);
 
-      const mappedMedia: MediaItem[] = (mediaRes.data ?? []).map((row) => ({
+      const productLevelMediaRows = ((mediaRes.data ?? []) as Array<Record<string, any>>).filter(
+        (row) => !row.variation_id,
+      );
+      const mappedMedia: MediaItem[] = productLevelMediaRows.map((row) => ({
         id: String(row.id),
         fileName: String(row.media_path ?? row.media_url ?? 'Media'),
         previewUrl: String(row.media_url ?? ''),
@@ -353,12 +358,16 @@ export default function AddProduct({
         altText: String(row.alt_text ?? ''),
         isExisting: true,
         mediaPath: row.media_path ? String(row.media_path) : null,
+        thumbnailUrl: row.thumbnail_url ? String(row.thumbnail_url) : null,
+        thumbnailPath: row.thumbnail_path ? String(row.thumbnail_path) : null,
+        variationId: null,
+        status: String(row.status ?? 'Active'),
       }));
       setMediaItems(mappedMedia);
       setLoadedExistingMediaIds(mappedMedia.map((item) => item.id));
       setLoadedExistingMediaItems(mappedMedia);
       setMainMediaId(
-        (mediaRes.data ?? []).find((row) => row.is_primary)?.id ?? mappedMedia[0]?.id ?? null,
+        productLevelMediaRows.find((row) => row.is_primary)?.id ?? mappedMedia[0]?.id ?? null,
       );
 
       const mappedVariations: VariationItem[] = (variationRes.data ?? []).map((row) => {
@@ -405,6 +414,32 @@ export default function AddProduct({
         });
       });
 
+      const mediaIdByPathOrUrl = new Map<string, string>();
+      mappedMedia.forEach((item) => {
+        if (item.mediaPath) {
+          mediaIdByPathOrUrl.set(`path::${item.mediaPath}`, item.id);
+        }
+        if (item.previewUrl) {
+          mediaIdByPathOrUrl.set(`url::${item.previewUrl}`, item.id);
+        }
+      });
+      const nextVariationPreviewMediaByCardId: Record<string, string> = {};
+      ((mediaRes.data ?? []) as Array<Record<string, any>>)
+        .filter((row) => row.variation_id && row.is_primary && String(row.status ?? 'Active') === 'Active')
+        .forEach((row) => {
+          const cardKey = variationIdToKey.get(String(row.variation_id ?? ''));
+          if (!cardKey) {
+            return;
+          }
+          const sourceMediaId =
+            mediaIdByPathOrUrl.get(`path::${String(row.media_path ?? '')}`) ??
+            mediaIdByPathOrUrl.get(`url::${String(row.media_url ?? '')}`);
+          if (sourceMediaId) {
+            nextVariationPreviewMediaByCardId[cardKey] = sourceMediaId;
+          }
+        });
+      setVariationPreviewMediaByCardId(nextVariationPreviewMediaByCardId);
+
       if (variationIds.length > 0) {
         const { data: unitOptionRows } = await supabase
           .from('product_variation_unit_options')
@@ -445,8 +480,8 @@ export default function AddProduct({
               minOrderQuantity: String(row.min_order_quantity ?? '1'),
               orderIncrement: '1',
               isDefault: Boolean(row.is_default ?? false),
-              isOrderable: Boolean(row.is_orderable ?? true),
               status: String(row.status ?? 'Active') === 'Inactive' ? 'Inactive' : 'Active',
+              isOrderable: String(row.status ?? 'Active') !== 'Inactive',
               sortOrder: String(row.sort_order ?? '0'),
               notes: String(row.notes ?? ''),
             } satisfies VariationUnitOptionItem;
@@ -865,6 +900,7 @@ export default function AddProduct({
   }
 
   async function persistMediaForProduct(productId: string) {
+    let latestMediaItems = mediaItems;
     const currentExistingMedia = mediaItems
       .filter((item) => item.isExisting)
       .map((item) => item.id);
@@ -911,6 +947,9 @@ export default function AddProduct({
         is_primary: boolean;
         sort_order: number;
         status: 'Active';
+        variation_id: null;
+        thumbnail_url: null;
+        thumbnail_path: null;
       }[] = [];
 
       for (const [index, item] of newMediaItems.entries()) {
@@ -947,13 +986,16 @@ export default function AddProduct({
           is_primary: item.id === mainMediaId,
           sort_order: existingItems.length + index,
           status: 'Active',
+          variation_id: null,
+          thumbnail_url: null,
+          thumbnail_path: null,
         });
       }
 
       const { data: insertedMediaRows, error: mediaError } = await supabase
         .from('product_media')
         .insert(mediaRows)
-        .select('id, media_url, media_type, media_path, title, alt_text, is_primary');
+        .select('id, media_url, media_type, media_path, thumbnail_url, thumbnail_path, title, alt_text, is_primary');
       if (mediaError) throw new Error(mediaError.message);
 
       const insertedByPath = new Map<string, any>();
@@ -973,9 +1015,14 @@ export default function AddProduct({
           previewUrl: String(inserted.media_url ?? item.previewUrl),
           isExisting: true,
           mediaPath: String(inserted.media_path ?? ''),
+          thumbnailUrl: inserted.thumbnail_url ? String(inserted.thumbnail_url) : null,
+          thumbnailPath: inserted.thumbnail_path ? String(inserted.thumbnail_path) : null,
+          variationId: null,
+          status: 'Active',
           file: undefined,
         };
       });
+      latestMediaItems = nextItems;
       setMediaItems(nextItems);
       const existingNow = nextItems.filter((item) => item.isExisting);
       setLoadedExistingMediaItems(existingNow);
@@ -984,6 +1031,7 @@ export default function AddProduct({
 
     if (newMediaItems.length === 0) {
       const existingAfterSave = mediaItems.filter((item) => item.isExisting);
+      latestMediaItems = existingAfterSave;
       setLoadedExistingMediaItems(existingAfterSave);
       setLoadedExistingMediaIds(existingAfterSave.map((item) => item.id));
     }
@@ -1000,6 +1048,8 @@ export default function AddProduct({
       .from('products')
       .update({ primary_media_id: primaryMediaRow?.id ?? null })
       .eq('id', productId);
+
+    return latestMediaItems;
   }
 
   async function handleRegister() {
@@ -1016,7 +1066,14 @@ export default function AddProduct({
 
       if (!productId) throw new Error('Product reference missing.');
 
-      await persistMediaForProduct(productId);
+      const persistedMediaItems = await persistMediaForProduct(productId);
+
+      const { error: variationMediaDeleteError } = await supabase
+        .from('product_media')
+        .delete()
+        .eq('product_id', productId)
+        .not('variation_id', 'is', null);
+      if (variationMediaDeleteError) throw new Error(variationMediaDeleteError.message);
 
       await Promise.all([
         supabase.from('product_variations').delete().eq('product_id', productId),
@@ -1045,6 +1102,7 @@ export default function AddProduct({
 
       const variationLookup = new Map<string, string>();
       const variationClassLookup = new Map<string, string>();
+      const variationIdsByCardKey = new Map<string, string[]>();
       (insertedVariationRows ?? []).forEach((row: any) => {
         const variationName = String(row.variation_name ?? row.class_name ?? '').trim();
         const skuCode = String(row.sku_code ?? '').trim();
@@ -1059,7 +1117,43 @@ export default function AddProduct({
           variationLookup.set(key, rowId);
           variationClassLookup.set(key, className);
         });
+        variationIdsByCardKey.set(cardKey, [...(variationIdsByCardKey.get(cardKey) ?? []), rowId]);
       });
+
+      const productImageMediaById = new Map(
+        persistedMediaItems
+          .filter((item) => item.isExisting && item.type === 'image' && !item.variationId)
+          .map((item) => [item.id, item] as const),
+      );
+      const variationMediaRows = Object.entries(variationPreviewMediaByCardId).flatMap(
+        ([cardKey, mediaId]) => {
+          const sourceMedia = productImageMediaById.get(mediaId);
+          const variationIdsForCard = variationIdsByCardKey.get(cardKey) ?? [];
+          if (!sourceMedia || variationIdsForCard.length === 0) {
+            return [];
+          }
+          return variationIdsForCard.map((variationId, index) => ({
+            product_id: productId,
+            variation_id: variationId,
+            media_type: sourceMedia.type,
+            media_url: sourceMedia.previewUrl,
+            media_path: sourceMedia.mediaPath,
+            thumbnail_url: sourceMedia.thumbnailUrl ?? null,
+            thumbnail_path: sourceMedia.thumbnailPath ?? null,
+            title: sourceMedia.title || null,
+            alt_text: sourceMedia.altText || null,
+            is_primary: true,
+            sort_order: index,
+            status: 'Active',
+          }));
+        },
+      );
+      if (variationMediaRows.length > 0) {
+        const { error: variationMediaError } = await supabase
+          .from('product_media')
+          .insert(variationMediaRows as any[]);
+        if (variationMediaError) throw new Error(variationMediaError.message);
+      }
 
       const resolveVariationDbId = (variationIdOrKey: string, priceCode: string) => {
         const normalizedVariationKey = String(variationIdOrKey).trim().toLowerCase();
@@ -1126,6 +1220,7 @@ export default function AddProduct({
             orderIncrement: '1',
             sortOrder: item.sortOrder || String(index),
             isDefault: item.isDefault && !hasDefaultAlready,
+            isOrderable: item.status !== 'Inactive',
           });
           return result;
         },
@@ -1153,7 +1248,7 @@ export default function AddProduct({
           min_order_quantity: Number(item.minOrderQuantity || '1') || 1,
           order_increment: 1,
           is_default: item.isDefault,
-          is_orderable: item.isOrderable,
+          is_orderable: item.status !== 'Inactive',
           status: item.status,
           sort_order: Number(item.sortOrder || String(index)) || index,
           notes: item.notes || null,
@@ -1731,10 +1826,14 @@ export default function AddProduct({
               unitDefinitions={unitDefinitions}
               unitAliases={unitAliases}
               unitOptions={variationUnitOptions}
+              mediaItems={mediaItems}
+              mainMediaId={mainMediaId}
+              variationPreviewMediaByCardId={variationPreviewMediaByCardId}
               discounts={discounts}
               surcharges={surcharges}
               onChange={setVariations}
               onUnitOptionsChange={setVariationUnitOptions}
+              onVariationPreviewMediaChange={setVariationPreviewMediaByCardId}
               onDiscountsChange={setDiscounts}
               onSurchargesChange={setSurcharges}
             />

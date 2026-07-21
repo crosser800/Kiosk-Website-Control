@@ -17,6 +17,10 @@ export type MediaItem = {
   altText?: string;
   isExisting?: boolean;
   mediaPath?: string | null;
+  thumbnailUrl?: string | null;
+  thumbnailPath?: string | null;
+  variationId?: string | null;
+  status?: 'Active' | 'Inactive' | string;
 };
 
 export type VariationItem = {

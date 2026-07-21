@@ -1,0 +1,132 @@
+.combobox {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.label {
+  color: var(--text);
+}
+
+.inputWrap {
+  position: relative;
+}
+
+.inputWrap input {
+  width: 100%;
+  min-height: 2.5rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.6rem;
+  padding: 0.55rem 2.4rem 0.55rem 0.7rem;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface) 92%, white);
+  font: inherit;
+  font-weight: 650;
+}
+
+.inputWrap input:focus {
+  outline: 2px solid rgba(245, 158, 11, 0.22);
+  border-color: rgba(245, 158, 11, 0.62);
+}
+
+.clearButton {
+  position: absolute;
+  right: 0.35rem;
+  top: 50%;
+  width: 1.85rem;
+  height: 1.85rem;
+  transform: translateY(-50%);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.clearButton:hover,
+.clearButton:focus-visible {
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface) 84%, white);
+  border-color: var(--card-border);
+}
+
+.options {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--card-border);
+  border-radius: 0.65rem;
+  padding: 0.35rem;
+  background: var(--card-bg);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.16);
+}
+
+.option {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.6rem;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.option + .option {
+  margin-top: 0.2rem;
+}
+
+.option strong {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.option span {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.selectedOption {
+  border-color: rgba(245, 158, 11, 0.58);
+  background: color-mix(in srgb, var(--yellow) 14%, var(--card-bg));
+}
+
+.activeOption {
+  border-color: rgba(245, 158, 11, 0.78);
+  background: color-mix(in srgb, var(--yellow) 22%, var(--card-bg));
+}
+
+.noResults {
+  padding: 0.7rem;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.statusLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.statusDot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #16a34a;
+}
