@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import CreateOrderWorkspace from '../components/orders/CreateOrderWorkspace';
 import OrderSummary from '../components/orders/OrderSummary';
 import summaryStyles from '../components/orders/OrderSummary.module.css';
 import styles from './Orders.module.css';
@@ -31,6 +32,7 @@ export default function Orders() {
   const [appliedSingleDate, setAppliedSingleDate] = useState<string | null>(null);
   const [appliedRangeStart, setAppliedRangeStart] = useState<string | null>(null);
   const [appliedRangeEnd, setAppliedRangeEnd] = useState<string | null>(null);
+  const [isCreateOrderOpen, setIsCreateOrderOpen] = useState(false);
 
   function buildCalendarDays() {
     const firstDay = new Date(calendarYear, calendarMonth, 1);
@@ -103,6 +105,9 @@ export default function Orders() {
           </p>
         </div>
         <div className={styles.heroActions}>
+          <button type="button" className={styles.createOrderButton} onClick={() => setIsCreateOrderOpen(true)}>
+            Create Order
+          </button>
           {appliedSingleDate || (appliedRangeStart && appliedRangeEnd) ? (
             <button type="button" className={summaryStyles.clearFilterButton} onClick={clearDateFilter}>
               Clear Filter
@@ -179,6 +184,8 @@ export default function Orders() {
         appliedRangeStart={appliedRangeStart}
         appliedRangeEnd={appliedRangeEnd}
       />
+
+      {isCreateOrderOpen ? <CreateOrderWorkspace onClose={() => setIsCreateOrderOpen(false)} /> : null}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Skeleton from '../common/Skeleton';
 import { supabase } from '../../lib/supabase';
+import { flattenOrderCatalogForAddItem, loadOrderCatalog } from '../../services/orderCatalog';
 import styles from './OrderSummary.module.css';
 
 type OrderSummaryProps = {
@@ -57,6 +58,8 @@ type OrderCatalogUnitOption = {
   unitCode: string;
   unitLabel: string;
   priceOverride: number | null;
+  quantityInBaseUnit: number;
+  computedPrice: number;
   minOrderQuantity: number;
   sortOrder: number;
   isDefault: boolean;
@@ -569,123 +572,16 @@ export default function OrderSummary({
     setIsCatalogLoading(true);
     setCatalogError('');
 
-    const [productsRes, variationsRes, unitOptionsRes] = await Promise.all([
-      supabase
-        .from('products')
-        .select(`
-          id,
-          category_id,
-          product_name,
-          sku_code,
-          status,
-          product_categories(category_title)
-        `)
-        .eq('status', 'Active')
-        .order('product_name', { ascending: true }),
-      supabase
-        .from('product_variations')
-        .select(`
-          id,
-          product_id,
-          variation_name,
-          class_name,
-          branch_name,
-          price_type,
-          price_code,
-          price,
-          availability
-        `)
-        .order('variation_name', { ascending: true }),
-      supabase
-        .from('product_variation_unit_options')
-        .select(`
-          id,
-          variation_id,
-          unit_code,
-          unit_label,
-          price_override,
-          min_order_quantity,
-          is_default,
-          status,
-          sort_order
-        `)
-        .eq('status', 'Active')
-        .order('sort_order', { ascending: true }),
-    ]);
-
-    const combinedError =
-      productsRes.error ?? variationsRes.error ?? unitOptionsRes.error;
-
-    if (combinedError) {
+    try {
+      const catalogProducts = await loadOrderCatalog();
+      setCatalogItems(flattenOrderCatalogForAddItem(catalogProducts));
+    } catch (error) {
       setCatalogItems([]);
-      setCatalogError(combinedError.message);
+      setCatalogError(error instanceof Error ? error.message : 'Failed to load active catalog.');
       setIsCatalogLoading(false);
       return;
     }
 
-    const unitOptionsByVariationId = new Map<string, OrderCatalogUnitOption[]>();
-    (unitOptionsRes.data ?? []).forEach((row: any) => {
-      const variationId = String(row.variation_id ?? '');
-      if (!variationId) return;
-
-      const current = unitOptionsByVariationId.get(variationId) ?? [];
-      current.push({
-        id: String(row.id ?? ''),
-        unitCode: String(row.unit_code ?? '').trim(),
-        unitLabel: String(row.unit_label ?? row.unit_code ?? '').trim() || 'Unit',
-        priceOverride:
-          row.price_override === null || row.price_override === undefined
-            ? null
-            : Number(row.price_override ?? 0),
-        minOrderQuantity: Math.max(1, Number(row.min_order_quantity ?? 1) || 1),
-        sortOrder: Number(row.sort_order ?? 0) || 0,
-        isDefault: Boolean(row.is_default ?? false),
-      });
-      unitOptionsByVariationId.set(variationId, current);
-    });
-
-    const productById = new Map<string, { name: string; code: string; categoryId: string; categoryName: string }>();
-    (productsRes.data ?? []).forEach((row: any) => {
-      const categoryRef = Array.isArray(row.product_categories)
-        ? row.product_categories[0]
-        : row.product_categories;
-      productById.set(String(row.id), {
-        name: String(row.product_name ?? 'Untitled Product'),
-        code: String(row.sku_code ?? '-'),
-        categoryId: String(row.category_id ?? ''),
-        categoryName: String(categoryRef?.category_title ?? 'Uncategorized'),
-      });
-    });
-
-    const nextCatalogItems = (variationsRes.data ?? [])
-      .map((row: any) => {
-        const product = productById.get(String(row.product_id ?? ''));
-        if (!product) return null;
-
-        const variationId = String(row.id ?? '');
-        const unitOptions = (unitOptionsByVariationId.get(variationId) ?? []).sort(
-          (left, right) => left.sortOrder - right.sortOrder,
-        );
-
-        return {
-          id: variationId,
-          productId: String(row.product_id ?? ''),
-          categoryId: product.categoryId,
-          categoryName: product.categoryName,
-          productName: product.name,
-          productCode: product.code,
-          variationLabel: String(row.variation_name ?? row.class_name ?? 'Variation'),
-          branchName: String(row.branch_name ?? ''),
-          priceType: String(row.price_type ?? ''),
-          priceCode: String(row.price_code ?? ''),
-          unitPrice: Number(row.price ?? 0),
-          availability: String(row.availability ?? ''),
-          unitOptions,
-        } satisfies OrderCatalogItem;
-      })
-      .filter((item): item is OrderCatalogItem => Boolean(item));
-
-    setCatalogItems(nextCatalogItems);
     setIsCatalogLoading(false);
   }
 
@@ -937,7 +833,7 @@ export default function OrderSummary({
 
     const quantity = Math.max(1, Number(addItemDraft.quantity || '1') || 1);
     const freeQuantity = Math.max(0, Number(addItemDraft.freeQuantity || '0') || 0);
-    const unitPrice = selectedUnitOption?.priceOverride ?? selectedCatalogItem.unitPrice;
+    const unitPrice = selectedUnitOption?.computedPrice ?? selectedCatalogItem.unitPrice;
     const selectedUnitLabel = selectedUnitOption?.unitLabel?.trim() || selectedUnitOption?.unitCode?.trim() || '';
     const variantLabel = selectedUnitLabel
       ? `${selectedCatalogItem.variationLabel} - ${selectedUnitLabel}`
@@ -1440,9 +1336,7 @@ export default function OrderSummary({
                             selectedCatalogItem.unitOptions.map((option) => (
                               <option key={option.id} value={option.id}>
                                 {option.unitLabel}
-                                {option.priceOverride !== null
-                                  ? ` - ${currency.format(option.priceOverride)}`
-                                  : ''}
+                                {` - ${currency.format(option.computedPrice)}`}
                               </option>
                             ))
                           )}
@@ -1482,7 +1376,7 @@ export default function OrderSummary({
                       <span>
                         Unit price:{' '}
                         <strong>
-                          {currency.format(selectedUnitOption?.priceOverride ?? selectedCatalogItem.unitPrice)}
+                          {currency.format(selectedUnitOption?.computedPrice ?? selectedCatalogItem.unitPrice)}
                         </strong>
                       </span>
                       <span>
