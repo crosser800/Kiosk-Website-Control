@@ -1,7 +1,7 @@
 .container {
   background-color: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 12px;
+  border-radius: 16px;
   padding: 1.5rem;
   width: 100%;
   box-shadow: var(--card-shadow);
@@ -12,13 +12,24 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 1.25rem;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .title {
+  margin: 0;
   font-size: 1.1rem;
   font-weight: 700;
   font-family: 'Montserrat', sans-serif;
   color: var(--text);
+}
+
+.subtitle {
+  margin: 0.3rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
 }
 
 .filter {
@@ -123,6 +134,46 @@
   display: inline-block;
 }
 
+.emptyBadge {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.skeletonBlock {
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--card-border) 70%, white) 0%,
+    color-mix(in srgb, var(--surface) 88%, white) 50%,
+    color-mix(in srgb, var(--card-border) 70%, white) 100%
+  );
+  background-size: 200% 100%;
+  animation: agentSkeletonPulse 1.2s ease-in-out infinite;
+}
+
+.skeletonLineLong {
+  width: 9rem;
+  height: 0.95rem;
+}
+
+.skeletonLine {
+  width: 6.5rem;
+  height: 0.95rem;
+}
+
+.skeletonLineShort {
+  width: 3rem;
+  height: 0.95rem;
+}
+
+.skeletonBadge {
+  width: 4.8rem;
+  height: 1.8rem;
+  margin: 0 auto;
+}
+
 .active {
   border: 1px solid var(--status-active-border);
   background-color: var(--status-active-bg);
@@ -156,12 +207,85 @@
 .viewAll {
   font-size: 0.9rem;
   color: var(--text-muted);
-  text-decoration: underline;
   font-family: 'Montserrat', sans-serif;
-  cursor: pointer;
+  cursor: default;
   transition: color 0.2s;
 }
 
-.viewAll:hover {
-  color: var(--text);
+@media (max-width: 900px) {
+  .container {
+    overflow-x: auto;
+  }
+
+  .table {
+    min-width: 44rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 0.8rem;
+    border-radius: 0.8rem;
+  }
+
+  .header {
+    margin-bottom: 0.65rem;
+    gap: 0.45rem;
+  }
+
+  .title {
+    font-size: 0.9rem;
+  }
+
+  .subtitle {
+    margin-top: 0.2rem;
+    font-size: 0.68rem;
+    line-height: 1.35;
+  }
+
+  .filter {
+    gap: 0.25rem;
+    font-size: 0.7rem;
+  }
+
+  .table {
+    min-width: 36rem;
+  }
+
+  .th,
+  .thStatus {
+    padding: 0.4rem 0.5rem;
+    font-size: 0.67rem;
+  }
+
+  .td,
+  .tdName,
+  .tdSales,
+  .tdStatus {
+    padding: 0.65rem 0.5rem;
+    font-size: 0.72rem;
+  }
+
+  .badge {
+    padding: 0.22rem 0.55rem;
+    font-size: 0.68rem;
+  }
+
+  .footer {
+    margin-top: 0.55rem;
+    padding-top: 0.5rem;
+  }
+
+  .viewAll {
+    font-size: 0.7rem;
+  }
+}
+
+@keyframes agentSkeletonPulse {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
 }

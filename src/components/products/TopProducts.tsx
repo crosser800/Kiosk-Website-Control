@@ -5,20 +5,25 @@ import {
   type TopProductRecord,
 } from '../../services/topProducts';
 
-const SLOT_COUNT = 5;
+const DESKTOP_SLOT_COUNT = 5;
+const MOBILE_SLOT_COUNT = 10;
 const FALLBACK_ITEM_COUNT = 20;
 const INTERVAL = 3000;
 
-function buildDisplayProducts(products: TopProductRecord[], currentPage: number) {
-  const startIndex = currentPage * SLOT_COUNT;
+function buildDisplayProducts(
+  products: TopProductRecord[],
+  currentPage: number,
+  slotCount: number,
+) {
+  const startIndex = currentPage * slotCount;
 
-  return Array.from({ length: SLOT_COUNT }, (_, index) => {
+  return Array.from({ length: slotCount }, (_, index) => {
     const product = products[startIndex + index];
     const rank = startIndex + index + 1;
 
     return {
       rank,
-      itemCode: product?.itemCode ?? '',
+      productName: product?.productName ?? '',
       imageUrl: product?.imageUrl ?? '',
     };
   });
@@ -27,9 +32,25 @@ function buildDisplayProducts(products: TopProductRecord[], currentPage: number)
 export default function TopProducts() {
   const [products, setProducts] = useState<TopProductRecord[]>([]);
   const [currentPage, setCurrentPage] = useState(0);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 700px)').matches,
+  );
 
+  const slotCount = isMobile ? MOBILE_SLOT_COUNT : DESKTOP_SLOT_COUNT;
   const itemCount = Math.max(products.length, FALLBACK_ITEM_COUNT);
-  const totalPages = Math.ceil(itemCount / SLOT_COUNT);
+  const totalPages = Math.ceil(itemCount / slotCount);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 700px)');
+    const handleViewportChange = (event: MediaQueryListEvent) => {
+      setIsMobile(event.matches);
+      setCurrentPage(0);
+    };
+
+    setIsMobile(mediaQuery.matches);
+    mediaQuery.addEventListener('change', handleViewportChange);
+    return () => mediaQuery.removeEventListener('change', handleViewportChange);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -57,12 +78,15 @@ export default function TopProducts() {
     return () => clearInterval(timer);
   }, [totalPages]);
 
-  const displayProducts = buildDisplayProducts(products, currentPage);
+  const displayProducts = buildDisplayProducts(products, currentPage, slotCount);
 
   return (
     <div className={styles.container}>
       <div className={styles.header}>
-        <h2 className={styles.title}>TOP PRODUCTS</h2>
+        <div>
+          <h2 className={styles.title}>AVAILABLE PRODUCTS</h2>
+          <p className={styles.subtitle}>Current product lineup preview.</p>
+        </div>
         <div className={styles.dots}>
           {Array.from({ length: totalPages }).map((_, index) => (
             <button
@@ -78,24 +102,27 @@ export default function TopProducts() {
 
       <div className={styles.list}>
         {displayProducts.map((product) => (
-          <div key={product.rank} className={styles.item}>
-            <div className={styles.visualRow}>
-              <span className={styles.rank}>{product.rank}.</span>
+          <div key={product.rank} className={styles.itemWrap}>
+            <div className={styles.item}>
+              <div className={styles.visualRow}>
+                <div className={styles.rankBadge}>{product.rank}</div>
 
-              <div className={styles.imageWrapper}>
-                {product.imageUrl ? (
-                  <img
-                    src={product.imageUrl}
-                    alt={product.itemCode || `Top product ${product.rank}`}
-                    className={styles.image}
-                  />
-                ) : (
-                  <div className={styles.imagePlaceholder} />
-                )}
+                <div className={styles.imageWrapper}>
+                  {product.imageUrl ? (
+                    <img
+                      src={product.imageUrl}
+                      alt={product.productName || `Product ${product.rank}`}
+                      className={styles.image}
+                    />
+                  ) : (
+                    <div className={styles.imagePlaceholder}>
+                      <i className="fa-solid fa-box-open"></i>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-
-            <span className={styles.itemCode}>{product.itemCode || '\u00A0'}</span>
+            <span className={styles.productName}>{product.productName || '\u00A0'}</span>
           </div>
         ))}
       </div>

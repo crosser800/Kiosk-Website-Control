@@ -7,7 +7,7 @@ import AccountsSummary, {
 } from '../components/account/AccountsSummary';
 import CreateAccount from '../components/account/CreateAccount';
 import EditAccount from '../components/account/EditAccount';
-import { getAccountItems, subscribeAccountItems } from '../services/accounts';
+import { getAccountItems, loadAccountItems, subscribeAccountItems } from '../services/accounts';
 import styles from './Accounts.module.css';
 
 export default function Accounts() {
@@ -24,9 +24,22 @@ export default function Accounts() {
   );
 
   useEffect(() => subscribeAccountItems(setAccounts), []);
+  useEffect(() => {
+    void loadAccountItems().then(setAccounts).catch(() => setAccounts(getAccountItems()));
+  }, []);
 
   return (
     <div className={styles.accounts}>
+      <section className={styles.hero}>
+        <div>
+          <p className={styles.eyebrow}>Team workspace</p>
+          <h1 className={styles.title}>Accounts</h1>
+          <p className={styles.subtitle}>
+            Manage admins and agents in a cleaner workspace with quick visibility on team size.
+          </p>
+        </div>
+      </section>
+
       <div className={styles.statsRow}>
         <AdminCount adminCount={adminCount} />
         <AgentsCount agentsCount={agentsCount} />
@@ -42,8 +55,10 @@ export default function Accounts() {
         <CreateAccount
           accountType={createAccountType}
           onCreate={(nextAccounts) => {
-            setAccounts(nextAccounts);
-            setCreateAccountType(null);
+            void Promise.resolve(nextAccounts).then((resolved) => {
+              setAccounts(resolved);
+              setCreateAccountType(null);
+            });
           }}
           onClose={() => setCreateAccountType(null)}
         />
@@ -53,8 +68,9 @@ export default function Accounts() {
         <EditAccount
           account={editingAccount}
           onSave={(nextAccounts) => {
-            setAccounts(nextAccounts);
-            setEditingAccount(null);
+            void Promise.resolve(nextAccounts).then((resolved) => {
+              setAccounts(resolved);
+            });
           }}
           onClose={() => setEditingAccount(null)}
         />

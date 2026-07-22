@@ -39,7 +39,6 @@ export default function Sidebar({ active, onNavigate, isCollapsed, canToggle, on
           <>
             <div className={styles.logo}>
               <img src={logo} alt="logo" />
-              <span>BESTBUILT</span>
             </div>
             <button
               className={styles.toggleBtn}
@@ -54,22 +53,27 @@ export default function Sidebar({ active, onNavigate, isCollapsed, canToggle, on
 
       <nav className={styles.nav}>
         {navItems.map((item) => (
-          <div
+          <button
             key={item.name}
+            type="button"
             className={`${styles.navItem} ${active === item.name ? styles.active : ''}`}
             onClick={() => onNavigate(item.name)}
             title={isCollapsed ? item.name : ''}
           >
-            <i className={`${item.icon} ${styles.icon}`}></i>
-            {!isCollapsed && <span className={styles.label}>{item.name}</span>}
-          </div>
+            <span className={styles.iconWrap}>
+              <i className={`${item.icon} ${styles.icon}`}></i>
+            </span>
+            <span className={styles.label}>{item.name}</span>
+          </button>
         ))}
       </nav>
 
-      <div className={styles.logout} onClick={onLogout}>
-        <i className="fa-solid fa-right-from-bracket"></i>
-        {!isCollapsed && <span className={styles.label}>Logout</span>}
-      </div>
+      <button type="button" className={styles.logout} onClick={onLogout}>
+        <span className={styles.iconWrap}>
+          <i className="fa-solid fa-right-from-bracket"></i>
+        </span>
+        <span className={styles.label}>Logout</span>
+      </button>
     </div>
   );
 }

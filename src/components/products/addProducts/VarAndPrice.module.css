@@ -12,16 +12,35 @@
   flex-wrap: wrap;
 }
 
-.title {
-  margin: 0;
-  font-size: 1.1rem;
+.variationTabs {
+  display: flex;
+  gap: 0.6rem;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.variationTab {
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 90%, white);
+  color: var(--text-muted);
+  padding: 0.65rem 0.95rem;
+  font-size: 0.82rem;
   font-weight: 700;
   font-family: 'Montserrat', sans-serif;
-  color: var(--text);
+  cursor: pointer;
+}
+
+.variationTabActive {
+  background: #facc15;
+  border-color: #eab308;
+  color: #1f2937;
+  box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.2);
 }
 
 .addButton,
 .secondaryAction,
+.iconAction,
 .deleteAction,
 .cancelButton,
 .registerButton,
@@ -49,6 +68,23 @@
   color: var(--text);
 }
 
+.iconAction {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.actionIcon {
+  width: 1rem;
+  height: 1rem;
+}
+
 .deleteAction {
   border: 1px solid #b91c1c;
   background: #dc2626;
@@ -63,11 +99,24 @@
 
 .addButton:hover,
 .secondaryAction:hover,
+.iconAction:hover,
 .deleteAction:hover,
 .cancelButton:hover,
 .registerButton:hover,
 .smallAction:hover {
   transform: translateY(-1px);
+}
+
+.addButton:disabled,
+.secondaryAction:disabled,
+.iconAction:disabled,
+.deleteAction:disabled,
+.cancelButton:disabled,
+.registerButton:disabled,
+.smallAction:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
 }
 
 .cardGrid {
@@ -114,11 +163,380 @@
   flex-wrap: wrap;
 }
 
+.unitSection,
+.priceSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem;
+}
+
+.priceSection {
+  padding-top: 0;
+}
+
+.subsectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.subsectionTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.98rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.subsectionMiniTitle {
+  color: var(--text);
+  font-size: 0.86rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.subsectionText {
+  margin: 0.25rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.unitSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.packagingSetupGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(18rem, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.packagingSetupMain {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.variationPreviewPanel {
+  border: 1px solid var(--card-border);
+  border-radius: 0.9rem;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--surface) 90%, white);
+  display: grid;
+  gap: 0.85rem;
+}
+
+.variationPreviewTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.variationPreviewContent {
+  display: grid;
+  grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr);
+  gap: 0.9rem;
+  align-items: center;
+}
+
+.variationPreviewThumbWrap,
+.mediaSelectorThumbWrap {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--surface) 88%, white);
+}
+
+.variationPreviewThumbWrap {
+  aspect-ratio: 4 / 3;
+}
+
+.variationPreviewThumb,
+.mediaSelectorThumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.variationPreviewFallback {
+  min-height: 6.5rem;
+  display: flex;
+  align-items: center;
+  padding: 0.9rem;
+  border: 1px dashed var(--card-border);
+  border-radius: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.variationPreviewActions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.mediaBadge {
+  position: absolute;
+  top: 0.55rem;
+  left: 0.55rem;
+  padding: 0.25rem 0.45rem;
+  border-radius: 999px;
+  background: #facc15;
+  color: #1f2937;
+  font-size: 0.68rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.fieldLabel {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.fieldHelper {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.packagingRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.parserMessage {
+  margin: 0;
+  color: #92400e;
+  background: #fff7dd;
+  border: 1px solid #f6d66a;
+  border-radius: 0.75rem;
+  padding: 0.7rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.unitOptionsPanel {
+  border: 1px solid var(--card-border);
+  border-radius: 0.9rem;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--surface) 88%, white);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.unitOptionsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.unitOptionList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.orderUnitsTable {
+  border: 1px solid color-mix(in srgb, var(--card-border) 80%, white);
+  border-radius: 0.9rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--surface);
+  padding-bottom: 0.1rem;
+}
+
+.orderUnitsHeader,
+.orderUnitRow {
+  display: grid;
+  grid-template-columns:
+    0.55fr
+    minmax(6.75rem, 1fr)
+    minmax(13rem, 1.9fr)
+    minmax(16rem, 1.8fr)
+    0.8fr
+    minmax(6rem, 0.9fr)
+    minmax(7.5rem, 1fr);
+  gap: 0.85rem;
+  align-items: start;
+  min-width: 78rem;
+}
+
+.orderUnitsHeader {
+  padding: 1rem 1rem 0.85rem;
+  background: color-mix(in srgb, var(--surface) 96%, #f7f7f8);
+  border-bottom: 1px solid color-mix(in srgb, var(--card-border) 75%, white);
+}
+
+.orderUnitsHeader span {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.orderUnitRow {
+  padding: 0.95rem 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--card-border) 65%, white);
+}
+
+.orderUnitRow:last-of-type {
+  border-bottom: none;
+}
+
+.orderUnitCellIndex {
+  min-height: 2.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  font-weight: 700;
+  font-size: 0.85rem;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.containsCell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.containsInline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.containsSuffix {
+  min-height: 2.95rem;
+  display: flex;
+  align-items: center;
+  padding: 0 0.85rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--surface) 92%, white);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.unitOptionCard {
+  border: 1px solid var(--card-border);
+  border-radius: 0.85rem;
+  padding: 0.8rem;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.unitOptionPrimaryGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.unitOptionSecondaryGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.toggleField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+
+.toggleField input {
+  width: 1rem;
+  height: 1rem;
+}
+
+.basePriceSummaryGrid,
+.computedPriceGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.basePriceSummaryItem,
+.computedPriceItem {
+  min-height: 2.45rem;
+  display: grid;
+  align-content: center;
+  gap: 0.15rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--yellow) 12%, white);
+  color: #7c5300;
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.basePriceSummaryItem strong,
+.computedPriceItem strong {
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.unitOptionActions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.95rem;
+}
+
+.orderUnitsFooterNote {
+  margin: 0;
+  padding: 0.9rem 1rem 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--card-border) 65%, white);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+}
+
 .priceGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.65rem;
-  padding: 1rem;
 }
 
 .priceCell {
@@ -161,40 +579,189 @@
 .modalOverlay {
   position: fixed;
   inset: 0;
+  width: 100vw;
+  height: 100vh;
   background: rgba(10, 12, 18, 0.56);
   display: grid;
   place-items: center;
-  z-index: 50;
+  z-index: 5000;
   padding: 1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .modal {
   width: min(100%, 64rem);
+  max-height: calc(100vh - 2rem);
   border-radius: 1rem;
   background: var(--surface);
   border: 1px solid var(--card-border);
   padding: 1rem;
   display: grid;
   gap: 0.8rem;
+  overflow-y: auto;
+  margin-block: auto;
+  box-shadow: var(--card-shadow);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
 }
 
 .modalTitle {
   margin: 0;
-  font-size: 1rem;
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 700;
   font-family: 'Montserrat', sans-serif;
+}
+
+.modalClose {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--surface) 88%, white);
+  color: var(--text);
+  cursor: pointer;
+  flex: 0 0 auto;
 }
 
 .confirmText {
   margin: 0;
-  color: var(--text);
+  color: var(--text-muted);
   font-size: 0.9rem;
   font-family: 'Montserrat', sans-serif;
+}
+
+.modalInfoGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.infoCard {
+  display: block;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.7rem;
+  background: color-mix(in srgb, var(--surface) 72%, white);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.infoCard strong {
+  color: var(--text);
+}
+
+.modalAlert {
+  margin: 0;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid #f5b5b5;
+  border-radius: 0.75rem;
+  background: #fff4f4;
+  color: #9f1d1d;
+  font-size: 0.84rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.modalContent {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.mediaSelectorGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.8rem;
+}
+
+.mediaSelectorItem {
+  border: 1px solid var(--card-border);
+  border-radius: 0.85rem;
+  padding: 0.55rem;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  display: grid;
+  gap: 0.5rem;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.mediaSelectorItemSelected {
+  border-color: #eab308;
+  box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.22);
+}
+
+.mediaSelectorThumbWrap {
+  aspect-ratio: 1;
+}
+
+.mediaSelectorLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .modalGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.65rem;
+  gap: 0.9rem 0.75rem;
+}
+
+.modalGridSpacer {
+  min-height: 1px;
+}
+
+.modalSectionTitle {
+  grid-column: 1 / -1;
+  margin: 0.15rem 0 0;
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.priceInputGroup {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.pricePrefix {
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.85rem;
+  border-right: 1px solid var(--card-border);
+  background: color-mix(in srgb, var(--surface) 82%, white);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.priceInput {
+  border: 0;
+  border-radius: 0;
+  min-width: 0;
+}
+
+.priceInput:focus {
+  outline: none;
 }
 
 .modalRowHeader,
@@ -227,7 +794,149 @@
   gap: 0.45rem;
 }
 
+.ruleList {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.ruleTabsHeader {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--surface) 76%, white);
+}
+
+.ruleTabs {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.ruleTab {
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 90%, white);
+  color: var(--text-muted);
+  padding: 0.65rem 0.95rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+  cursor: pointer;
+}
+
+.ruleTabActive {
+  background: #facc15;
+  border-color: #eab308;
+  color: #1f2937;
+  box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.2);
+}
+
+.ruleCard {
+  border: 1px solid var(--card-border);
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--surface) 92%, white);
+  padding: 0.95rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.ruleCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.discountBasisPreview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.discountBasisPreview span {
+  display: block;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--yellow) 9%, white);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.discountBasisPreview strong {
+  color: var(--text);
+}
+
+.ruleSummary {
+  flex: 1;
+  min-width: 14rem;
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.ruleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.promoSection {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid color-mix(in srgb, var(--card-border) 72%, white);
+}
+
+.readOnlyValue {
+  min-height: 3rem;
+  display: flex;
+  align-items: center;
+  padding: 0.8rem 0.9rem;
+  border: 1px dashed var(--card-border);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--surface) 88%, white);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.searchResults {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.searchResultItem {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--surface) 90%, white);
+  color: var(--text);
+  padding: 0.75rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+  cursor: pointer;
+}
+
+.ruleNote {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+}
+
 .rowIndex {
+  min-width: 2.2rem;
+  min-height: 2.2rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -268,6 +977,31 @@
   font-family: 'Montserrat', sans-serif;
 }
 
+.emptyStateContent {
+  display: grid;
+  gap: 0.7rem;
+  justify-items: center;
+  text-align: center;
+  padding: 1.25rem;
+}
+
+.emptyStateTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.emptyStateText {
+  margin: 0;
+  max-width: 34rem;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+}
+
 .variationCardSkeleton {
   border: 1px solid var(--card-border);
   border-radius: 1rem;
@@ -296,6 +1030,15 @@
   flex-wrap: wrap;
 }
 
+.modalFooterActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  padding-top: 0.9rem;
+  border-top: 1px solid color-mix(in srgb, var(--card-border) 72%, white);
+}
+
 @keyframes riseIn {
   from {
     opacity: 0;
@@ -317,6 +1060,19 @@
 }
 
 @media (max-width: 1000px) {
+  .packagingSetupGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .orderUnitsTable {
+    overflow-x: auto;
+  }
+
+  .orderUnitsHeader,
+  .orderUnitRow {
+    min-width: 74rem;
+  }
+
   .priceGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -324,11 +1080,235 @@
   .modalGrid {
     grid-template-columns: 1fr;
   }
+
+  .modalGridSpacer {
+    display: none;
+  }
+
+  .modalInfoGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ruleGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .discountBasisPreview {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 700px) {
+  .wrapper,
+  .cardGrid {
+    gap: 0.55rem;
+  }
+
+  .sectionHeader,
+  .subsectionHeader {
+    gap: 0.45rem;
+  }
+
+  .variationTabs,
+  .ruleTabs {
+    flex-wrap: nowrap;
+    gap: 0.3rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .variationTabs::-webkit-scrollbar,
+  .ruleTabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .variationTab,
+  .ruleTab {
+    flex: 0 0 auto;
+    padding: 0.4rem 0.58rem;
+    font-size: 0.62rem;
+  }
+
+  .addButton,
+  .secondaryAction,
+  .deleteAction,
+  .cancelButton,
+  .registerButton,
+  .smallAction {
+    padding: 0.45rem 0.58rem;
+    border-radius: 0.5rem;
+    font-size: 0.62rem;
+  }
+
+  .variationCard,
+  .variationCardSkeleton {
+    border-radius: 0.65rem;
+  }
+
+  .cardHeader {
+    gap: 0.45rem;
+    padding: 0.55rem 0.6rem;
+  }
+
+  .cardTitle,
+  .templateTitle,
+  .subsectionTitle,
+  .emptyStateTitle,
+  .modalTitle {
+    font-size: 0.72rem;
+  }
+
+  .cardMeta,
+  .subsectionText,
+  .templateHint,
+  .parserMessage,
+  .orderUnitsFooterNote,
+  .emptyStateText,
+  .confirmText,
+  .ruleNote {
+    font-size: 0.6rem;
+  }
+
+  .unitSection,
+  .priceSection {
+    gap: 0.55rem;
+    padding: 0.6rem;
+  }
+
+  .priceSection {
+    padding-top: 0;
+  }
+
+  .modal {
+    padding: 0.9rem;
+  }
+
+  .modalHeader {
+    align-items: center;
+  }
+
+  .modalInfoGrid,
+  .unitSummaryGrid,
+  .packagingRow,
+  .variationPreviewContent {
+    grid-template-columns: 1fr;
+  }
+
+  .unitSummaryGrid,
+  .packagingSetupGrid,
+  .packagingSetupMain,
+  .unitOptionList,
+  .ruleList,
+  .ruleTabsHeader,
+  .ruleCard,
+  .promoSection {
+    gap: 0.5rem;
+  }
+
+  .templatePanel,
+  .unitOptionsPanel,
+  .unitOptionCard,
+  .ruleCard {
+    gap: 0.5rem;
+    padding: 0.55rem;
+    border-radius: 0.6rem;
+  }
+
+  .fieldGroup,
+  .toggleField {
+    gap: 0.22rem;
+  }
+
+  .fieldLabel,
+  .subsectionMiniTitle,
+  .orderUnitsHeader span,
+  .modalRowHeader,
+  .modalRowHeaderPromo,
+  .ruleSummary {
+    font-size: 0.58rem;
+  }
+
+  .fieldHelper,
+  .priceHint {
+    font-size: 0.54rem;
+  }
+
+  .input,
+  .select {
+    padding: 0.5rem 0.58rem;
+    border-radius: 0.5rem;
+    font-size: 0.65rem;
+  }
+
+  .parserMessage {
+    padding: 0.45rem 0.5rem;
+    border-radius: 0.5rem;
+  }
+
+  .orderUnitsTable {
+    border-radius: 0.55rem;
+  }
+
+  .orderUnitsHeader,
+  .orderUnitRow {
+    min-width: 56rem;
+    grid-template-columns:
+      0.4fr
+      minmax(5rem, 0.8fr)
+      minmax(9rem, 1.5fr)
+      minmax(6.5rem, 0.9fr)
+      0.65fr
+      0.7fr
+      minmax(4.8rem, 0.75fr)
+      minmax(4.8rem, 0.75fr)
+      minmax(5.8rem, 0.85fr)
+      minmax(5rem, 0.75fr);
+    gap: 0.4rem;
+  }
+
+  .orderUnitsHeader {
+    padding: 0.55rem 0.55rem 0.45rem;
+  }
+
+  .orderUnitRow {
+    padding: 0.5rem 0.55rem;
+  }
+
+  .orderUnitCellIndex,
+  .containsSuffix,
+  .computedPrice,
+  .unitOptionActions {
+    min-height: 2.15rem;
+    font-size: 0.62rem;
+  }
+
+  .containsSuffix,
+  .computedPrice {
+    padding: 0.45rem 0.55rem;
+    border-radius: 0.5rem;
+  }
+
   .priceGrid {
     grid-template-columns: 1fr;
+    gap: 0.4rem;
+  }
+
+  .priceCell {
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+  }
+
+  .priceLabel {
+    font-size: 0.62rem;
+  }
+
+  .priceValue {
+    font-size: 0.72rem;
+  }
+
+  .priceActions,
+  .searchResults {
+    gap: 0.3rem;
   }
 
   .discountRow,
@@ -336,5 +1316,54 @@
   .modalRowHeader,
   .modalRowHeaderPromo {
     grid-template-columns: 1fr;
+  }
+
+  .modalOverlay {
+    padding: 0.5rem;
+  }
+
+  .modal {
+    gap: 0.5rem;
+    padding: 0.6rem;
+    border-radius: 0.65rem;
+    max-height: calc(100dvh - 1rem);
+    overflow-y: auto;
+  }
+
+  .modalGrid,
+  .discountRow,
+  .promoRow,
+  .ruleGrid {
+    gap: 0.4rem;
+  }
+
+  .readOnlyValue,
+  .searchResultItem {
+    min-height: 2.15rem;
+    padding: 0.45rem 0.55rem;
+    border-radius: 0.5rem;
+    font-size: 0.62rem;
+  }
+
+  .emptyState {
+    min-height: 4rem;
+    border-radius: 0.6rem;
+  }
+
+  .emptyStateContent {
+    gap: 0.4rem;
+    padding: 0.65rem;
+  }
+
+  .skeletonHeader {
+    height: 2.25rem;
+  }
+
+  .skeletonBody {
+    height: 7rem;
+  }
+
+  .actions {
+    gap: 0.4rem;
   }
 }

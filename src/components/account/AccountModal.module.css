@@ -167,6 +167,25 @@
   gap: 0.45rem;
 }
 
+.noticeCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.85rem;
+  border: 1px dashed color-mix(in srgb, var(--yellow) 36%, var(--card-border));
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--yellow) 10%, var(--surface));
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.noticeCard p {
+  margin: 0;
+}
+
 .label {
   color: var(--text-muted);
   font-size: 0.8rem;
@@ -174,7 +193,8 @@
 }
 
 .input,
-.select {
+.select,
+.textarea {
   min-height: 2.65rem;
   width: 100%;
   border: 1px solid var(--card-border);
@@ -210,9 +230,41 @@
 }
 
 .input:focus,
-.select:focus {
+.select:focus,
+.textarea:focus {
   border-color: var(--yellow);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--yellow) 24%, transparent);
+}
+
+.textarea {
+  min-height: 5.25rem;
+  padding: 0.75rem 0.85rem;
+  resize: vertical;
+}
+
+.priceCircleGroup {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.priceCircle {
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--card-border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.priceCircleActive {
+  border-color: var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 24%, var(--surface));
+  color: var(--text);
 }
 
 .accessDropdown {

@@ -10,24 +10,51 @@ type SurchargeProps = {
   isSaving: boolean;
 };
 
+const emptySurcharge: SurchargeItem = {
+  id: '',
+  linkedDiscountId: '',
+  linkedDiscountClassId: '',
+  variationId: '',
+  surchargeName: '',
+  surchargeType: 'Amount',
+  amount: '',
+  freeQuantity: '0',
+  minQuantity: '1',
+  maxQuantity: '',
+  branchName: '',
+  priceType: '',
+  priceCode: '',
+  description: '',
+  status: 'Active',
+  priority: '0',
+  startsAt: '',
+  endsAt: '',
+  unitOptionId: '',
+  orderUnitCode: '',
+  unitCondition: 'any_unit',
+  minOrderQuantity: '1',
+  maxOrderQuantity: '',
+  minBaseQuantity: '',
+  maxBaseQuantity: '',
+  rewardUnitCode: '',
+  rewardQuantity: '0',
+  rewardLabel: '',
+  unitRuleLabel: '',
+  unitRuleNotes: '',
+  rewardTargetType: 'same_item',
+  rewardProductId: '',
+  rewardVariationId: '',
+  rewardUnitOptionId: '',
+  rewardRepeatMode: 'one_time',
+  rewardEveryQuantity: '',
+};
+
 export default function Surcharge({ onBack, onSubmit, items, onChange, isSaving }: SurchargeProps) {
-  const [draft, setDraft] = useState<SurchargeItem>({
-    id: '',
-    variationId: '',
-    surchargeName: '',
-    surchargeType: 'Amount',
-    amount: '',
-    freeQuantity: '0',
-    minQuantity: '1',
-    maxQuantity: '',
-    branchName: '',
-    priceType: '',
-    priceCode: '',
-  });
+  const [draft, setDraft] = useState<SurchargeItem>(emptySurcharge);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   function resetDraft() {
-    setDraft({ id: '', variationId: '', surchargeName: '', surchargeType: 'Amount', amount: '', freeQuantity: '0', minQuantity: '1', maxQuantity: '', branchName: '', priceType: '', priceCode: '' });
+    setDraft(emptySurcharge);
     setEditingId(null);
   }
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import Skeleton from '../common/Skeleton';
 import { supabase } from '../../lib/supabase';
 import styles from './ProductSummary.module.css';
 
@@ -49,6 +50,25 @@ function toNumber(value: unknown) {
   return 0;
 }
 
+function buildVariationGroupKey(variation: Record<string, unknown>) {
+  const normalizedVariationName = String(
+    variation.variation_name ?? variation.class_name ?? '',
+  )
+    .trim()
+    .toLowerCase();
+  const normalizedSku = String(variation.sku_code ?? '').trim().toLowerCase();
+
+  if (normalizedVariationName) {
+    return `name::${normalizedVariationName}`;
+  }
+
+  return `sku::${normalizedSku}`;
+}
+
+function countVariationCards(variations: Array<Record<string, unknown>>) {
+  return new Set(variations.map((variation) => buildVariationGroupKey(variation))).size;
+}
+
 function getStatusClass(status: string) {
   return status.toLowerCase() === 'active' ? styles.statusActive : styles.statusInactive;
 }
@@ -78,7 +98,7 @@ export default function ProductSummary({ onAddProduct, onEditProduct }: ProductS
           product_categories(category_title),
           price,
           created_at,
-          product_variations(branch_name, variation_name, class_name, price)
+          product_variations(branch_name, variation_name, class_name, price, sku_code)
         `)
         .order('created_at', { ascending: false });
 
@@ -91,12 +111,13 @@ export default function ProductSummary({ onAddProduct, onEditProduct }: ProductS
 
       const mapped = (data ?? []).map((row: any) => {
         const variations = (row.product_variations ?? []) as Array<any>;
+        const variationCount = countVariationCards(variations);
 
         const branches = Array.from(new Set(variations.map((v) => v.branch_name).filter(Boolean)));
         const location = branches.length > 0 ? branches.join(', ') : '-';
 
-        const variationLabel = variations.length > 0
-          ? `${variations.length} variation${variations.length > 1 ? 's' : ''}`
+        const variationLabel = variationCount > 0
+          ? `${variationCount} variation${variationCount > 1 ? 's' : ''}`
           : 'No variations';
         const details = String(row.description ?? '').trim() || '-';
         const categorySource = row.product_categories;
@@ -167,7 +188,7 @@ export default function ProductSummary({ onAddProduct, onEditProduct }: ProductS
   }
 
   const emptyText = isLoading
-    ? 'Loading products...'
+    ? ''
     : loadError
       ? `Failed to load: ${loadError}`
       : 'No products added yet.';
@@ -209,7 +230,20 @@ export default function ProductSummary({ onAddProduct, onEditProduct }: ProductS
           <span>Product</span><span>Location</span><span>Code</span><span>Variations</span><span>Details</span><span>Category</span><span>Status</span><span className={styles.actionHeader}>Action</span>
         </div>
 
-        {pagedItems.length === 0 ? (
+        {isLoading ? (
+          Array.from({ length: ROWS_PER_PAGE }).map((_, index) => (
+            <div key={`product-skeleton-${index}`} className={styles.tableRow}>
+              <Skeleton className={styles.rowSkeleton} height="1rem" />
+              <Skeleton className={styles.rowSkeleton} height="1rem" />
+              <Skeleton className={styles.rowSkeleton} height="1rem" />
+              <Skeleton className={styles.rowSkeleton} height="1rem" />
+              <Skeleton className={styles.rowSkeleton} height="1rem" />
+              <Skeleton className={styles.rowSkeleton} height="1rem" />
+              <Skeleton className={styles.statusSkeleton} height="2rem" />
+              <Skeleton className={styles.iconSkeleton} height="2.25rem" width="2.25rem" />
+            </div>
+          ))
+        ) : pagedItems.length === 0 ? (
           <div className={styles.emptyState}><span className={styles.emptyText}>{emptyText}</span></div>
         ) : (
           pagedItems.map((item) => (

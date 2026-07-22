@@ -1,16 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { AccountSummaryItem, AccountView } from './AccountsSummary';
-import {
-  getAccountHandlingOptions,
-  subscribeAccountHandlingOptions,
-} from '../../services/accountHandling';
 import { addAccountItem } from '../../services/accounts';
 import { getBranchTypeOptions, subscribeBranchTypeOptions } from '../../services/branchTypes';
+import type { OrderPriceCode } from '../../services/orderPricing';
 import styles from './AccountModal.module.css';
 
 type CreateAccountProps = {
   accountType: AccountView;
-  onCreate: (accounts: AccountSummaryItem[]) => void;
+  onCreate: (accounts: Promise<AccountSummaryItem[]> | AccountSummaryItem[]) => void;
   onClose: () => void;
 };
 
@@ -22,13 +19,16 @@ type AccountForm = {
   handling: string;
   branch: string;
   isActive: boolean;
+  status: 'Active' | 'Inactive' | 'Blocked';
   email: string;
   contact: string;
-  password: string;
-  confirmPassword: string;
+  address: string;
+  notes: string;
+  priceAccess: OrderPriceCode[];
 };
 
 const accessOptions = ['Products', 'Order', 'Sales', 'Accounts', 'Settings'];
+const priceOptions: OrderPriceCode[] = ['R1', 'R2', 'W1', 'W2', 'SP', 'CP'];
 
 function formatContactInput(value: string) {
   const digitsOnly = value.replace(/\D/g, '').slice(0, 11);
@@ -48,22 +48,26 @@ function getInitialForm(accountType: AccountView): AccountForm {
     handling: '',
     branch: '',
     isActive: false,
+    status: 'Active',
     email: '',
     contact: '',
-    password: '',
-    confirmPassword: '',
+    address: '',
+    notes: '',
+    priceAccess: [],
   };
+}
+
+function isValidEmail(email: string) {
+  return !email.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
 export default function CreateAccount({ accountType, onCreate, onClose }: CreateAccountProps) {
   const [form, setForm] = useState<AccountForm>(() => getInitialForm(accountType));
-  const [handlingOptions, setHandlingOptions] = useState<string[]>(() => getAccountHandlingOptions());
   const [branchOptions, setBranchOptions] = useState<string[]>(() => getBranchTypeOptions());
   const [isAccessOpen, setIsAccessOpen] = useState(false);
   const [validationError, setValidationError] = useState('');
   const accountLabel = form.role === 'admins' ? 'Admin' : 'Agent';
 
-  useEffect(() => subscribeAccountHandlingOptions(setHandlingOptions), []);
   useEffect(() => subscribeBranchTypeOptions(setBranchOptions), []);
 
   function updateField<Field extends keyof AccountForm>(
@@ -113,19 +117,17 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
       form.role,
       form.contact,
       form.branch,
-      form.password,
-      form.confirmPassword,
     ];
     const hasRoleSpecificValue =
-      form.role === 'admins' ? form.access.length > 0 : Boolean(form.handling);
+      form.role === 'admins' ? form.access.length > 0 : Boolean(form.handling.trim());
 
     if (requiredValues.some((value) => !value.trim()) || !hasRoleSpecificValue) {
       setValidationError('Complete all required fields except email address.');
       return false;
     }
 
-    if (form.password !== form.confirmPassword) {
-      setValidationError('Passwords do not match.');
+    if (!isValidEmail(form.email)) {
+      setValidationError('Enter a valid email address.');
       return false;
     }
 
@@ -133,7 +135,17 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
     return true;
   }
 
-  function handleCreate() {
+  function togglePriceAccess(priceCode: OrderPriceCode) {
+    setValidationError('');
+    setForm((current) => ({
+      ...current,
+      priceAccess: current.priceAccess.includes(priceCode)
+        ? current.priceAccess.filter((code) => code !== priceCode)
+        : [...current.priceAccess, priceCode],
+    }));
+  }
+
+  async function handleCreate() {
     if (!validateForm()) {
       return;
     }
@@ -148,7 +160,10 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
         handle: form.role === 'agents' ? form.handling : '',
         access: form.role === 'admins' ? form.access.join(', ') : '',
         branch: form.branch,
-        status: form.isActive ? 'Active' : 'Inactive',
+        status: form.role === 'agents' ? form.status : form.isActive ? 'Active' : 'Inactive',
+        address: form.role === 'agents' ? form.address : undefined,
+        notes: form.role === 'agents' ? form.notes : undefined,
+        priceAccess: form.role === 'agents' ? form.priceAccess : undefined,
       }),
     );
   }
@@ -182,26 +197,33 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
         <div className={styles.divider}></div>
 
         <div className={styles.formContainer}>
-          <div className={styles.profilePicker}>
-            <div className={styles.profilePreview} aria-hidden="true">
-              {form.profileImage ? (
-                <img src={form.profileImage} alt="" className={styles.profileImage} />
-              ) : (
-                <i className="fa-solid fa-user"></i>
-              )}
-            </div>
+          {form.role === 'admins' ? (
+            <div className={styles.profilePicker}>
+              <div className={styles.profilePreview} aria-hidden="true">
+                {form.profileImage ? (
+                  <img src={form.profileImage} alt="" className={styles.profileImage} />
+                ) : (
+                  <i className="fa-solid fa-user"></i>
+                )}
+              </div>
 
-            <label className={styles.profileButton}>
-              <input
-                type="file"
-                accept="image/*"
-                className={styles.profileInput}
-                onChange={(event) => handleProfileImageChange(event.target.files?.[0])}
-              />
-              <i className="fa-solid fa-camera" aria-hidden="true"></i>
-              <span>Add Profile</span>
-            </label>
-          </div>
+              <label className={styles.profileButton}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className={styles.profileInput}
+                  onChange={(event) => handleProfileImageChange(event.target.files?.[0])}
+                />
+                <i className="fa-solid fa-camera" aria-hidden="true"></i>
+                <span>Add Profile</span>
+              </label>
+            </div>
+          ) : (
+            <div className={styles.noticeCard}>
+              <span className={styles.label}>Profile Image</span>
+              <p>Agent profile image storage is not configured in the current agent account schema.</p>
+            </div>
+          )}
 
           <div className={styles.topGrid}>
             <label className={styles.field}>
@@ -231,15 +253,30 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
               </select>
             </label>
 
-            <label className={styles.checkboxField}>
-              <input
-                type="checkbox"
-                checked={form.isActive}
-                onChange={(event) => updateField('isActive', event.target.checked)}
-                className={styles.checkbox}
-              />
-              <span>Set Active</span>
-            </label>
+            {form.role === 'agents' ? (
+              <label className={styles.field}>
+                <span className={styles.label}>Status</span>
+                <select
+                  value={form.status}
+                  onChange={(event) => updateField('status', event.target.value as AccountForm['status'])}
+                  className={styles.select}
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                  <option value="Blocked">Blocked</option>
+                </select>
+              </label>
+            ) : (
+              <label className={styles.checkboxField}>
+                <input
+                  type="checkbox"
+                  checked={form.isActive}
+                  onChange={(event) => updateField('isActive', event.target.checked)}
+                  className={styles.checkbox}
+                />
+                <span>Set Active</span>
+              </label>
+            )}
           </div>
 
           <div className={styles.formGrid}>
@@ -287,20 +324,15 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
               </div>
             ) : (
               <label className={styles.field}>
-                <span className={styles.label}>Handling</span>
-                <select
+                <span className={styles.label}>Agent Code</span>
+                <input
+                  type="text"
                   value={form.handling}
                   onChange={(event) => updateField('handling', event.target.value)}
-                  className={styles.select}
+                  placeholder="Enter agent code"
+                  className={styles.input}
                   required
-                >
-                  <option value=""></option>
-                  {handlingOptions.map((handling) => (
-                    <option key={handling} value={handling}>
-                      {handling}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
             )}
 
@@ -317,51 +349,102 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
               />
             </label>
 
-            <label className={styles.field}>
-              <span className={styles.label}>Choose Branch</span>
-              <select
-                value={form.branch}
-                onChange={(event) => updateField('branch', event.target.value)}
-                className={styles.select}
-                required
-              >
-                <option value=""></option>
-                {branchOptions.map((branch) => (
-                  <option key={branch} value={branch}>
-                    {branch}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className={styles.field}>
-              <span className={styles.label}>Password</span>
-              <input
-                type="password"
-                value={form.password}
-                onChange={(event) => updateField('password', event.target.value)}
-                className={styles.input}
-                required
-              />
-            </label>
-
-            <label className={styles.field}>
-              <span className={styles.label}>Confirm Password</span>
-              <input
-                type="password"
-                value={form.confirmPassword}
-                onChange={(event) => updateField('confirmPassword', event.target.value)}
-                className={styles.input}
+            {form.role === 'admins' ? (
+              <label className={styles.field}>
+                <span className={styles.label}>Choose Branch</span>
+                <select
+                  value={form.branch}
+                  onChange={(event) => updateField('branch', event.target.value)}
+                  className={styles.select}
+                  required
+                >
+                  <option value=""></option>
+                  {branchOptions.map((branch) => (
+                    <option key={branch} value={branch}>
+                      {branch}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label className={styles.field}>
+                <span className={styles.label}>Company Name</span>
+                <input
+                  type="text"
+                  value={form.branch}
+                  onChange={(event) => updateField('branch', event.target.value)}
+                  placeholder="Enter company name"
+                  className={styles.input}
                 required
               />
             </label>
+            )}
+
+            {form.role === 'agents' ? (
+              <>
+                <label className={styles.field}>
+                  <span className={styles.label}>Address</span>
+                  <input
+                    type="text"
+                    value={form.address}
+                    onChange={(event) => updateField('address', event.target.value)}
+                    placeholder="Enter address"
+                    className={styles.input}
+                  />
+                </label>
+
+                <label className={styles.field}>
+                  <span className={styles.label}>Notes</span>
+                  <textarea
+                    value={form.notes}
+                    onChange={(event) => updateField('notes', event.target.value)}
+                    placeholder="Optional notes"
+                    className={styles.textarea}
+                  />
+                </label>
+
+                <div className={styles.noticeCard}>
+                  <span className={styles.label}>Initial Price Access</span>
+                  <div className={styles.priceCircleGroup}>
+                    {priceOptions.map((priceCode) => (
+                      <button
+                        key={priceCode}
+                        type="button"
+                        className={`${styles.priceCircle} ${
+                          form.priceAccess.includes(priceCode) ? styles.priceCircleActive : ''
+                        }`}
+                        onClick={() => togglePriceAccess(priceCode)}
+                        aria-pressed={form.priceAccess.includes(priceCode)}
+                      >
+                        {priceCode}
+                      </button>
+                    ))}
+                  </div>
+                  <p>
+                    {form.priceAccess.length === 0
+                      ? 'No price access enabled.'
+                      : `${form.priceAccess.length} price ${
+                          form.priceAccess.length === 1 ? 'class' : 'classes'
+                        } enabled.`}
+                  </p>
+                </div>
+              </>
+            ) : null}
+
+            <div className={styles.noticeCard}>
+              <span className={styles.label}>Authentication Setup</span>
+              <p>
+                Manual password creation is not part of this profile form. Invitation or
+                password setup flows can be connected when an auth workflow is available.
+              </p>
+            </div>
           </div>
         </div>
 
         {validationError && <p className={styles.validationError}>{validationError}</p>}
 
         <div className={styles.actions}>
-          <button type="button" className={styles.createButton} onClick={handleCreate}>
+          <button type="button" className={styles.createButton} onClick={() => void handleCreate()}>
             Create Account
           </button>
           <button type="button" className={styles.cancelButton} onClick={onClose}>

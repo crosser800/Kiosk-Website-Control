@@ -1,15 +1,38 @@
 .wrapper {
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
+  gap: 1rem;
 }
 
 .topHeader {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
+  padding: 1.2rem 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 16%, var(--card-border));
+  border-radius: 1rem;
+  background:
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.14), transparent 28%),
+    linear-gradient(180deg, color-mix(in srgb, var(--card-bg) 98%, white), var(--card-bg));
+  box-shadow: var(--card-shadow);
+}
+
+.topHeaderCopy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.sectionEyebrow {
+  margin: 0;
+  color: #0f9f6e;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08rem;
 }
 
 .container {
@@ -17,9 +40,10 @@
   flex-direction: column;
   gap: 1rem;
   padding: 1.5rem;
-  background-color: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: 0.5rem;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card-bg) 98%, white), var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--card-border) 85%, white);
+  border-radius: 1rem;
   box-shadow: var(--card-shadow);
 }
 
@@ -35,28 +59,41 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .dateFilterButton,
 .clearFilterButton {
-  border: 1px solid var(--card-border);
-  border-radius: 0.55rem;
-  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--card-border) 82%, white);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 90%, white);
   color: var(--text);
-  padding: 0.5rem 0.7rem;
+  padding: 0.65rem 0.95rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.5rem;
   cursor: pointer;
   font-family: 'Montserrat', sans-serif;
   font-size: 0.82rem;
   font-weight: 700;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 .dateFilterButton {
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: linear-gradient(135deg, #facc15 0%, #f59e0b 100%);
+  border-color: rgba(245, 158, 11, 0.58);
   color: #1f2937;
+  box-shadow: 0 10px 20px rgba(245, 158, 11, 0.16);
+}
+
+.dateFilterButton:hover,
+.clearFilterButton:hover {
+  transform: translateY(-1px);
+}
+
+.clearFilterButton:hover {
+  border-color: rgba(250, 204, 21, 0.34);
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.14), rgba(250, 204, 21, 0.04));
 }
 
 .filterIcon {
@@ -86,31 +123,34 @@
   width: min(520px, 100%);
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 0.8rem;
+  border-radius: 1rem;
   box-shadow: var(--card-shadow);
-  padding: 0.9rem;
+  padding: 1rem;
 }
 
 .dateModeTabs {
   display: inline-flex;
-  border: 1px solid var(--card-border);
-  border-radius: 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--card-border) 84%, white);
+  border-radius: 999px;
   overflow: hidden;
+  padding: 0.18rem;
+  background: color-mix(in srgb, var(--surface) 88%, white);
 }
 
 .dateModeTab {
   border: 0;
-  background: var(--surface);
+  background: transparent;
   color: var(--text-muted);
   font-family: 'Montserrat', sans-serif;
   font-size: 0.8rem;
   font-weight: 700;
-  padding: 0.45rem 0.8rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
   cursor: pointer;
 }
 
 .dateModeTabActive {
-  background: var(--yellow);
+  background: linear-gradient(135deg, #facc15 0%, #f59e0b 100%);
   color: #1f2937;
 }
 
@@ -121,14 +161,35 @@
 }
 
 .calendarControls select {
-  border: 1px solid var(--card-border);
-  border-radius: 0.5rem;
-  padding: 0.38rem 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--card-border) 84%, white);
+  border-radius: 0.7rem;
+  padding: 0.5rem 0.65rem;
   font-family: 'Montserrat', sans-serif;
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--text);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 90%, white);
+}
+
+:global(:root.dark) .dateModeTabs,
+:global(:root.dark) .calendarControls select,
+:global(:root.dark) .filterTabs {
+  border-color: color-mix(in srgb, var(--yellow) 24%, var(--card-border));
+  background:
+    radial-gradient(circle at top right, rgba(245, 197, 24, 0.1), transparent 36%),
+    linear-gradient(180deg, #202020 0%, #171717 100%);
+  box-shadow:
+    0 0 0 1px rgba(245, 197, 24, 0.05),
+    0 10px 28px rgba(245, 197, 24, 0.08);
+}
+
+:global(:root.dark) .calendarControls select {
+  color: #f9fafb;
+}
+
+:global(:root.dark) .calendarControls select option {
+  background-color: #171717;
+  color: #f9fafb;
 }
 
 .calendarGrid {
@@ -148,15 +209,21 @@
 }
 
 .calendarCell {
-  border: 1px solid var(--card-border);
-  border-radius: 0.45rem;
-  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--card-border) 82%, white);
+  border-radius: 0.7rem;
+  background: color-mix(in srgb, var(--surface) 92%, white);
   color: var(--text);
   min-height: 2rem;
   font-family: 'Montserrat', sans-serif;
   font-size: 0.75rem;
   font-weight: 700;
   cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+
+.calendarCell:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(250, 204, 21, 0.34);
 }
 
 .calendarCellEmpty {
@@ -165,8 +232,8 @@
 }
 
 .calendarCellSelected {
-  background: var(--yellow);
-  border-color: var(--yellow);
+  background: linear-gradient(135deg, #facc15 0%, #f59e0b 100%);
+  border-color: rgba(245, 158, 11, 0.58);
   color: #1f2937;
 }
 
@@ -203,8 +270,8 @@
   margin: 0;
   color: var(--text);
   font-family: 'Montserrat', sans-serif;
-  font-size: 1.05rem;
-  font-weight: 700;
+  font-size: 1.3rem;
+  font-weight: 800;
 }
 
 .loadingDetails {
@@ -215,45 +282,45 @@
 }
 
 .filterTabs {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 1.25rem;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  padding: 0.4rem;
+  border: 1px solid color-mix(in srgb, var(--card-border) 84%, white);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--surface) 92%, white);
 }
 
 .filterTab {
-  position: relative;
-  padding: 0 0 0.45rem;
-  border: 0;
+  padding: 0.7rem 0.95rem;
+  border: 1px solid transparent;
+  border-radius: 0.85rem;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   font-family: 'Montserrat', sans-serif;
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   font-weight: 700;
-}
-
-.filterTab::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 0.2rem;
-  border-radius: 999px;
-  background-color: var(--yellow);
-  opacity: 0;
-  transform: scaleX(0.35);
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
 }
 
 .filterTab:hover,
 .filterTabActive {
   color: var(--text);
+  transform: translateY(-1px);
 }
 
-.filterTabActive::after {
-  opacity: 1;
-  transform: scaleX(1);
+.filterTab:hover {
+  border-color: rgba(250, 204, 21, 0.24);
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.12), rgba(250, 204, 21, 0.04));
+}
+
+.filterTabActive {
+  background: linear-gradient(135deg, #facc15 0%, #f59e0b 100%);
+  border-color: rgba(245, 158, 11, 0.58);
+  color: #1f2937;
+  box-shadow: 0 10px 18px rgba(245, 158, 11, 0.14);
 }
 
 .addButton {
@@ -280,6 +347,9 @@
 .table {
   width: 100%;
   overflow-x: auto;
+  border: 1px solid color-mix(in srgb, var(--card-border) 82%, white);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--surface) 96%, white);
 }
 
 .tableHeader,
@@ -292,8 +362,9 @@
 }
 
 .tableHeader {
-  padding: 0.8rem 0.9rem;
-  border-bottom: 1px solid var(--card-border);
+  padding: 0.95rem 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--card-border) 82%, white);
+  background: linear-gradient(180deg, rgba(250, 204, 21, 0.08), rgba(250, 204, 21, 0.02));
   color: var(--text-muted);
   font-family: 'Montserrat', sans-serif;
   font-size: 0.68rem;
@@ -303,16 +374,63 @@
 }
 
 .tableRow {
-  padding: 0.9rem;
-  border-bottom: 1px solid var(--card-border);
+  padding: 0.95rem 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--card-border) 72%, white);
   color: var(--text);
   font-family: 'Montserrat', sans-serif;
   font-size: 0.78rem;
   font-weight: 600;
+  transition: background-color 0.18s ease;
+}
+
+.tableRow:hover {
+  background: color-mix(in srgb, var(--surface) 90%, white);
 }
 
 .tableRow:last-child {
   border-bottom: none;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-width: 6.3rem;
+  padding: 0.34rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.statusBadgeSuccess {
+  color: #166534;
+  border-color: #86efac;
+  background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+  box-shadow: 0 10px 20px rgba(34, 197, 94, 0.12);
+}
+
+.statusBadgeWarning {
+  color: #92400e;
+  border-color: #fcd34d;
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  box-shadow: 0 10px 20px rgba(245, 158, 11, 0.12);
+}
+
+.statusBadgeDanger {
+  color: #991b1b;
+  border-color: #fca5a5;
+  background: linear-gradient(135deg, #fee2e2, #fecaca);
+  box-shadow: 0 10px 20px rgba(239, 68, 68, 0.12);
+}
+
+.statusBadgeNeutral {
+  color: #475569;
+  border-color: #cbd5e1;
+  background: linear-gradient(135deg, #f8fafc, #e2e8f0);
 }
 
 .actionHeader {
@@ -326,17 +444,29 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--card-border);
-  border-radius: 0.5rem;
-  background-color: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--card-border) 82%, white);
+  border-radius: 0.7rem;
+  background-color: color-mix(in srgb, var(--surface) 94%, white);
   color: var(--text);
   cursor: pointer;
   font-size: 0.85rem;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
 .actionButton:hover {
-  border-color: var(--yellow);
-  color: var(--yellow);
+  transform: translateY(-1px);
+  border-color: rgba(250, 204, 21, 0.36);
+  color: #b7791f;
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.14), rgba(250, 204, 21, 0.04));
+}
+
+.rowSkeleton {
+  width: 100%;
+}
+
+.iconSkeleton {
+  justify-self: end;
+  border-radius: 0.5rem;
 }
 
 .emptyState {
@@ -366,10 +496,12 @@
   width: min(1100px, 100%);
   max-height: 92vh;
   overflow: auto;
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: 0.8rem;
-  box-shadow: var(--card-shadow);
+  background:
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.18), transparent 24%),
+    linear-gradient(180deg, color-mix(in srgb, var(--card-bg) 98%, white), var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--yellow) 22%, var(--card-border));
+  border-radius: 1rem;
+  box-shadow: 0 22px 52px rgba(15, 23, 42, 0.18);
   padding: 1rem;
 }
 
@@ -378,6 +510,8 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 0.8rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--yellow) 18%, var(--card-border));
 }
 
 .modalTitle {
@@ -391,11 +525,18 @@
 .modalClose {
   width: 2rem;
   height: 2rem;
-  border: 1px solid var(--card-border);
-  border-radius: 0.5rem;
-  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--yellow) 20%, var(--card-border));
+  border-radius: 0.7rem;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--surface) 96%, white), var(--surface));
   color: var(--text);
   cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.modalClose:hover {
+  transform: translateY(-1px);
+  border-color: rgba(245, 158, 11, 0.42);
+  box-shadow: 0 10px 22px rgba(245, 158, 11, 0.14);
 }
 
 .modalInfoGrid {
@@ -411,22 +552,25 @@
 
 .infoCard {
   display: block;
-  padding: 0.65rem 0.7rem;
-  border: 1px solid var(--card-border);
-  border-radius: 0.55rem;
-  background: color-mix(in srgb, var(--surface) 72%, white);
+  padding: 0.78rem 0.82rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 18%, var(--card-border));
+  border-radius: 0.8rem;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, white), color-mix(in srgb, var(--surface) 80%, white));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 .modalTable {
-  border: 1px solid var(--card-border);
-  border-radius: 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 18%, var(--card-border));
+  border-radius: 0.9rem;
   overflow: hidden;
+  background: rgba(255, 255, 255, 0.82);
 }
 
 .modalTableHeader,
 .modalTableRow {
   display: grid;
-  grid-template-columns: 1.4fr 0.75fr 1fr 0.45fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr;
+  grid-template-columns: 1.35fr 0.7fr 1fr 0.45fr 0.5fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr;
   gap: 0.6rem;
   align-items: center;
   padding: 0.7rem;
@@ -435,7 +579,7 @@
 }
 
 .modalTableHeader {
-  background: color-mix(in srgb, var(--surface) 70%, white);
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.18), rgba(245, 158, 11, 0.08));
   color: var(--text-muted);
   font-weight: 700;
   text-transform: uppercase;
@@ -445,6 +589,32 @@
   border-top: 1px solid var(--card-border);
   color: var(--text);
   font-weight: 600;
+  background: color-mix(in srgb, var(--surface) 94%, white);
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.modalTableRow:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.09), rgba(255, 255, 255, 0.94));
+}
+
+.productCell {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.promoBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  padding: 0.24rem 0.56rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+  color: #166534;
+  font-size: 0.7rem;
+  font-weight: 800;
+  box-shadow: 0 10px 18px rgba(34, 197, 94, 0.12);
 }
 
 .modalEmpty {
@@ -467,16 +637,48 @@
   font-weight: 600;
 }
 
+.rowActions {
+  display: inline-flex;
+  justify-self: end;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.editItemButton,
 .removeItemButton {
-  border: 1px solid #ef8f8f;
-  color: #b84141;
-  background: #fff3f3;
-  border-radius: 0.45rem;
-  padding: 0.35rem 0.5rem;
+  width: 2.1rem;
+  height: 2.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #f4a7a7;
+  color: #9f1d1d;
+  background: linear-gradient(135deg, #fff5f5, #ffe4e6);
+  border-radius: 0.7rem;
   cursor: pointer;
   font-size: 0.74rem;
   font-weight: 700;
   font-family: 'Montserrat', sans-serif;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.editItemButton {
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #9a6700;
+  background: linear-gradient(135deg, #fff8db, #ffefb0);
+}
+
+.editItemButton:hover,
+.removeItemButton:hover {
+  transform: translateY(-1px);
+}
+
+.editItemButton:hover {
+  box-shadow: 0 12px 20px rgba(245, 158, 11, 0.16);
+}
+
+.removeItemButton:hover {
+  box-shadow: 0 12px 20px rgba(239, 68, 68, 0.12);
 }
 
 .modalFooterActions {
@@ -484,13 +686,15 @@
   display: flex;
   justify-content: flex-end;
   gap: 0.65rem;
+  flex-wrap: wrap;
 }
 
 .statusTimeline {
   margin-top: 0.9rem;
-  border: 1px solid var(--card-border);
-  border-radius: 0.6rem;
-  padding: 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 18%, var(--card-border));
+  border-radius: 0.9rem;
+  padding: 0.85rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(250, 204, 21, 0.05));
 }
 
 .timelineTitle {
@@ -527,24 +731,42 @@
 }
 
 .placeButton,
-.rejectButton {
+.rejectButton,
+.secondaryModalButton {
   border: none;
-  border-radius: 0.6rem;
-  padding: 0.55rem 1rem;
+  border-radius: 0.8rem;
+  padding: 0.68rem 1.08rem;
   font-size: 0.85rem;
   font-weight: 700;
   font-family: 'Montserrat', sans-serif;
   cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
 }
 
 .placeButton {
-  background: #1c7f43;
+  background: linear-gradient(135deg, #16a34a, #15803d);
   color: #fff;
+  box-shadow: 0 14px 28px rgba(22, 163, 74, 0.22);
 }
 
 .rejectButton {
-  background: #f6c90e;
+  background: linear-gradient(135deg, #facc15, #f59e0b);
   color: #1f2937;
+  box-shadow: 0 14px 28px rgba(245, 158, 11, 0.22);
+}
+
+.secondaryModalButton {
+  border: 1px solid color-mix(in srgb, var(--yellow) 18%, var(--card-border));
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.16), rgba(255, 255, 255, 0.92));
+  color: var(--text);
+  box-shadow: 0 12px 24px rgba(245, 158, 11, 0.1);
+}
+
+.placeButton:hover,
+.rejectButton:hover,
+.secondaryModalButton:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.02);
 }
 
 .confirmOverlay {
@@ -553,7 +775,9 @@
   z-index: 1400;
   display: grid;
   place-items: center;
-  background: rgba(0, 0, 0, 0.4);
+  background:
+    radial-gradient(circle at top, rgba(250, 204, 21, 0.16), transparent 24%),
+    rgba(15, 23, 42, 0.5);
   padding: 1rem;
 }
 
@@ -564,6 +788,183 @@
   border-radius: 0.75rem;
   box-shadow: var(--card-shadow);
   padding: 1rem;
+}
+
+.addItemModal {
+  width: min(1040px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background:
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.22), transparent 22%),
+    linear-gradient(180deg, color-mix(in srgb, var(--card-bg) 98%, white), var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--yellow) 22%, var(--card-border));
+  border-radius: 1.1rem;
+  box-shadow: 0 24px 56px rgba(15, 23, 42, 0.18);
+  padding: 1rem;
+}
+
+.addItemFilters {
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  gap: 0.8rem;
+  margin-top: 0.9rem;
+}
+
+.addItemField {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.addItemInput {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--yellow) 16%, var(--card-border));
+  border-radius: 0.9rem;
+  padding: 0.72rem 0.8rem;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 96%, white), color-mix(in srgb, var(--surface) 90%, white));
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.84rem;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
+}
+
+.addItemInput:focus {
+  outline: none;
+  border-color: rgba(245, 158, 11, 0.48);
+  box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.12);
+}
+
+.catalogError {
+  margin: 0.8rem 0 0;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid #f3b9bf;
+  border-radius: 0.75rem;
+  background: #fff0f2;
+  color: #9f1d1d;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.addItemLayout {
+  margin-top: 0.9rem;
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 0.9rem;
+}
+
+.catalogList,
+.addItemDetails {
+  border: 1px solid color-mix(in srgb, var(--yellow) 16%, var(--card-border));
+  border-radius: 1rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(250, 204, 21, 0.04));
+  padding: 0.85rem;
+}
+
+.catalogList {
+  display: grid;
+  gap: 0.7rem;
+  align-content: start;
+  max-height: 28rem;
+  overflow: auto;
+}
+
+.catalogHint {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.catalogCard {
+  width: 100%;
+  text-align: left;
+  border: 1px solid color-mix(in srgb, var(--yellow) 14%, var(--card-border));
+  border-radius: 1rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 251, 235, 0.84));
+  padding: 0.95rem;
+  display: grid;
+  gap: 0.3rem;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.catalogCard:hover {
+  transform: translateY(-1px);
+  border-color: rgba(245, 158, 11, 0.34);
+  box-shadow: 0 14px 28px rgba(245, 158, 11, 0.12);
+}
+
+.catalogCardActive {
+  border-color: rgba(245, 158, 11, 0.62);
+  background:
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.24), transparent 48%),
+    linear-gradient(135deg, rgba(255, 248, 220, 0.96), rgba(255, 255, 255, 0.98));
+  box-shadow: 0 18px 34px rgba(245, 158, 11, 0.18);
+}
+
+.catalogCardTitle {
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.catalogCardMeta {
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.addItemDetails {
+  display: grid;
+  gap: 0.9rem;
+  align-content: start;
+}
+
+.selectedCatalogCard {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 38%, var(--card-border));
+  border-radius: 1rem;
+  background:
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.28), transparent 42%),
+    linear-gradient(135deg, rgba(255, 248, 220, 0.95), rgba(255, 255, 255, 0.98));
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 600;
+  box-shadow: 0 18px 36px rgba(245, 158, 11, 0.16);
+}
+
+.addItemGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.addItemSummary {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 16%, var(--card-border));
+  border-radius: 1rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(250, 204, 21, 0.05));
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.addItemSummary strong {
+  color: var(--text);
 }
 
 .confirmTitle {
@@ -592,22 +993,30 @@
 .confirmCancel,
 .confirmProceed {
   border: none;
-  border-radius: 0.55rem;
-  padding: 0.5rem 0.8rem;
+  border-radius: 0.8rem;
+  padding: 0.62rem 1rem;
   font-family: 'Montserrat', sans-serif;
   font-size: 0.84rem;
   font-weight: 700;
   cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
 .confirmCancel {
-  background: color-mix(in srgb, var(--surface) 70%, white);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(245, 245, 244, 0.98));
   color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--yellow) 14%, var(--card-border));
 }
 
 .confirmProceed {
-  background: var(--yellow);
+  background: linear-gradient(135deg, #facc15 0%, #f59e0b 100%);
   color: #1f2937;
+  box-shadow: 0 14px 30px rgba(245, 158, 11, 0.22);
+}
+
+.confirmCancel:hover,
+.confirmProceed:hover {
+  transform: translateY(-1px);
 }
 
 .snackbar {
@@ -672,9 +1081,9 @@
 .pageButton,
 .pageInput {
   height: 2.4rem;
-  border-radius: 0.7rem;
-  border: 1px solid var(--card-border);
-  background-color: var(--surface);
+  border-radius: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--card-border) 82%, white);
+  background-color: color-mix(in srgb, var(--surface) 94%, white);
   color: var(--text);
   font-family: 'Montserrat', sans-serif;
   font-size: 0.9rem;
@@ -696,8 +1105,8 @@
 }
 
 .pageButtonActive {
-  background-color: var(--yellow);
-  border-color: var(--yellow);
+  background: linear-gradient(135deg, #facc15 0%, #f59e0b 100%);
+  border-color: rgba(245, 158, 11, 0.58);
   color: #1f2937;
 }
 
@@ -713,6 +1122,35 @@
 .pageInput:focus {
   border-color: var(--yellow);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--yellow) 25%, transparent);
+}
+
+:global(:root.dark) .paginationButton,
+:global(:root.dark) .pageButton,
+:global(:root.dark) .pageInput {
+  border-color: color-mix(in srgb, var(--yellow) 24%, var(--card-border));
+  background:
+    radial-gradient(circle at top right, rgba(245, 197, 24, 0.08), transparent 42%),
+    linear-gradient(180deg, #202020 0%, #171717 100%);
+  color: #f9fafb;
+  box-shadow:
+    0 0 0 1px rgba(245, 197, 24, 0.04),
+    0 8px 20px rgba(245, 197, 24, 0.08);
+}
+
+:global(:root.dark) .paginationButton:hover:not(:disabled),
+:global(:root.dark) .pageButton:hover,
+:global(:root.dark) .pageInput:focus {
+  border-color: var(--yellow);
+  box-shadow:
+    0 0 0 1px rgba(245, 197, 24, 0.18),
+    0 10px 26px rgba(245, 197, 24, 0.14);
+}
+
+:global(:root.dark) .pageButtonActive {
+  background: linear-gradient(135deg, #facc15 0%, #f59e0b 100%);
+  border-color: #facc15;
+  color: #1f2937;
+  box-shadow: 0 12px 26px rgba(245, 158, 11, 0.22);
 }
 
 .paginationIcon {
@@ -742,8 +1180,25 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .addItemFilters,
+  .addItemLayout,
+  .addItemGrid {
+    grid-template-columns: 1fr;
+  }
+
   .pagination {
     justify-content: flex-start;
+  }
+
+  .table,
+  .modal {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .table::-webkit-scrollbar,
+  .modal::-webkit-scrollbar {
+    display: none;
   }
 
   .modalFooterActions {
@@ -755,5 +1210,4 @@
     width: 100%;
     justify-content: flex-start;
   }
-
 }

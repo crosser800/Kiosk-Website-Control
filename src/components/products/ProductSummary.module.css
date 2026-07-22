@@ -159,6 +159,17 @@
   overflow-x: auto;
 }
 
+@media (max-width: 768px) {
+  .table {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .table::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 .tableHeader,
 .tableRow,
 .emptyState {
@@ -220,6 +231,20 @@
   border-color: var(--status-inactive-border);
   background-color: var(--status-inactive-bg);
   color: var(--status-inactive-text);
+}
+
+.rowSkeleton {
+  width: 100%;
+}
+
+.statusSkeleton {
+  width: 5.75rem;
+  border-radius: 999px;
+}
+
+.iconSkeleton {
+  justify-self: end;
+  border-radius: 0.65rem;
 }
 
 .actionButton {
