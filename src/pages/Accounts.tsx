@@ -70,7 +70,6 @@ export default function Accounts() {
           onSave={(nextAccounts) => {
             void Promise.resolve(nextAccounts).then((resolved) => {
               setAccounts(resolved);
-              setEditingAccount(null);
             });
           }}
           onClose={() => setEditingAccount(null)}

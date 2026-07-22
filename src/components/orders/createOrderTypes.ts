@@ -30,6 +30,17 @@ export type CreateOrderTerm = {
   isDefault: boolean;
 };
 
+export type CreateOrderClient = {
+  id: string;
+  clientCode: string;
+  clientName: string;
+  companyName: string;
+  contactPerson: string;
+  contactNumber: string;
+  email: string;
+  status: string;
+};
+
 export type CreateOrderPricePreference = {
   id: string;
   priceCode: OrderPriceCode;
@@ -69,6 +80,7 @@ export type CreateOrderDraft = {
   pricePreferenceId: string;
   pricePreference: CreateOrderPricePreference | null;
   customerType: CreateOrderCustomerType;
+  agentClientId: string;
   clientName: string;
   guestFullName: string;
   guestMobileNumber: string;

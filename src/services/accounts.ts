@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import type { AccountSummaryItem, AccountView } from '../components/account/AccountsSummary';
+import type { OrderPriceCode } from './orderPricing';
 
 const STORAGE_KEY = 'kiosk.accounts';
 const CHANGE_EVENT = 'accounts-changed';
@@ -16,6 +17,9 @@ export type AccountInput = {
   access: string;
   branch: string;
   status: AccountStatus;
+  address?: string;
+  notes?: string;
+  priceAccess?: OrderPriceCode[];
 };
 
 type AgentAccountRow = {
@@ -27,6 +31,7 @@ type AgentAccountRow = {
   contact_number: string | null;
   email: string | null;
   address: string | null;
+  profile_image_url: string | null;
   status: string;
   notes: string | null;
   created_at: string;
@@ -149,6 +154,10 @@ function mapAgentRowToAccount(row: AgentAccountRow): AccountSummaryItem {
       String(row.address ?? '').trim() ||
       '-',
     status: normalizeStatus(row.status),
+    profileImage: String(row.profile_image_url ?? '').trim() || undefined,
+    authUserId: row.auth_user_id ? String(row.auth_user_id) : '',
+    address: String(row.address ?? '').trim(),
+    notes: String(row.notes ?? '').trim(),
     createdAt: String(row.created_at ?? new Date().toISOString()),
   };
 }
@@ -157,7 +166,7 @@ async function fetchAgentAccounts() {
   const { data, error } = await supabase
     .from('agent_accounts')
     .select(
-      'id, auth_user_id, agent_code, full_name, company_name, contact_number, email, address, status, notes, created_at, updated_at',
+      'id, auth_user_id, agent_code, full_name, company_name, contact_number, email, address, profile_image_url, status, notes, created_at, updated_at',
     )
     .order('created_at', { ascending: false });
 
@@ -192,17 +201,41 @@ export async function addAccountItem(account: AccountInput) {
     return loadAccountItems();
   }
 
-  const { error } = await supabase.from('agent_accounts').insert({
+  const { data, error } = await supabase
+    .from('agent_accounts')
+    .insert({
     agent_code: account.handle.trim() || null,
     full_name: account.name.trim(),
     company_name: account.branch.trim() || null,
     contact_number: account.contact.trim() || null,
     email: account.email.trim() || null,
+    address: account.address?.trim() || null,
+    profile_image_url: account.profileImage?.trim() || null,
+    notes: account.notes?.trim() || null,
     status: account.status,
-  });
+  })
+    .select('id')
+    .single();
 
   if (error) {
     throw new Error(error.message);
+  }
+
+  const agentId = String(data?.id ?? '');
+  const priceAccess = account.priceAccess ?? [];
+  if (agentId && priceAccess.length > 0) {
+    const { error: priceError } = await supabase.from('agent_price_access').insert(
+      priceAccess.map((priceClass) => ({
+        agent_id: agentId,
+        price_class: priceClass,
+      })),
+    );
+
+    if (priceError) {
+      throw new Error(
+        `Agent was created, but price access could not be saved: ${priceError.message}`,
+      );
+    }
   }
 
   return loadAccountItems();
@@ -233,6 +266,9 @@ export async function updateAccountItem(accountId: string, account: AccountInput
       company_name: account.branch.trim() || null,
       contact_number: account.contact.trim() || null,
       email: account.email.trim() || null,
+      address: account.address?.trim() || null,
+      profile_image_url: account.profileImage?.trim() || null,
+      notes: account.notes?.trim() || null,
       status: account.status,
     })
     .eq('id', accountId);

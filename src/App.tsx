@@ -11,14 +11,16 @@ import Sales from './pages/Sales';
 import Accounts from './pages/Accounts';
 import Login from './pages/Login';
 import Settings from './pages/Settings';
+import CreateNewPassword from './pages/CreateNewPassword';
 import { supabase } from './lib/supabase';
-import { signOutAdmin } from './services/auth';
+import { resolveAuthenticatedAccess, signOutAdmin, type AuthAccessState } from './services/auth';
 
 export default function App() {
   const [active, setActive] = useState('Dashboard');
   const [isDark, setIsDark] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authAccessState, setAuthAccessState] = useState<AuthAccessState>({ kind: 'none' });
   const [isInitializingAuth, setIsInitializingAuth] = useState(true);
   const [authInitError, setAuthInitError] = useState('');
   const [isLoginTransitionActive, setIsLoginTransitionActive] = useState(false);
@@ -38,10 +40,27 @@ export default function App() {
     setActive(item);
   };
 
-  const handleLogin = async () => {
-    setActive('Dashboard');
+  const applyAccessState = (accessState: AuthAccessState) => {
+    setAuthAccessState(accessState);
+    setIsAuthenticated(accessState.kind === 'admin' || accessState.kind === 'agent_password_change');
+
+    if (accessState.kind === 'admin') {
+      setActive('Dashboard');
+      setIsAppReadyAfterLogin(true);
+      return;
+    }
+
     setIsAppReadyAfterLogin(false);
-    setIsLoginTransitionActive(true);
+  };
+
+  const handleLogin = async () => {
+    const accessState = await resolveAuthenticatedAccess();
+    applyAccessState(accessState);
+    if (accessState.kind === 'admin') {
+      setActive('Dashboard');
+      setIsAppReadyAfterLogin(false);
+      setIsLoginTransitionActive(true);
+    }
   };
 
   useEffect(() => {
@@ -59,8 +78,17 @@ export default function App() {
         ]);
 
         if (!mounted) return;
-        setIsAuthenticated(Boolean(data.session));
-        setIsAppReadyAfterLogin(Boolean(data.session));
+        if (data.session) {
+          const accessState = await resolveAuthenticatedAccess();
+          if (!mounted) return;
+          applyAccessState(accessState);
+          if (accessState.kind === 'error') {
+            await supabase.auth.signOut();
+            setAuthInitError(accessState.message);
+          }
+        } else {
+          applyAccessState({ kind: 'none' });
+        }
       } catch (error) {
         if (!mounted) return;
         setAuthInitError(
@@ -78,8 +106,9 @@ export default function App() {
     void initAuth();
 
     const { data: authSubscription } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsAuthenticated(Boolean(session));
       if (!session) {
+        setAuthAccessState({ kind: 'none' });
+        setIsAuthenticated(false);
         setIsLoginTransitionActive(false);
         setIsAppReadyAfterLogin(false);
         setIsLogoutConfirmOpen(false);
@@ -114,7 +143,19 @@ export default function App() {
     setIsLoggingOut(true);
     await signOutAdmin();
     setIsAuthenticated(false);
+    setAuthAccessState({ kind: 'none' });
     setIsCollapsed(false);
+  };
+
+  const handlePasswordChangeComplete = async () => {
+    const accessState = await resolveAuthenticatedAccess();
+    if (accessState.kind === 'admin') {
+      applyAccessState(accessState);
+      return;
+    }
+
+    await signOutAdmin();
+    applyAccessState({ kind: 'none' });
   };
 
   const renderPage = () => {
@@ -157,6 +198,10 @@ export default function App() {
 
   if (!isAuthenticated && !isLoginTransitionActive) {
     return <Login onLogin={handleLogin} />;
+  }
+
+  if (authAccessState.kind === 'agent_password_change') {
+    return <CreateNewPassword onComplete={handlePasswordChangeComplete} />;
   }
 
   return (

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { AccountSummaryItem, AccountView } from './AccountsSummary';
 import { updateAccountItem } from '../../services/accounts';
 import { getBranchTypeOptions, subscribeBranchTypeOptions } from '../../services/branchTypes';
+import AgentProfilePanel from './AgentProfilePanel';
 import styles from './AccountModal.module.css';
 
 type EditAccountProps = {
@@ -20,8 +21,6 @@ type AccountForm = {
   isActive: boolean;
   email: string;
   contact: string;
-  password: string;
-  confirmPassword: string;
 };
 
 const accessOptions = ['Products', 'Order', 'Sales', 'Accounts', 'Settings'];
@@ -46,12 +45,18 @@ function getInitialForm(account: AccountSummaryItem): AccountForm {
     isActive: account.status.toLowerCase() === 'active',
     email: account.email,
     contact: formatContactInput(account.contact),
-    password: '',
-    confirmPassword: '',
   };
 }
 
 export default function EditAccount({ account, onSave, onClose }: EditAccountProps) {
+  if (account.role === 'agents') {
+    return <AgentProfilePanel account={account} onSave={onSave} onClose={onClose} />;
+  }
+
+  return <AdminEditAccount account={account} onSave={onSave} onClose={onClose} />;
+}
+
+function AdminEditAccount({ account, onSave, onClose }: EditAccountProps) {
   const [form, setForm] = useState<AccountForm>(() => getInitialForm(account));
   const [branchOptions, setBranchOptions] = useState<string[]>(() => getBranchTypeOptions());
   const [isAccessOpen, setIsAccessOpen] = useState(false);
@@ -113,11 +118,6 @@ export default function EditAccount({ account, onSave, onClose }: EditAccountPro
 
     if (requiredValues.some((value) => !value.trim()) || !hasRoleSpecificValue) {
       setValidationError('Complete all required fields except email address.');
-      return false;
-    }
-
-    if ((form.password || form.confirmPassword) && form.password !== form.confirmPassword) {
-      setValidationError('Passwords do not match.');
       return false;
     }
 
@@ -335,25 +335,12 @@ export default function EditAccount({ account, onSave, onClose }: EditAccountPro
               </label>
             )}
 
-            <label className={styles.field}>
-              <span className={styles.label}>Password</span>
-              <input
-                type="password"
-                value={form.password}
-                onChange={(event) => updateField('password', event.target.value)}
-                className={styles.input}
-              />
-            </label>
-
-            <label className={styles.field}>
-              <span className={styles.label}>Confirm Password</span>
-              <input
-                type="password"
-                value={form.confirmPassword}
-                onChange={(event) => updateField('confirmPassword', event.target.value)}
-                className={styles.input}
-              />
-            </label>
+            <div className={styles.noticeCard}>
+              <span className={styles.label}>Security</span>
+              <p>
+                Passwords are managed through a separate secure reset flow when configured.
+              </p>
+            </div>
           </div>
         </div>
 

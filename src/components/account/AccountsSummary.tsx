@@ -16,6 +16,9 @@ export type AccountSummaryItem = {
   access: string;
   branch: string;
   status: string;
+  authUserId?: string;
+  address?: string;
+  notes?: string;
   createdAt: string;
 };
 

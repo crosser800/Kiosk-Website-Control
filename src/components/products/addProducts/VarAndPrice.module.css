@@ -1099,7 +1099,6 @@
 }
 
 @media (max-width: 700px) {
-<<<<<<< HEAD
   .wrapper,
   .cardGrid {
     gap: 0.55rem;
@@ -1180,7 +1179,6 @@
     padding-top: 0;
   }
 
-=======
   .modal {
     padding: 0.9rem;
   }
@@ -1190,7 +1188,6 @@
   }
 
   .modalInfoGrid,
->>>>>>> bd95a30d5ae3bdba8cc90b46dd10cbf25cb030fc
   .unitSummaryGrid,
   .packagingRow,
   .variationPreviewContent {

@@ -47,7 +47,6 @@
   font-family: 'Montserrat', sans-serif;
 }
 
-<<<<<<< HEAD
 :global(:root.dark) .hero {
   border-color: color-mix(in srgb, var(--yellow) 42%, var(--card-border));
   background:
@@ -65,14 +64,14 @@
 
 :global(:root.dark) .subtitle {
   color: #d1d5db;
-=======
+}
+
 .helperText {
   margin: 0.55rem 0 0;
   color: #7c5300;
   font-size: 0.82rem;
   font-weight: 700;
   font-family: 'Montserrat', sans-serif;
->>>>>>> bd95a30d5ae3bdba8cc90b46dd10cbf25cb030fc
 }
 
 .statsRow {

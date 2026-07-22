@@ -10,6 +10,7 @@ import type {
   CreateOrderAgent,
   CreateOrderBranch,
   CreateOrderCartItem,
+  CreateOrderClient,
   CreateOrderCustomerType,
   CreateOrderDraft,
   CreateOrderTerm,
@@ -37,6 +38,7 @@ const emptyDraft: CreateOrderDraft = {
   pricePreferenceId: '',
   pricePreference: null,
   customerType: 'existing',
+  agentClientId: '',
   clientName: '',
   guestFullName: '',
   guestMobileNumber: '',
@@ -80,12 +82,12 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
   const [branches, setBranches] = useState<CreateOrderBranch[]>([]);
   const [terms, setTerms] = useState<CreateOrderTerm[]>([]);
   const [priceClasses, setPriceClasses] = useState<OrderCatalogPriceClass[]>([]);
-  const [clientNames, setClientNames] = useState<string[]>([]);
+  const [agentClients, setAgentClients] = useState<CreateOrderClient[]>([]);
   const [catalogProducts, setCatalogProducts] = useState<OrderCatalogProduct[]>([]);
   const [agentAccessCache, setAgentAccessCache] = useState<Record<string, AgentAccessState>>({});
   const [isLoadingLookups, setIsLoadingLookups] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [clientSearch, setClientSearch] = useState('');
+  const [isLoadingClients, setIsLoadingClients] = useState(false);
   const [isConfiguratorOpen, setIsConfiguratorOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<CreateOrderCartItem | null>(null);
   const [removeTarget, setRemoveTarget] = useState<CreateOrderCartItem | null>(null);
@@ -117,10 +119,10 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
       ),
     [allowedPriceCodes, priceClasses],
   );
-  const filteredClientNames = useMemo(() => {
-    const query = clientSearch.trim().toLowerCase();
-    return clientNames.filter((name) => name.toLowerCase().includes(query)).slice(0, 8);
-  }, [clientNames, clientSearch]);
+  const selectedClient = useMemo(
+    () => agentClients.find((client) => client.id === draft.agentClientId) ?? null,
+    [agentClients, draft.agentClientId],
+  );
   const priceAccessValidation = getPriceAccessValidation(draft, allowedPriceClasses, selectedAgentAccess);
   const canCreate = isDraftComplete(draft) && !priceAccessValidation;
   const canAddProduct = isHeaderComplete(draft) && !priceAccessValidation;
@@ -130,7 +132,9 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
       agent: selectedAgent,
       pricePreference: draft.pricePreference,
       customerType: draft.customerType,
+      agentClientId: draft.customerType === 'existing' ? draft.agentClientId : null,
       clientName: draft.customerType === 'existing' ? draft.clientName : null,
+      client: draft.customerType === 'existing' ? selectedClient : null,
       guest:
         draft.customerType === 'guest'
           ? {
@@ -157,7 +161,7 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
       })),
       totals: draft.totals,
     }),
-    [draft, selectedAgent, selectedBranch, selectedTerm],
+    [draft, selectedAgent, selectedBranch, selectedClient, selectedTerm],
   );
 
   useEffect(() => {
@@ -178,6 +182,8 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
         ...current,
         pricePreferenceId: '',
         pricePreference: null,
+        agentClientId: '',
+        clientName: '',
         items: [],
         totals: emptyTotals,
       }));
@@ -220,11 +226,65 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
     applyAgentAccessToDraft(selectedAgentAccess?.priceCodes ?? []);
   }, [allowedPriceClasses, draft.agentId, selectedAgentAccess]);
 
+  useEffect(() => {
+    if (!draft.agentId) {
+      setAgentClients([]);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingClients(true);
+    const loadAgentClients = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('agent_clients')
+          .select('id, client_code, client_name, company_name, contact_person, contact_number, email, status')
+          .eq('agent_id', draft.agentId)
+          .eq('status', 'Active')
+          .order('client_name', { ascending: true });
+
+        if (cancelled) return;
+        if (error) {
+          setAgentClients([]);
+          setValidationError(error.message);
+          return;
+        }
+
+        const nextClients = (data ?? []).map((row) => ({
+          id: String(row.id),
+          clientCode: String(row.client_code ?? ''),
+          clientName: String(row.client_name ?? ''),
+          companyName: String(row.company_name ?? ''),
+          contactPerson: String(row.contact_person ?? ''),
+          contactNumber: String(row.contact_number ?? ''),
+          email: String(row.email ?? ''),
+          status: String(row.status ?? ''),
+        }));
+
+        setAgentClients(nextClients);
+        setDraft((current) => {
+          if (!current.agentClientId || nextClients.some((client) => client.id === current.agentClientId)) {
+            return current;
+          }
+          return { ...current, agentClientId: '', clientName: '' };
+        });
+      } finally {
+        if (!cancelled) setIsLoadingClients(false);
+      }
+    };
+
+    void loadAgentClients();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.agentId]);
+
   async function loadLookups() {
     setIsLoadingLookups(true);
     setLoadError('');
     try {
-      const [agentsRes, branchesRes, termsRes, clientsRes, catalog, nextPriceClasses] = await Promise.all([
+      const [agentsRes, branchesRes, termsRes, catalog, nextPriceClasses] = await Promise.all([
         supabase
           .from('agent_accounts')
           .select('id, full_name, agent_code, company_name, email, status')
@@ -240,16 +300,11 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
           .select('id, term_name, term_code, is_default, status')
           .eq('status', 'Active')
           .order('sort_order', { ascending: true }),
-        supabase
-          .from('orders')
-          .select('client_name')
-          .not('client_name', 'is', null)
-          .order('client_name', { ascending: true }),
         loadOrderCatalog(),
         loadOrderPriceClasses(),
       ]);
 
-      const lookupError = agentsRes.error ?? branchesRes.error ?? termsRes.error ?? clientsRes.error;
+      const lookupError = agentsRes.error ?? branchesRes.error ?? termsRes.error;
       if (lookupError) {
         throw new Error(lookupError.message);
       }
@@ -273,19 +328,10 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
         termCode: String(row.term_code ?? ''),
         isDefault: Boolean(row.is_default),
       }));
-      const nextClientNames = Array.from(
-        new Set(
-          (clientsRes.data ?? [])
-            .map((row) => String(row.client_name ?? '').trim())
-            .filter(Boolean),
-        ),
-      );
-
       setAgents(nextAgents);
       setBranches(nextBranches);
       setTerms(nextTerms);
       setPriceClasses(nextPriceClasses);
-      setClientNames(nextClientNames);
       setCatalogProducts(catalog);
       setDraft((current) => ({
         ...current,
@@ -302,6 +348,30 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
 
   function updateDraft<Key extends keyof CreateOrderDraft>(key: Key, value: CreateOrderDraft[Key]) {
     setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function handleAgentChange(agentId: string) {
+    setValidationError('');
+    setDraft((current) => ({
+      ...current,
+      agentId,
+      agentClientId: '',
+      clientName: '',
+      pricePreferenceId: '',
+      pricePreference: null,
+      items: [],
+      totals: emptyTotals,
+    }));
+  }
+
+  function handleClientChange(clientId: string) {
+    const client = agentClients.find((item) => item.id === clientId) ?? null;
+    setValidationError('');
+    setDraft((current) => ({
+      ...current,
+      agentClientId: clientId,
+      clientName: client?.clientName ?? '',
+    }));
   }
 
   function applyAgentAccessToDraft(priceCodes: OrderPriceCode[]) {
@@ -465,8 +535,7 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
                   </>
                 )}
                 onChange={(agentId) => {
-                  setValidationError('');
-                  updateDraft('agentId', agentId);
+                  handleAgentChange(agentId);
                 }}
               />
 
@@ -503,7 +572,14 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
                 <span>Customer Type *</span>
                 <select
                   value={draft.customerType}
-                  onChange={(event) => updateDraft('customerType', event.target.value as CreateOrderCustomerType)}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      customerType: event.target.value as CreateOrderCustomerType,
+                      agentClientId: '',
+                      clientName: '',
+                    }))
+                  }
                 >
                   <option value="existing">Existing Client</option>
                   <option value="guest">Guest</option>
@@ -511,21 +587,49 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
               </label>
 
               {draft.customerType === 'existing' ? (
-                <label className={`${styles.field} ${styles.wideField}`}>
-                  <span>Client Name *</span>
-                  <input
-                    value={draft.clientName}
-                    onChange={(event) => {
-                      updateDraft('clientName', event.target.value);
-                      setClientSearch(event.target.value);
-                    }}
-                    placeholder="Search or enter client name"
-                    list="create-order-client-names"
-                  />
-                  <datalist id="create-order-client-names">
-                    {filteredClientNames.map((name) => <option key={name} value={name} />)}
-                  </datalist>
-                </label>
+                <div className={styles.wideField}>
+                  {draft.agentId ? (
+                    <SearchableSelect
+                      label="Client Name *"
+                      placeholder={isLoadingClients ? 'Loading active clients...' : 'Search assigned client'}
+                      value={draft.agentClientId}
+                      options={agentClients}
+                      noResultsText="No active clients found for this agent."
+                      getOptionValue={(client) => client.id}
+                      getOptionLabel={(client) =>
+                        [client.clientName || 'Unnamed Client', client.companyName].filter(Boolean).join(' - ')
+                      }
+                      getSearchText={(client) =>
+                        [
+                          client.clientName,
+                          client.companyName,
+                          client.clientCode,
+                          client.contactPerson,
+                          client.contactNumber,
+                        ]
+                          .filter(Boolean)
+                          .join(' ')
+                      }
+                      renderOption={(client) => (
+                        <>
+                          <strong>{client.clientName || 'Unnamed Client'}</strong>
+                          <span>{client.companyName || '-'}</span>
+                          <span>{client.clientCode || '-'}</span>
+                          <span>{client.contactPerson || client.contactNumber || '-'}</span>
+                        </>
+                      )}
+                      onChange={handleClientChange}
+                    />
+                  ) : (
+                    <p className={styles.helperText}>Select an agent before choosing an existing client.</p>
+                  )}
+                  {selectedClient ? (
+                    <p className={styles.fieldHint}>
+                      Selected client: {selectedClient.clientName}
+                      {selectedClient.companyName ? ` - ${selectedClient.companyName}` : ''}
+                    </p>
+                  ) : null}
+                </div>
               ) : (
                 <>
                   <label className={styles.field}>
@@ -752,7 +856,7 @@ function isDraftComplete(draft: CreateOrderDraft) {
 function isHeaderComplete(draft: CreateOrderDraft) {
   const hasCustomer =
     draft.customerType === 'existing'
-      ? Boolean(draft.clientName.trim())
+      ? Boolean(draft.agentClientId && draft.clientName.trim())
       : Boolean(draft.guestFullName.trim());
   return Boolean(draft.agentId && draft.pricePreference && draft.pricePreferenceId && hasCustomer && draft.branchId && draft.termId);
 }
@@ -815,6 +919,7 @@ function getPriceCodeFallbackIndex(priceCode: string) {
 function isDraftDirty(draft: CreateOrderDraft) {
   return (
     draft.pricePreferenceId ||
+    draft.agentClientId ||
     draft.clientName.trim() ||
     draft.guestFullName.trim() ||
     draft.guestMobileNumber.trim() ||
