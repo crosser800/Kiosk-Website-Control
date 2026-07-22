@@ -1,8 +1,7 @@
 .header {
-  position: fixed;
+  position: fixed;        /* ← fixed so it stays on top */
   top: 0;
-  left: 300px;
-  right: 0;
+  right: 0;               /* ← stretches to right edge */
   height: 3.75rem;
   background-color: var(--card-bg);
   border-bottom: 1px solid var(--card-border);
@@ -14,10 +13,6 @@
   transition: background-color 0.3s, left 0.3s ease;
 }
 
-.collapsed {
-  left: 80px;
-}
-
 .title {
   font-size: 1.25rem;
   font-weight: bold;
@@ -25,13 +20,26 @@
   color: var(--text);
 }
 
-@media (max-width: 768px) {
-  .header,
-  .collapsed {
-    top: 4.85rem;
-    left: 0;
-    height: 3.4rem;
+@media (max-width: 1024px) {
+  .header {
+    left: 72px !important;
     padding: 0 1rem;
+    transition: none !important;
+  }
+
+  .title {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 1.1rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 600px) {
+  .header {
+    left: 64px !important;
+    padding: 0 0.75rem;
   }
 
   .title {

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import './App.css';
-import logo from './assets/2B LOGO.png';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import MainContent from './components/MainContent';
@@ -14,17 +13,28 @@ import Settings from './pages/Settings';
 import { supabase } from './lib/supabase';
 import { signOutAdmin } from './services/auth';
 
+type ProductView = 'summary' | 'add';
+
 export default function App() {
   const [active, setActive] = useState('Dashboard');
   const [isDark, setIsDark] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [productView, setProductView] = useState<ProductView>('summary');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isInitializingAuth, setIsInitializingAuth] = useState(true);
-  const [authInitError, setAuthInitError] = useState('');
-  const [isLoginTransitionActive, setIsLoginTransitionActive] = useState(false);
-  const [isAppReadyAfterLogin, setIsAppReadyAfterLogin] = useState(false);
-  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isCompactNavigation, setIsCompactNavigation] = useState(() =>
+    window.matchMedia('(max-width: 1024px)').matches,
+  );
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 1024px)');
+    const handleChange = (event: MediaQueryListEvent) => {
+      setIsCompactNavigation(event.matches);
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
   const toggleTheme = () => {
     setIsDark((current) => {
@@ -34,57 +44,38 @@ export default function App() {
     });
   };
 
+  const headerTitle =
+    active === 'Products' && productView === 'add'
+      ? 'Products > Add New Product'
+      : active;
+
   const handleNavigate = (item: string) => {
     setActive(item);
+
+    if (item !== 'Products') {
+      setProductView('summary');
+    }
   };
 
-  const handleLogin = async () => {
+  const handleLogin = () => {
+    setIsAuthenticated(true);
     setActive('Dashboard');
-    setIsAppReadyAfterLogin(false);
-    setIsLoginTransitionActive(true);
   };
 
   useEffect(() => {
     let mounted = true;
 
     const initAuth = async () => {
-      try {
-        const { data } = await Promise.race([
-          supabase.auth.getSession(),
-          new Promise<never>((_, reject) => {
-            window.setTimeout(() => {
-              reject(new Error('Authentication check timed out. Please refresh and try again.'));
-            }, 8000);
-          }),
-        ]);
-
-        if (!mounted) return;
-        setIsAuthenticated(Boolean(data.session));
-        setIsAppReadyAfterLogin(Boolean(data.session));
-      } catch (error) {
-        if (!mounted) return;
-        setAuthInitError(
-          error instanceof Error
-            ? error.message
-            : 'Unable to check your login session. Please refresh and try again.',
-        );
-      } finally {
-        if (mounted) {
-          setIsInitializingAuth(false);
-        }
-      }
+      const { data } = await supabase.auth.getSession();
+      if (!mounted) return;
+      setIsAuthenticated(Boolean(data.session));
+      setIsInitializingAuth(false);
     };
 
     void initAuth();
 
     const { data: authSubscription } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsAuthenticated(Boolean(session));
-      if (!session) {
-        setIsLoginTransitionActive(false);
-        setIsAppReadyAfterLogin(false);
-        setIsLogoutConfirmOpen(false);
-        setIsLoggingOut(false);
-      }
     });
 
     return () => {
@@ -93,28 +84,11 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!isLoginTransitionActive || !isAuthenticated) {
-      return;
-    }
-
-    const timeout = window.setTimeout(() => {
-      setIsLoginTransitionActive(false);
-      setIsAppReadyAfterLogin(true);
-    }, 950);
-
-    return () => window.clearTimeout(timeout);
-  }, [isAuthenticated, isLoginTransitionActive]);
-
-  const handleLogoutRequest = () => {
-    setIsLogoutConfirmOpen(true);
-  };
-
   const handleLogout = async () => {
-    setIsLoggingOut(true);
     await signOutAdmin();
     setIsAuthenticated(false);
     setIsCollapsed(false);
+    setProductView('summary');
   };
 
   const renderPage = () => {
@@ -122,7 +96,13 @@ export default function App() {
       case 'Dashboard':
         return <Dashboard />;
       case 'Products':
-        return <Products />;
+        return (
+          <Products
+            view={productView}
+            onOpenAddProduct={() => setProductView('add')}
+            onCloseAddProduct={() => setProductView('summary')}
+          />
+        );
       case 'Order':
         return <Orders />;
       case 'Sales':
@@ -130,104 +110,37 @@ export default function App() {
       case 'Accounts':
         return <Accounts />;
       case 'Settings':
-        return <Settings isDark={isDark} onToggleTheme={toggleTheme} />;
+        return <Settings />;
       default:
         return <Dashboard />;
     }
   };
 
   if (isInitializingAuth) {
-    return (
-      <div className="auth-status-screen" role="status" aria-live="polite">
-        <img src={logo} alt="BESTBUILT logo" className="auth-status-logo" />
-        <p>Loading admin workspace...</p>
-      </div>
-    );
+    return null;
   }
 
-  if (authInitError) {
-    return (
-      <div className="auth-status-screen auth-status-screen--error" role="alert">
-        <img src={logo} alt="BESTBUILT logo" className="auth-status-logo" />
-        <h1>Unable to start the admin workspace</h1>
-        <p>{authInitError}</p>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated && !isLoginTransitionActive) {
+  if (!isAuthenticated) {
     return <Login onLogin={handleLogin} />;
   }
 
   return (
-    <>
-      {isAuthenticated && isAppReadyAfterLogin ? (
-        <div className="app-container">
-          <Sidebar
-            active={active}
-            onNavigate={handleNavigate}
-            isCollapsed={isCollapsed}
-            onToggle={setIsCollapsed}
-            onLogout={handleLogoutRequest}
-          />
-          <Header
-            active={active}
-            isCollapsed={isCollapsed}
-          />
-          <MainContent
-            isCollapsed={isCollapsed}
-            contentKey={active}
-          >
-            {renderPage()}
-          </MainContent>
-        </div>
-      ) : null}
-
-      {isLoginTransitionActive ? (
-        <div className="login-transition" aria-hidden="true">
-          <div className="login-transition__glow"></div>
-          <img
-            src={logo}
-            alt=""
-            className="login-transition__logo"
-          />
-        </div>
-      ) : null}
-
-      {isLogoutConfirmOpen ? (
-        <div className="auth-confirm-overlay" role="presentation">
-          <div
-            className="auth-confirm-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Confirm logout"
-          >
-            <p className="auth-confirm-eyebrow">Confirm action</p>
-            <h2 className="auth-confirm-title">Are you sure you want to log out?</h2>
-            <p className="auth-confirm-text">
-              This helps prevent unwanted logout while you are still working.
-            </p>
-            <div className="auth-confirm-actions">
-              <button
-                type="button"
-                className="auth-confirm-cancel"
-                onClick={() => setIsLogoutConfirmOpen(false)}
-                disabled={isLoggingOut}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="auth-confirm-proceed"
-                onClick={() => void handleLogout()}
-                disabled={isLoggingOut}
-              >
-                {isLoggingOut ? 'Logging out...' : 'Yes, Log out'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </>
+    <div className="app-container">
+      <Sidebar
+        active={active}
+        onNavigate={handleNavigate}
+        isCollapsed={isCollapsed || isCompactNavigation}
+        canToggle={!isCompactNavigation}
+        onToggle={setIsCollapsed}
+        onLogout={handleLogout}
+      />
+      <Header
+        active={headerTitle}
+        isDark={isDark}
+        onToggle={toggleTheme}
+        isCollapsed={isCollapsed || isCompactNavigation}
+      />
+      <MainContent isCollapsed={isCollapsed || isCompactNavigation}>{renderPage()}</MainContent>
+    </div>
   );
 }

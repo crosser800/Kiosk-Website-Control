@@ -5,6 +5,7 @@ type SidebarProps = {
   active: string;
   onNavigate: (item: string) => void;
   isCollapsed: boolean;
+  canToggle: boolean;
   onToggle: (val: boolean) => void;
   onLogout: () => void;
 };
@@ -18,11 +19,11 @@ const navItems = [
   { name: 'Settings', icon: 'fa-solid fa-gear' },
 ];
 
-export default function Sidebar({ active, onNavigate, isCollapsed, onToggle, onLogout }: SidebarProps) {
+export default function Sidebar({ active, onNavigate, isCollapsed, canToggle, onToggle, onLogout }: SidebarProps) {
   return (
     <div className={`${styles.sidebar} ${isCollapsed ? styles.collapsed : ''}`}>
       <div className={styles.header}>
-        {isCollapsed ? (
+        {isCollapsed && canToggle ? (
           <button
             className={`${styles.logo} ${styles.logoBtn}`}
             onClick={() => onToggle(false)}
@@ -30,6 +31,10 @@ export default function Sidebar({ active, onNavigate, isCollapsed, onToggle, onL
           >
             <img src={logo} alt="logo" />
           </button>
+        ) : isCollapsed ? (
+          <div className={styles.logo}>
+            <img src={logo} alt="BestBuilt" />
+          </div>
         ) : (
           <>
             <div className={styles.logo}>
