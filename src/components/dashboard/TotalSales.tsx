@@ -6,18 +6,16 @@ type TotalSalesProps = {
 };
 
 export default function ItemsOrders({ count, yesterday }: TotalSalesProps) {
-  const isUp = count >= yesterday;
+  const tone = count === 0 && yesterday === 0 ? 'neutral' : count >= yesterday ? 'up' : 'down';
+  const isUp = tone === 'up';
+  const trendIcon = tone === 'neutral' ? 'fa-minus' : isUp ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down';
 
   return (
     <div className={styles.card}>
       <div className={styles.top}>
         <div>
-          <p className={`${styles.trend} ${isUp ? styles.up : styles.down}`}>
-            <i
-              className={`fa-solid ${
-                isUp ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down'
-              }`}
-            ></i>{' '}
+          <p className={`${styles.trend} ${tone === 'neutral' ? '' : isUp ? styles.up : styles.down}`}>
+            <i className={`fa-solid ${trendIcon}`}></i>{' '}
             {yesterday.toLocaleString()} vs yesterday
           </p>
           <p className={styles.label}>Total Sales</p>
@@ -32,8 +30,12 @@ export default function ItemsOrders({ count, yesterday }: TotalSalesProps) {
         <div className={styles.wave}></div>
       </div>
 
-      <p className={`${styles.subtitle} ${isUp ? styles.up : styles.down}`}>
-        {isUp ? 'Sales are tracking upward.' : 'Sales are tracking downward.'}
+      <p className={`${styles.subtitle} ${tone === 'neutral' ? '' : isUp ? styles.up : styles.down}`}>
+        {tone === 'neutral'
+          ? 'No completed sales for either day.'
+          : isUp
+            ? 'Sales are tracking upward.'
+            : 'Sales are tracking downward.'}
       </p>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Skeleton from '../common/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { flattenOrderCatalogForAddItem, loadOrderCatalog } from '../../services/orderCatalog';
@@ -24,6 +24,66 @@ type OrderItem = {
   poStatus: string;
   rawStatus: string;
   rawDate: string;
+};
+
+type JoinedAgentRow = {
+  id?: string | null;
+  full_name?: string | null;
+  agent_code?: string | null;
+  company_name?: string | null;
+  email?: string | null;
+};
+
+type DeliveryTermRow = {
+  term_name?: string | null;
+  name?: string | null;
+  title?: string | null;
+  code?: string | null;
+};
+
+type OrderListRow = {
+  id: string | number;
+  agent_id: string | null;
+  order_number: string | null;
+  po_number: string | null;
+  order_date: string | null;
+  order_time: string | null;
+  branch_name: string | null;
+  branch_code: string | null;
+  client_name: string | null;
+  order_status: string | null;
+  agent: JoinedAgentRow | JoinedAgentRow[] | null;
+  delivery_term: DeliveryTermRow | DeliveryTermRow[] | null;
+};
+
+type OrderDetailRow = {
+  id: string | number;
+  product_name: string | null;
+  product_code: string | null;
+  variant_label: string | null;
+  branch_name: string | null;
+  preference_type: string | null;
+  price_code: string | null;
+  unit_price: number | null;
+  quantity: number | null;
+  discount_amount: number | null;
+  surcharge_amount: number | null;
+  free_quantity: number | null;
+  line_subtotal: number | null;
+  line_total: number | null;
+};
+
+type OrderTotalsRow = {
+  line_subtotal: number | null;
+  discount_amount: number | null;
+  surcharge_amount: number | null;
+  line_total: number | null;
+};
+
+type StatusHistoryRow = {
+  id: string | number;
+  status: string | null;
+  changed_at: string | null;
 };
 
 const ROWS_PER_PAGE = 10;
@@ -386,6 +446,23 @@ export default function OrderSummary({
     [filteredCatalogItems],
   );
 
+  const loadCatalogItems = useCallback(async () => {
+    setIsCatalogLoading(true);
+    setCatalogError('');
+
+    try {
+      const catalogProducts = await loadOrderCatalog();
+      setCatalogItems(flattenOrderCatalogForAddItem(catalogProducts));
+    } catch (error) {
+      setCatalogItems([]);
+      setCatalogError(error instanceof Error ? error.message : 'Failed to load active catalog.');
+      setIsCatalogLoading(false);
+      return;
+    }
+
+    setIsCatalogLoading(false);
+  }, []);
+
   async function loadOrders() {
       setIsLoading(true);
       setLoadError('');
@@ -419,15 +496,16 @@ export default function OrderSummary({
         return;
       }
 
+      const orderRows = (data ?? []) as OrderListRow[];
       const unresolvedAgentIds = Array.from(
         new Set(
-          (data ?? [])
-            .filter((row: any) => row.agent_id && !row.agent)
-            .map((row: any) => String(row.agent_id)),
+          orderRows
+            .filter((row) => row.agent_id && !row.agent)
+            .map((row) => String(row.agent_id)),
         ),
       );
 
-      const fallbackAgentById = new Map<string, { full_name?: string; company_name?: string; email?: string }>();
+      const fallbackAgentById = new Map<string, JoinedAgentRow>();
       if (unresolvedAgentIds.length > 0) {
         const { data: fallbackAgents, error: fallbackError } = await supabase
           .from('agent_accounts')
@@ -435,7 +513,7 @@ export default function OrderSummary({
           .in('id', unresolvedAgentIds);
 
         if (!fallbackError) {
-          (fallbackAgents ?? []).forEach((agent: any) => {
+          ((fallbackAgents ?? []) as JoinedAgentRow[]).forEach((agent) => {
             fallbackAgentById.set(String(agent.id), {
               full_name: String(agent.full_name ?? '').trim() || undefined,
               company_name: String(agent.company_name ?? '').trim() || undefined,
@@ -445,9 +523,10 @@ export default function OrderSummary({
         }
       }
 
-      const mapped = (data ?? []).map((row: any) => {
-        const agentRef = row.agent ?? fallbackAgentById.get(String(row.agent_id ?? '')) ?? null;
-        const termRef = row.delivery_term ?? {};
+      const mapped = orderRows.map((row) => {
+        const joinedAgent = Array.isArray(row.agent) ? row.agent[0] ?? null : row.agent;
+        const agentRef = joinedAgent ?? fallbackAgentById.get(String(row.agent_id ?? '')) ?? null;
+        const termRef = Array.isArray(row.delivery_term) ? row.delivery_term[0] ?? {} : row.delivery_term ?? {};
         const agentName =
           String(
             agentRef?.full_name ??
@@ -494,17 +573,29 @@ export default function OrderSummary({
       setIsLoading(false);
     }
   useEffect(() => {
-    void loadOrders();
+    const timeoutId = window.setTimeout(() => {
+      void loadOrders();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, [refreshKey]);
 
   useEffect(() => {
-    setCurrentPage((prev) => Math.min(prev, totalPages));
+    const timeoutId = window.setTimeout(() => {
+      setCurrentPage((prev) => Math.min(prev, totalPages));
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, [totalPages]);
   useEffect(() => {
-    setCurrentPage(1);
+    const timeoutId = window.setTimeout(() => {
+      setCurrentPage(1);
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, [activeStatusTab]);
   useEffect(() => {
-    setCurrentPage(1);
+    const timeoutId = window.setTimeout(() => {
+      setCurrentPage(1);
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, [appliedRangeEnd, appliedRangeStart, appliedSingleDate]);
   useEffect(() => {
     if (!snackbar) return;
@@ -513,19 +604,28 @@ export default function OrderSummary({
   }, [snackbar]);
   useEffect(() => {
     if (!selectedOrder) {
-      setIsAddItemOpen(false);
-      setAddItemDraft(createAddOrderItemDraft());
+      const timeoutId = window.setTimeout(() => {
+        setIsAddItemOpen(false);
+        setAddItemDraft(createAddOrderItemDraft());
+      }, 0);
+      return () => window.clearTimeout(timeoutId);
     }
   }, [selectedOrder]);
   useEffect(() => {
     if (!isAddItemOpen || catalogItems.length > 0 || isCatalogLoading) return;
-    void loadCatalogItems();
-  }, [catalogItems.length, isAddItemOpen, isCatalogLoading]);
+    const timeoutId = window.setTimeout(() => {
+      void loadCatalogItems();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [catalogItems.length, isAddItemOpen, isCatalogLoading, loadCatalogItems]);
   useEffect(() => {
     if (!selectedCatalogItem) return;
     if (selectedCatalogItem.unitOptions.length === 0) {
       if (addItemDraft.selectedUnitOptionId) {
-        setAddItemDraft((current) => ({ ...current, selectedUnitOptionId: '' }));
+        const timeoutId = window.setTimeout(() => {
+          setAddItemDraft((current) => ({ ...current, selectedUnitOptionId: '' }));
+        }, 0);
+        return () => window.clearTimeout(timeoutId);
       }
       return;
     }
@@ -538,14 +638,17 @@ export default function OrderSummary({
       const fallbackOption =
         selectedCatalogItem.unitOptions.find((option) => option.isDefault) ??
         selectedCatalogItem.unitOptions[0];
-      setAddItemDraft((current) => ({
-        ...current,
-        selectedUnitOptionId: fallbackOption?.id ?? '',
-        quantity:
-          Number(current.quantity || '0') > 0
-            ? current.quantity
-            : String(fallbackOption?.minOrderQuantity ?? 1),
-      }));
+      const timeoutId = window.setTimeout(() => {
+        setAddItemDraft((current) => ({
+          ...current,
+          selectedUnitOptionId: fallbackOption?.id ?? '',
+          quantity:
+            Number(current.quantity || '0') > 0
+              ? current.quantity
+              : String(fallbackOption?.minOrderQuantity ?? 1),
+        }));
+      }, 0);
+      return () => window.clearTimeout(timeoutId);
     }
   }, [addItemDraft.selectedUnitOptionId, selectedCatalogItem]);
 
@@ -570,23 +673,6 @@ export default function OrderSummary({
     setEditItemDraft(null);
   }
 
-  async function loadCatalogItems() {
-    setIsCatalogLoading(true);
-    setCatalogError('');
-
-    try {
-      const catalogProducts = await loadOrderCatalog();
-      setCatalogItems(flattenOrderCatalogForAddItem(catalogProducts));
-    } catch (error) {
-      setCatalogItems([]);
-      setCatalogError(error instanceof Error ? error.message : 'Failed to load active catalog.');
-      setIsCatalogLoading(false);
-      return;
-    }
-
-    setIsCatalogLoading(false);
-  }
-
   async function refreshOrderTotals(orderId: string) {
     const { data, error } = await supabase
       .from('order_items')
@@ -597,8 +683,8 @@ export default function OrderSummary({
       throw new Error(error.message);
     }
 
-    const totals = (data ?? []).reduce(
-      (result, row: any) => ({
+    const totals = ((data ?? []) as OrderTotalsRow[]).reduce(
+      (result, row) => ({
         subtotal: result.subtotal + Number(row.line_subtotal ?? 0),
         discountTotal: result.discountTotal + Number(row.discount_amount ?? 0),
         surchargeTotal: result.surchargeTotal + Number(row.surcharge_amount ?? 0),
@@ -662,7 +748,7 @@ export default function OrderSummary({
       throw new Error(error.message);
     }
 
-    const items = (data ?? []).map((item: any) => ({
+    const items = ((data ?? []) as OrderDetailRow[]).map((item) => ({
       id: String(item.id),
       productName: String(item.product_name ?? '-'),
       code: String(item.product_code ?? '-'),
@@ -706,7 +792,7 @@ export default function OrderSummary({
       throw new Error(error.message);
     }
 
-    const mappedHistory = (historyRows ?? []).map((row: any) => ({
+    const mappedHistory = ((historyRows ?? []) as StatusHistoryRow[]).map((row) => ({
       id: String(row.id),
       status: toDisplayStatus(String(row.status ?? '-')),
       changedAt: String(row.changed_at ?? ''),
@@ -955,7 +1041,7 @@ export default function OrderSummary({
           <span>Branch</span>
           <span>Client Name</span>
           <span>Terms</span>
-          <span>P.O. Status</span>
+          <span>Order Status</span>
           <span className={styles.actionHeader}>Action</span>
         </div>
 

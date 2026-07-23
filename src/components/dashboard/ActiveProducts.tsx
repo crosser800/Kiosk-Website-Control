@@ -24,7 +24,7 @@ export default function ActiveProducts({ count }: ActiveProductsProps) {
         <div className={styles.wave}></div>
       </div>
 
-      <p className={styles.subtitle}>current this day</p>
+      <p className={styles.subtitle}>current active catalog</p>
     </div>
   );
 }

@@ -21,7 +21,15 @@ export default function DailySales({
   onClick,
   disabled = false,
 }: DailySalesProps) {
-  const isUp = amount >= yesterday;
+  const tone = amount === 0 && yesterday === 0 ? 'neutral' : amount >= yesterday ? 'up' : 'down';
+  const isUp = tone === 'up';
+  const trendIcon = tone === 'neutral' ? 'fa-minus' : isUp ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down';
+  const subtitle =
+    tone === 'neutral'
+      ? 'No completed sales for today or yesterday.'
+      : isUp
+        ? 'Today is tracking ahead of yesterday.'
+        : 'Today is trailing yesterday.';
 
   return (
     <button
@@ -33,11 +41,9 @@ export default function DailySales({
     >
       <div className={styles.top}>
         <div>
-          <p className={`${styles.trend} ${isUp ? styles.up : styles.down}`}>
+          <p className={`${styles.trend} ${styles[tone]}`}>
             <i
-              className={`fa-solid ${
-                isUp ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down'
-              }`}
+              className={`fa-solid ${trendIcon}`}
               aria-hidden="true"
             ></i>{' '}
             {formatCurrency(yesterday)} yesterday
@@ -54,8 +60,8 @@ export default function DailySales({
         <div className={styles.wave}></div>
       </div>
 
-      <p className={`${styles.subtitle} ${isUp ? styles.up : styles.down}`}>
-        {isUp ? 'Today is tracking ahead of yesterday.' : 'Today is trailing yesterday.'}
+      <p className={`${styles.subtitle} ${styles[tone]}`}>
+        {subtitle}
       </p>
     </button>
   );

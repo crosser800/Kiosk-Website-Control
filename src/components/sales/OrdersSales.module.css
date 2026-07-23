@@ -126,6 +126,25 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--yellow) 24%, transparent);
 }
 
+.customRange {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.customRange input {
+  height: 2.85rem;
+  padding: 0 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 16%, var(--card-border));
+  border-radius: 999px;
+  outline: none;
+  background: linear-gradient(180deg, rgba(255, 248, 220, 0.96), rgba(255, 255, 255, 0.98));
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
 .selectField {
   width: 100%;
   padding: 0.9rem 2.5rem 0.9rem 2.45rem;
@@ -249,16 +268,26 @@
   font-weight: 600;
 }
 
-.tableHeader,
-.tableRow {
-  min-width: 64rem;
+.ordersHeader,
+.ordersRow {
+  min-width: 78rem;
   display: grid;
-  grid-template-columns: 1.4fr 1.05fr 0.85fr 0.8fr 1fr 0.9fr 0.7fr;
+  grid-template-columns: 1fr 1fr 1.25fr 1.2fr 0.8fr 1fr 0.7fr 0.7fr 0.9fr 0.75fr 0.55fr;
   gap: 0.75rem;
   align-items: center;
 }
 
-.tableHeader {
+.productsHeader,
+.productsRow {
+  min-width: 64rem;
+  display: grid;
+  grid-template-columns: 1.4fr 0.85fr 1fr 1fr 0.85fr 1fr 1.1fr;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.ordersHeader,
+.productsHeader {
   padding: 0.85rem 1rem;
   border-bottom: 1px solid color-mix(in srgb, var(--yellow) 12%, var(--card-border));
   color: var(--text-muted);
@@ -269,12 +298,14 @@
   text-transform: uppercase;
 }
 
-:global(:root.dark) .tableHeader {
+:global(:root.dark) .ordersHeader,
+:global(:root.dark) .productsHeader {
   border-bottom-color: color-mix(in srgb, var(--yellow) 18%, var(--card-border));
   color: #aeb4bf;
 }
 
-.tableRow {
+.ordersRow,
+.productsRow {
   min-height: 3.2rem;
   padding: 0.95rem 1rem;
   border-bottom: 1px solid color-mix(in srgb, var(--yellow) 10%, var(--card-border));
@@ -286,7 +317,8 @@
   transition: background-color 0.2s ease, transform 0.2s ease;
 }
 
-:global(:root.dark) .tableRow {
+:global(:root.dark) .ordersRow,
+:global(:root.dark) .productsRow {
   border-bottom-color: color-mix(in srgb, var(--yellow) 14%, var(--card-border));
   color: #f9fafb;
 }
@@ -295,16 +327,19 @@
   color: #ffffff;
 }
 
-.tableRow:hover {
+.ordersRow:hover,
+.productsRow:hover {
   background: rgba(250, 204, 21, 0.06);
   transform: translateY(-1px);
 }
 
-:global(:root.dark) .tableRow:hover {
+:global(:root.dark) .ordersRow:hover,
+:global(:root.dark) .productsRow:hover {
   background: rgba(245, 197, 24, 0.08);
 }
 
-.tableRow:last-child {
+.ordersRow:last-child,
+.productsRow:last-child {
   border-bottom: none;
 }
 
@@ -320,6 +355,130 @@
 .actionHeader,
 .actionCell {
   text-align: right;
+}
+
+.viewButton {
+  border: 1px solid color-mix(in srgb, var(--yellow) 28%, var(--card-border));
+  border-radius: 999px;
+  background: rgba(250, 204, 21, 0.14);
+  color: #7c5300;
+  cursor: pointer;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0.45rem 0.75rem;
+}
+
+.emptyState {
+  min-width: 100%;
+  padding: 1.25rem;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(15, 23, 42, 0.36);
+  backdrop-filter: blur(6px);
+}
+
+.detailsModal {
+  width: min(100%, 58rem);
+  max-height: calc(100vh - 3rem);
+  overflow: auto;
+  border-radius: 1.2rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 34%, var(--card-border));
+  background: var(--card-bg);
+  box-shadow: 0 26px 70px rgba(15, 23, 42, 0.24);
+  padding: 1.25rem;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.modalTitle {
+  margin: 0;
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.modalClose {
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #6b7280;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.detailsGrid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.6rem 1rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(250, 204, 21, 0.08);
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.86rem;
+}
+
+.detailsGrid span {
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.detailsGrid strong {
+  font-weight: 800;
+}
+
+.detailsItems {
+  margin-top: 1rem;
+  overflow-x: auto;
+}
+
+.detailsItemsHeader,
+.detailsItemsRow {
+  min-width: 48rem;
+  display: grid;
+  grid-template-columns: 1.5fr 0.8fr 1fr 0.7fr 0.7fr 0.9fr;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.8rem 0.9rem;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.detailsItemsHeader {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.detailsItemsRow {
+  border-top: 1px solid color-mix(in srgb, var(--yellow) 12%, var(--card-border));
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 650;
 }
 
 .footer {
@@ -452,6 +611,12 @@
 
   .selectControl {
     min-width: 100%;
+  }
+
+  .customRange {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .tableShell {

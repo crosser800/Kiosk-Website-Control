@@ -9,25 +9,27 @@ import {
   ResponsiveContainer,
   Cell,
 } from 'recharts';
-import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
+import type { ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
 type SalesOverviewProps = {
   total: number;
   data: {
     day: string;
-    today: number;
-    yesterday: number;
+    date: string;
+    previousDate: string;
+    thisWeek: number;
+    previousWeek: number;
   }[];
 };
 
 const EMPTY_CHART_DATA = [
-  { day: 'Mon', today: 0, yesterday: 0 },
-  { day: 'Tue', today: 0, yesterday: 0 },
-  { day: 'Wed', today: 0, yesterday: 0 },
-  { day: 'Thu', today: 0, yesterday: 0 },
-  { day: 'Fri', today: 0, yesterday: 0 },
-  { day: 'Sat', today: 0, yesterday: 0 },
-  { day: 'Sun', today: 0, yesterday: 0 },
+  { day: 'Mon', date: '-', previousDate: '-', thisWeek: 0, previousWeek: 0 },
+  { day: 'Tue', date: '-', previousDate: '-', thisWeek: 0, previousWeek: 0 },
+  { day: 'Wed', date: '-', previousDate: '-', thisWeek: 0, previousWeek: 0 },
+  { day: 'Thu', date: '-', previousDate: '-', thisWeek: 0, previousWeek: 0 },
+  { day: 'Fri', date: '-', previousDate: '-', thisWeek: 0, previousWeek: 0 },
+  { day: 'Sat', date: '-', previousDate: '-', thisWeek: 0, previousWeek: 0 },
+  { day: 'Sun', date: '-', previousDate: '-', thisWeek: 0, previousWeek: 0 },
 ];
 
 const toNumber = (value: ValueType | undefined) => {
@@ -46,26 +48,29 @@ const formatY = (value: ValueType | undefined) => {
   return numericValue.toString();
 };
 
-const formatTooltipValue = (value: ValueType | undefined, _name: NameType | undefined) => {
-  const numericValue = toNumber(value);
-  return `PHP ${numericValue.toLocaleString()}`;
-};
-
 function CustomTooltip({
   active,
   payload,
   label,
 }: {
   active?: boolean;
-  payload?: Array<{ color?: string; dataKey?: string; value?: ValueType }>;
+  payload?: Array<{
+    color?: string;
+    dataKey?: string;
+    value?: ValueType;
+    payload?: { date?: string; previousDate?: string };
+  }>;
   label?: string;
 }) {
   if (!active) {
     return null;
   }
 
-  const todayValue = toNumber(payload?.find((entry) => entry.dataKey === 'today')?.value);
-  const yesterdayValue = toNumber(payload?.find((entry) => entry.dataKey === 'yesterday')?.value);
+  const thisWeekEntry = payload?.find((entry) => entry.dataKey === 'thisWeek');
+  const previousWeekEntry = payload?.find((entry) => entry.dataKey === 'previousWeek');
+  const thisWeekValue = toNumber(thisWeekEntry?.value);
+  const previousWeekValue = toNumber(previousWeekEntry?.value);
+  const row = payload?.[0]?.payload;
 
   return (
     <div className={styles.tooltipCard}>
@@ -73,16 +78,16 @@ function CustomTooltip({
       <div className={styles.tooltipRow}>
         <span className={styles.tooltipKey}>
           <span className={styles.tooltipDotToday}></span>
-          Today
+          This Week {row?.date ? `(${row.date})` : ''}
         </span>
-        <strong>PHP {todayValue.toLocaleString()}</strong>
+        <strong>PHP {thisWeekValue.toLocaleString()}</strong>
       </div>
       <div className={styles.tooltipRow}>
         <span className={styles.tooltipKey}>
           <span className={styles.tooltipDotYesterday}></span>
-          Yesterday
+          Previous Week {row?.previousDate ? `(${row.previousDate})` : ''}
         </span>
-        <strong>PHP {yesterdayValue.toLocaleString()}</strong>
+        <strong>PHP {previousWeekValue.toLocaleString()}</strong>
       </div>
     </div>
   );
@@ -90,7 +95,7 @@ function CustomTooltip({
 
 export default function SalesOverview({ total, data }: SalesOverviewProps) {
   const chartData = data.length > 0 ? data : EMPTY_CHART_DATA;
-  const hasRealData = data.some((entry) => entry.today > 0 || entry.yesterday > 0);
+  const hasRealData = data.some((entry) => entry.thisWeek > 0 || entry.previousWeek > 0);
 
   return (
     <div className={styles.card}>
@@ -104,11 +109,11 @@ export default function SalesOverview({ total, data }: SalesOverviewProps) {
       <div className={styles.legendRow}>
         <span className={styles.legendItem}>
           <span className={styles.legendDotToday}></span>
-          Today
+          This Week
         </span>
         <span className={styles.legendItem}>
           <span className={styles.legendDotYesterday}></span>
-          Yesterday
+          Previous Week
         </span>
       </div>
 
@@ -131,9 +136,8 @@ export default function SalesOverview({ total, data }: SalesOverviewProps) {
             <Tooltip
               cursor={{ fill: 'rgba(250, 204, 21, 0.08)' }}
               content={<CustomTooltip />}
-              formatter={formatTooltipValue}
             />
-            <Bar dataKey="today" name="Today" fill="url(#salesTodayFill)" radius={[10, 10, 0, 0]}>
+            <Bar dataKey="thisWeek" name="This Week" fill="url(#salesTodayFill)" radius={[10, 10, 0, 0]}>
               {chartData.map((entry) => (
                 <Cell
                   key={`today-${entry.day}`}
@@ -141,7 +145,7 @@ export default function SalesOverview({ total, data }: SalesOverviewProps) {
                 />
               ))}
             </Bar>
-            <Bar dataKey="yesterday" name="Yesterday" fill="url(#salesYesterdayFill)" radius={[10, 10, 0, 0]}>
+            <Bar dataKey="previousWeek" name="Previous Week" fill="url(#salesYesterdayFill)" radius={[10, 10, 0, 0]}>
               {chartData.map((entry) => (
                 <Cell
                   key={`yesterday-${entry.day}`}
@@ -154,7 +158,7 @@ export default function SalesOverview({ total, data }: SalesOverviewProps) {
       </div>
 
       {!hasRealData ? (
-        <p className={styles.emptyHint}>No sales data yet. Hover the bars to preview daily values.</p>
+        <p className={styles.emptyHint}>No completed sales recorded for this week.</p>
       ) : null}
     </div>
   );

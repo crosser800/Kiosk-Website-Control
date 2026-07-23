@@ -1,10 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import DailySales from '../components/sales/DailySales';
 import MonthlySales from '../components/sales/MonthlySales';
 import OrdersSales from '../components/sales/OrdersSales';
 import YearlySales from '../components/sales/YearlySales';
 import YtdSales from '../components/sales/YtdSales';
 import { supabase } from '../lib/supabase';
+import {
+  BUSINESS_TIME_ZONE,
+  COMPLETED_RAW_STATUSES,
+  ORDER_STATUS_FIELD,
+  getCompletedSalesRanges,
+  isCompletedAtInRange,
+  parseCompletedAt,
+  resolveCompletedAt,
+} from '../services/completedSales';
 import styles from './Sales.module.css';
 
 type PeriodKey = 'daily' | 'monthly' | 'yearly' | 'ytd';
@@ -15,10 +24,13 @@ type SalesOrderRow = {
   client_name: string | null;
   branch_name: string | null;
   order_date: string | null;
+  completed_at: string | null;
   order_status: string | null;
   subtotal: number | null;
   discount_total: number | null;
   grand_total: number | null;
+  created_at: string | null;
+  updated_at: string | null;
   agent_id: string | null;
   agent: {
     id: string | null;
@@ -28,7 +40,7 @@ type SalesOrderRow = {
   } | null;
 };
 
-type RawSalesOrderRow = Omit<SalesOrderRow, 'agent'> & {
+type RawSalesOrderRow = Omit<SalesOrderRow, 'agent' | 'completed_at'> & {
   agent:
     | {
         id: string | null;
@@ -53,6 +65,12 @@ type SalesOrderItemRow = {
   free_quantity: number | null;
   discount_amount: number | null;
   line_subtotal: number | null;
+};
+
+type StatusHistoryRow = {
+  order_id: string | null;
+  status: string | null;
+  changed_at: string | null;
 };
 
 type SalesTotals = {
@@ -148,29 +166,8 @@ function createEmptyBreakdowns(): Record<PeriodKey, PeriodBreakdown> {
   };
 }
 
-function startOfToday() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-}
-
-function addDays(date: Date, days: number) {
-  const value = new Date(date);
-  value.setDate(value.getDate() + days);
-  return value;
-}
-
-function startOfMonth(date = new Date()) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-function startOfYear(date = new Date()) {
-  return new Date(date.getFullYear(), 0, 1);
-}
-
 function parseOrderDate(orderDate: string | null) {
-  if (!orderDate) return null;
-  const parsed = new Date(orderDate);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  return parseCompletedAt(orderDate);
 }
 
 function formatCurrency(value: number) {
@@ -182,7 +179,7 @@ function formatCurrency(value: number) {
 
 function formatOrderDate(value: string | null) {
   const parsed = parseOrderDate(value);
-  return parsed ? parsed.toLocaleDateString('en-PH') : '-';
+  return parsed ? parsed.toLocaleDateString('en-PH', { timeZone: BUSINESS_TIME_ZONE }) : '-';
 }
 
 function sumTotals(rows: SalesOrderRow[]) {
@@ -195,11 +192,6 @@ function sumTotals(rows: SalesOrderRow[]) {
     }),
     createEmptyTotals(),
   );
-}
-
-function isCompletedOrder(status: string | null) {
-  const normalized = String(status ?? '').trim().toLowerCase();
-  return normalized === 'completed' || normalized === 'delivered';
 }
 
 function resolveAgentName(order: SalesOrderRow) {
@@ -254,7 +246,7 @@ function buildPeriodBreakdown(rows: SalesOrderRow[], allItems: SalesOrderItemRow
       orderNumber: String(order.order_number ?? '-'),
       clientName: String(order.client_name ?? '-'),
       branchName: String(order.branch_name ?? '-'),
-      orderDate: formatOrderDate(order.order_date),
+      orderDate: formatOrderDate(order.completed_at),
       grossSales: Number(order.grand_total ?? 0),
       totalDiscount: Number(order.discount_total ?? 0),
       totalItemAmount: Number(order.subtotal ?? 0),
@@ -321,11 +313,7 @@ export default function Sales() {
   const [activeModal, setActiveModal] = useState<PeriodKey | null>(null);
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
 
-  useEffect(() => {
-    void loadSalesSnapshot();
-  }, []);
-
-  async function loadSalesSnapshot() {
+  const loadSalesSnapshot = useCallback(async () => {
     setIsLoading(true);
     setLoadError('');
 
@@ -341,10 +329,12 @@ export default function Sales() {
         subtotal,
         discount_total,
         grand_total,
+        created_at,
+        updated_at,
         agent_id,
         agent:agent_accounts!orders_agent_id_fkey(id, full_name, company_name, email)
       `)
-      .in('order_status', ['Completed', 'Delivered']);
+      .in(ORDER_STATUS_FIELD, COMPLETED_RAW_STATUSES);
 
     if (error) {
       setSalesSnapshot(createEmptySnapshot());
@@ -354,79 +344,84 @@ export default function Sales() {
       return;
     }
 
-    const completedOrders = ((data ?? []) as RawSalesOrderRow[])
-      .filter((row) => isCompletedOrder(row.order_status))
-      .map((row) => ({
-        ...row,
-        id: String(row.id),
-        agent_id: row.agent_id ? String(row.agent_id) : null,
-        agent: Array.isArray(row.agent) ? row.agent[0] ?? null : row.agent,
-      }));
+    const rawCompletedOrders = ((data ?? []) as RawSalesOrderRow[]).map((row) => ({
+      ...row,
+      id: String(row.id),
+      agent_id: row.agent_id ? String(row.agent_id) : null,
+      agent: Array.isArray(row.agent) ? row.agent[0] ?? null : row.agent,
+    }));
 
-    const orderIds = completedOrders.map((row) => row.id);
+    const orderIds = rawCompletedOrders.map((row) => row.id);
     let orderItems: SalesOrderItemRow[] = [];
+    let statusHistoryRows: StatusHistoryRow[] = [];
 
     if (orderIds.length > 0) {
-      const { data: itemRows, error: itemError } = await supabase
-        .from('order_items')
-        .select('id, order_id, product_name, quantity, free_quantity, discount_amount, line_subtotal')
-        .in('order_id', orderIds);
+      const [itemsResult, historyResult] = await Promise.all([
+        supabase
+          .from('order_items')
+          .select('id, order_id, product_name, quantity, free_quantity, discount_amount, line_subtotal')
+          .in('order_id', orderIds),
+        supabase
+          .from('order_status_history')
+          .select('order_id, status, changed_at')
+          .in('order_id', orderIds)
+          .in('status', COMPLETED_RAW_STATUSES)
+          .order('changed_at', { ascending: true }),
+      ]);
 
-      if (itemError) {
+      if (itemsResult.error || historyResult.error) {
         setSalesSnapshot(createEmptySnapshot());
         setPeriodBreakdowns(createEmptyBreakdowns());
-        setLoadError(itemError.message);
+        setLoadError(itemsResult.error?.message ?? historyResult.error?.message ?? 'Sales records could not be loaded.');
         setIsLoading(false);
         return;
       }
 
-      orderItems = (itemRows ?? []) as SalesOrderItemRow[];
+      orderItems = (itemsResult.data ?? []) as SalesOrderItemRow[];
+      statusHistoryRows = (historyResult.data ?? []) as StatusHistoryRow[];
     }
 
-    const todayStart = startOfToday();
-    const tomorrowStart = addDays(todayStart, 1);
-    const yesterdayStart = addDays(todayStart, -1);
-    const currentMonthStart = startOfMonth(todayStart);
-    const nextMonthStart = startOfMonth(tomorrowStart);
-    const previousMonthStart = startOfMonth(addDays(currentMonthStart, -1));
-    const currentYearStart = startOfYear(todayStart);
-    const nextYearStart = new Date(todayStart.getFullYear() + 1, 0, 1);
-    const previousYearStart = new Date(todayStart.getFullYear() - 1, 0, 1);
-    const sameDayLastYearExclusive = new Date(
-      todayStart.getFullYear() - 1,
-      todayStart.getMonth(),
-      todayStart.getDate() + 1,
-    );
+    const completedHistoryByOrderId = new Map<string, string>();
+    statusHistoryRows.forEach((row) => {
+      const orderId = String(row.order_id ?? '');
+      if (!orderId || !row.changed_at || completedHistoryByOrderId.has(orderId)) return;
+      completedHistoryByOrderId.set(orderId, row.changed_at);
+    });
 
-    const inRange = (date: Date | null, start: Date, end: Date) =>
-      Boolean(date && date >= start && date < end);
+    const completedOrders = rawCompletedOrders
+      .map((row) => ({
+        ...row,
+        completed_at: resolveCompletedAt(row, completedHistoryByOrderId),
+      }));
+
+    const ranges = getCompletedSalesRanges();
 
     const dailyRows = completedOrders.filter((row) =>
-      inRange(parseOrderDate(row.order_date), todayStart, tomorrowStart),
+      isCompletedAtInRange(row.completed_at, ranges.daily),
     );
     const yesterdayRows = completedOrders.filter((row) =>
-      inRange(parseOrderDate(row.order_date), yesterdayStart, todayStart),
+      isCompletedAtInRange(row.completed_at, ranges.yesterday),
     );
     const monthlyRows = completedOrders.filter((row) =>
-      inRange(parseOrderDate(row.order_date), currentMonthStart, nextMonthStart),
+      isCompletedAtInRange(row.completed_at, ranges.monthly),
     );
     const lastMonthRows = completedOrders.filter((row) =>
-      inRange(parseOrderDate(row.order_date), previousMonthStart, currentMonthStart),
+      isCompletedAtInRange(row.completed_at, ranges.lastMonth),
     );
     const yearlyRows = completedOrders.filter((row) =>
-      inRange(parseOrderDate(row.order_date), currentYearStart, nextYearStart),
+      isCompletedAtInRange(row.completed_at, ranges.yearly),
     );
     const previousYearRows = completedOrders.filter((row) =>
-      inRange(parseOrderDate(row.order_date), previousYearStart, currentYearStart),
+      isCompletedAtInRange(row.completed_at, ranges.previousYear),
     );
     const ytdRows = completedOrders.filter((row) =>
-      inRange(parseOrderDate(row.order_date), currentYearStart, tomorrowStart),
+      isCompletedAtInRange(row.completed_at, ranges.ytd),
     );
     const lastYearYtdRows = completedOrders.filter((row) =>
-      inRange(parseOrderDate(row.order_date), previousYearStart, sameDayLastYearExclusive),
+      isCompletedAtInRange(row.completed_at, ranges.lastYearYtd),
     );
 
-    setSalesSnapshot({
+    const nextSnapshot = {
       daily: sumTotals(dailyRows),
       yesterday: sumTotals(yesterdayRows),
       monthly: sumTotals(monthlyRows),
@@ -435,7 +430,28 @@ export default function Sales() {
       previousYear: sumTotals(previousYearRows),
       ytd: sumTotals(ytdRows),
       lastYearYtd: sumTotals(lastYearYtdRows),
-    });
+    } satisfies SalesSnapshot;
+
+    if (
+      import.meta.env.DEV &&
+      (
+        nextSnapshot.daily.grossSales > nextSnapshot.monthly.grossSales ||
+        nextSnapshot.monthly.grossSales > nextSnapshot.yearly.grossSales ||
+        nextSnapshot.ytd.grossSales > nextSnapshot.yearly.grossSales ||
+        (nextSnapshot.daily.grossSales > 0 && nextSnapshot.monthly.grossSales === 0)
+      )
+    ) {
+      console.warn('[sales] completed sales period invariant failed', {
+        timeZone: BUSINESS_TIME_ZONE,
+        ranges,
+        daily: nextSnapshot.daily.grossSales,
+        monthly: nextSnapshot.monthly.grossSales,
+        yearly: nextSnapshot.yearly.grossSales,
+        ytd: nextSnapshot.ytd.grossSales,
+      });
+    }
+
+    setSalesSnapshot(nextSnapshot);
 
     setPeriodBreakdowns({
       daily: buildPeriodBreakdown(dailyRows, orderItems),
@@ -444,10 +460,17 @@ export default function Sales() {
       ytd: buildPeriodBreakdown(ytdRows, orderItems),
     });
     setIsLoading(false);
-  }
+  }, []);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void loadSalesSnapshot();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [loadSalesSnapshot]);
 
   const summaryText = useMemo(() => {
-    if (isLoading) return "Loading today's sales breakdown...";
+    if (isLoading) return 'Loading completed sales...';
     if (loadError) return `Could not load sales totals: ${loadError}`;
     if (salesSnapshot.daily.orderCount === 0) return 'No completed sales recorded for today yet.';
     return `${salesSnapshot.daily.orderCount.toLocaleString()} completed orders recorded today.`;
@@ -469,7 +492,7 @@ export default function Sales() {
           <p className={styles.eyebrow}>Sales workspace</p>
           <h1 className={styles.title}>Sales</h1>
           <p className={styles.subtitle}>
-            Review daily movement, yearly pace, and order performance in one view.
+            Completed order sales report
           </p>
           <p className={styles.helperText}>{summaryText}</p>
         </div>
