@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import styles from './Sidebar.module.css';
 import logo from '../assets/2B LOGO.png';
 
@@ -8,6 +9,10 @@ type SidebarProps = {
   canToggle: boolean;
   onToggle: (val: boolean) => void;
   onLogout: () => void;
+  onAccount: () => void;
+  accountName: string;
+  accountRole: string;
+  accountImageUrl?: string;
 };
 
 const navItems = [
@@ -19,7 +24,57 @@ const navItems = [
   { name: 'Settings', icon: 'fa-solid fa-gear' },
 ];
 
-export default function Sidebar({ active, onNavigate, isCollapsed, canToggle, onToggle, onLogout }: SidebarProps) {
+export default function Sidebar({
+  active,
+  onNavigate,
+  isCollapsed,
+  canToggle,
+  onToggle,
+  onLogout,
+  onAccount,
+  accountName,
+  accountRole,
+  accountImageUrl = '',
+}: SidebarProps) {
+  const [isAccountMenuOpen, setIsAccountMenuOpen] =
+    useState(false);
+  const accountAreaRef = useRef<HTMLDivElement | null>(null);
+  const accountInitial =
+    accountName.trim().charAt(0).toUpperCase() || 'A';
+
+  useEffect(() => {
+    if (!isAccountMenuOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        accountAreaRef.current?.contains(
+          event.target as Node,
+        )
+      ) {
+        return;
+      }
+
+      setIsAccountMenuOpen(false);
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () =>
+      window.removeEventListener(
+        'pointerdown',
+        handlePointerDown,
+      );
+  }, [isAccountMenuOpen]);
+
+  const handleAccountClick = () => {
+    setIsAccountMenuOpen(false);
+    onAccount();
+  };
+
+  const handleLogoutClick = () => {
+    setIsAccountMenuOpen(false);
+    onLogout();
+  };
+
   return (
     <div className={`${styles.sidebar} ${isCollapsed ? styles.collapsed : ''}`}>
       <div className={styles.header}>
@@ -57,7 +112,12 @@ export default function Sidebar({ active, onNavigate, isCollapsed, canToggle, on
             key={item.name}
             type="button"
             className={`${styles.navItem} ${active === item.name ? styles.active : ''}`}
-            onClick={() => onNavigate(item.name)}
+            onClick={() => {
+              setIsAccountMenuOpen(false);
+              onNavigate(item.name);
+            }}
+            aria-label={item.name}
+            aria-current={active === item.name ? 'page' : undefined}
             title={isCollapsed ? item.name : ''}
           >
             <span className={styles.iconWrap}>
@@ -68,12 +128,80 @@ export default function Sidebar({ active, onNavigate, isCollapsed, canToggle, on
         ))}
       </nav>
 
-      <button type="button" className={styles.logout} onClick={onLogout}>
-        <span className={styles.iconWrap}>
-          <i className="fa-solid fa-right-from-bracket"></i>
-        </span>
-        <span className={styles.label}>Logout</span>
-      </button>
+      <div className={styles.accountArea} ref={accountAreaRef}>
+        {isAccountMenuOpen ? (
+          <div className={styles.accountMenu} role="menu">
+            <button
+              type="button"
+              className={styles.accountMenuItem}
+              onClick={handleAccountClick}
+              role="menuitem"
+            >
+              <i className="fa-regular fa-circle-user"></i>
+              <span>Account</span>
+            </button>
+            <button
+              type="button"
+              className={styles.accountMenuItem}
+              onClick={handleLogoutClick}
+              role="menuitem"
+            >
+              <i className="fa-solid fa-arrow-right-from-bracket"></i>
+              <span>Logout</span>
+            </button>
+          </div>
+        ) : null}
+
+        <div
+          className={styles.accountCard}
+          onClick={() =>
+            setIsAccountMenuOpen((current) => !current)
+          }
+          onKeyDown={(event) => {
+            if (
+              event.key === 'Enter' ||
+              event.key === ' '
+            ) {
+              event.preventDefault();
+              setIsAccountMenuOpen(
+                (current) => !current,
+              );
+            }
+          }}
+          role="button"
+          tabIndex={0}
+          title="Account menu"
+        >
+          <span className={styles.accountAvatar}>
+            {accountImageUrl ? (
+              <img src={accountImageUrl} alt="" />
+            ) : (
+              accountInitial
+            )}
+          </span>
+          <span className={styles.accountInfo}>
+            <span className={styles.accountName}>
+              {accountName}
+            </span>
+            <span className={styles.accountRole}>
+              {accountRole}
+            </span>
+          </span>
+          <button
+            type="button"
+            className={styles.accountMenuBtn}
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsAccountMenuOpen((current) => !current)
+            }}
+            aria-label="Open account menu"
+            aria-expanded={isAccountMenuOpen}
+            title="Account menu"
+          >
+            <i className="fa-solid fa-ellipsis-vertical"></i>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -308,6 +308,12 @@
   color: var(--status-inactive-text);
 }
 
+.statusPending {
+  border-color: rgba(245, 158, 11, 0.34);
+  background-color: rgba(250, 204, 21, 0.16);
+  color: #92400e;
+}
+
 .actionButton {
   justify-self: end;
   width: 2rem;
@@ -328,6 +334,34 @@
   border-color: rgba(250, 204, 21, 0.36);
   color: #b7791f;
   background: linear-gradient(135deg, rgba(250, 204, 21, 0.14), rgba(250, 204, 21, 0.04));
+}
+
+.actionButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
+}
+
+.nameCell {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.protectedPill {
+  min-height: 1.55rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 35%, var(--card-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--yellow) 16%, var(--surface));
+  color: #7c5300;
+  font-size: 0.68rem;
+  font-weight: 800;
 }
 
 :global(:root.dark) .actionButton {

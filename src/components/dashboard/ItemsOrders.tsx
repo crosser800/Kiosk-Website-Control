@@ -6,21 +6,19 @@ type ItemsOrdersProps = {
 };
 
 export default function ItemsOrders({ count, yesterday }: ItemsOrdersProps) {
-  const isUp = count >= yesterday;
+  const tone = count === 0 && yesterday === 0 ? 'neutral' : count >= yesterday ? 'up' : 'down';
+  const isUp = tone === 'up';
+  const trendIcon = tone === 'neutral' ? 'fa-minus' : isUp ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down';
 
   return (
     <div className={styles.card}>
       <div className={styles.top}>
         <div>
-          <p className={`${styles.trend} ${isUp ? styles.up : styles.down}`}>
-            <i
-              className={`fa-solid ${
-                isUp ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down'
-              }`}
-            ></i>{' '}
+          <p className={`${styles.trend} ${tone === 'neutral' ? '' : isUp ? styles.up : styles.down}`}>
+            <i className={`fa-solid ${trendIcon}`}></i>{' '}
             {yesterday.toLocaleString()} vs yesterday
           </p>
-          <p className={styles.label}>Items Orders</p>
+          <p className={styles.label}>Today's Orders</p>
           <h2 className={styles.count}>{count.toLocaleString()}</h2>
         </div>
         <div className={styles.iconBadge}>
@@ -32,8 +30,12 @@ export default function ItemsOrders({ count, yesterday }: ItemsOrdersProps) {
         <div className={styles.wave}></div>
       </div>
 
-      <p className={`${styles.subtitle} ${isUp ? styles.up : styles.down}`}>
-        {isUp ? 'Orders are pacing above yesterday.' : 'Orders are pacing below yesterday.'}
+      <p className={`${styles.subtitle} ${tone === 'neutral' ? '' : isUp ? styles.up : styles.down}`}>
+        {tone === 'neutral'
+          ? 'No orders recorded for either day.'
+          : isUp
+            ? 'Orders are pacing above yesterday.'
+            : 'Orders are pacing below yesterday.'}
       </p>
     </div>
   );

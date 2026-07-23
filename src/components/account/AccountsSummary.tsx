@@ -19,6 +19,9 @@ export type AccountSummaryItem = {
   authUserId?: string;
   address?: string;
   notes?: string;
+  roleLabel?: string;
+  isSystemOwner?: boolean;
+  canEdit?: boolean;
   createdAt: string;
 };
 
@@ -183,7 +186,14 @@ function formatContactNumber(contact: string) {
 }
 
 function getStatusClass(status: string) {
+  if (status.toLowerCase() === 'pending setup') {
+    return styles.statusPending;
+  }
   return status.toLowerCase() === 'active' ? styles.statusActive : styles.statusInactive;
+}
+
+function ShieldIcon() {
+  return <i className="fa-solid fa-shield-halved" aria-hidden="true"></i>;
 }
 
 export default function AccountsSummary({
@@ -368,10 +378,20 @@ export default function AccountsSummary({
                   </span>
                 )}
               </span>
-              <span>{account.name}</span>
+              <span>
+                <span className={styles.nameCell}>
+                  {account.name}
+                  {account.isSystemOwner ? (
+                    <span className={styles.protectedPill}>
+                      <ShieldIcon />
+                      Protected
+                    </span>
+                  ) : null}
+                </span>
+              </span>
               <span>{account.email}</span>
               <span>{formatContactNumber(account.contact)}</span>
-              <span>{account.role === 'admins' ? 'Admin' : 'Agent'}</span>
+              <span>{account.role === 'admins' ? account.roleLabel ?? 'Admin' : 'Agent'}</span>
               <span>{account.role === 'admins' ? account.access : account.handle}</span>
               <span>{account.branch}</span>
               <span className={`${styles.statusBadge} ${getStatusClass(account.status)}`}>
@@ -381,7 +401,9 @@ export default function AccountsSummary({
                 type="button"
                 className={styles.actionButton}
                 aria-label={`Edit ${account.name}`}
+                disabled={account.canEdit === false}
                 onClick={() => onEditAccount?.(account)}
+                title={account.canEdit === false ? 'Protected system account' : `Edit ${account.name}`}
               >
                 <EditIcon />
               </button>

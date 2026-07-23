@@ -85,15 +85,20 @@
   inset: 0;
   z-index: 1200;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 1.5rem;
+  overflow-y: auto;
   background: rgba(15, 23, 42, 0.36);
   backdrop-filter: blur(6px);
+  overscroll-behavior: contain;
 }
 
 .modal {
   width: min(100%, 64rem);
+  max-height: calc(100dvh - 3rem);
+  overflow-y: auto;
+  margin: auto 0;
   border-radius: 1.5rem;
   border: 1px solid color-mix(in srgb, var(--yellow) 34%, var(--card-border));
   background:
@@ -101,13 +106,23 @@
     linear-gradient(135deg, rgba(255, 255, 255, 0.99), rgba(255, 248, 220, 0.97));
   box-shadow: 0 26px 70px rgba(15, 23, 42, 0.24);
   padding: 1.5rem;
+  overscroll-behavior: contain;
 }
 
 .modalHeader {
+  position: sticky;
+  top: -1.5rem;
+  z-index: 2;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+  margin: -1.5rem -1.5rem 0;
+  padding: 1.5rem 1.5rem 1rem;
+  background:
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.18), transparent 28%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.99), rgba(255, 248, 220, 0.97));
+  border-bottom: 1px solid rgba(212, 175, 55, 0.16);
 }
 
 .modalEyebrow {
@@ -236,6 +251,8 @@
 
 .agentListBlock,
 .agentDetailsBlock {
+  min-width: 0;
+  min-height: 0;
   border: 1px solid rgba(212, 175, 55, 0.28);
   border-radius: 1.15rem;
   background: rgba(255, 255, 255, 0.82);
@@ -308,6 +325,7 @@
 }
 
 .breakdownBlock {
+  min-width: 0;
   border: 1px solid rgba(212, 175, 55, 0.28);
   border-radius: 1.15rem;
   background: rgba(255, 255, 255, 0.82);
@@ -353,12 +371,17 @@
   background: rgba(250, 204, 21, 0.08);
 }
 
+.breakdownRow > div {
+  min-width: 0;
+}
+
 .breakdownName {
   margin: 0;
   color: var(--text);
   font-size: 0.92rem;
   font-weight: 800;
   font-family: 'Montserrat', sans-serif;
+  overflow-wrap: anywhere;
 }
 
 .breakdownMeta {
@@ -376,6 +399,7 @@
   font-weight: 800;
   font-family: 'Montserrat', sans-serif;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .emptyBreakdown {
@@ -409,12 +433,19 @@
   }
 
   .modalOverlay {
-    padding: 0.9rem;
+    padding: 0.75rem;
   }
 
   .modal {
+    max-height: calc(100dvh - 1.5rem);
     padding: 1.1rem;
     border-radius: 1.15rem;
+  }
+
+  .modalHeader {
+    top: -1.1rem;
+    margin: -1.1rem -1.1rem 0;
+    padding: 1.1rem 1.1rem 0.85rem;
   }
 
   .modalTitle {

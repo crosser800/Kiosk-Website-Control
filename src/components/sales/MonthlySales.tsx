@@ -21,7 +21,15 @@ export default function MonthlySales({
   onClick,
   disabled = false,
 }: MonthlySalesProps) {
-  const isUp = amount >= lastMonth;
+  const tone = amount === 0 && lastMonth === 0 ? 'neutral' : amount >= lastMonth ? 'up' : 'down';
+  const isUp = tone === 'up';
+  const trendIcon = tone === 'neutral' ? 'fa-minus' : isUp ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down';
+  const subtitle =
+    tone === 'neutral'
+      ? 'No completed sales for this month or last month.'
+      : isUp
+        ? 'This month is outperforming last month.'
+        : 'This month is behind last month.';
 
   return (
     <button
@@ -33,11 +41,9 @@ export default function MonthlySales({
     >
       <div className={styles.top}>
         <div>
-          <p className={`${styles.trend} ${isUp ? styles.up : styles.down}`}>
+          <p className={`${styles.trend} ${styles[tone]}`}>
             <i
-              className={`fa-solid ${
-                isUp ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down'
-              }`}
+              className={`fa-solid ${trendIcon}`}
               aria-hidden="true"
             ></i>{' '}
             {formatCurrency(lastMonth)} last month
@@ -54,8 +60,8 @@ export default function MonthlySales({
         <div className={styles.wave}></div>
       </div>
 
-      <p className={`${styles.subtitle} ${isUp ? styles.up : styles.down}`}>
-        {isUp ? 'This month is outperforming last month.' : 'This month is behind last month.'}
+      <p className={`${styles.subtitle} ${styles[tone]}`}>
+        {subtitle}
       </p>
     </button>
   );

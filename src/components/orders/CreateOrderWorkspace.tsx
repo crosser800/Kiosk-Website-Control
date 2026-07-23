@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../../lib/supabase';
+import {
+  createAdminOrder,
+  type AdminOrderCreateResult,
+  type AdminOrderItemCreatePayload,
+} from '../../services/adminOrders';
 import { loadAgentPriceAccess } from '../../services/agentPriceAccess';
 import { loadOrderCatalog, loadOrderPriceClasses, type OrderCatalogPriceClass, type OrderCatalogProduct } from '../../services/orderCatalog';
 import type { OrderPriceCode } from '../../services/orderPricing';
@@ -21,6 +26,7 @@ import styles from './CreateOrderWorkspace.module.css';
 
 type Props = {
   onClose: () => void;
+  onCreated?: () => void;
 };
 
 const emptyTotals: CreateOrderTotals = {
@@ -41,11 +47,16 @@ const emptyDraft: CreateOrderDraft = {
   agentClientId: '',
   clientName: '',
   guestFullName: '',
+  guestCompany: '',
+  guestAddress: '',
+  guestTin: '',
   guestMobileNumber: '',
+  guestEmail: '',
   guestNotes: '',
   branchId: '',
+  branchName: '',
+  branchCode: '',
   termId: '',
-  poNumber: '',
   notes: '',
   items: [],
   totals: emptyTotals,
@@ -76,7 +87,7 @@ function formatAgentLabel(agent: CreateOrderAgent) {
   return [agent.fullName || 'Unnamed Agent', agent.agentCode].filter(Boolean).join(' - ');
 }
 
-export default function CreateOrderWorkspace({ onClose }: Props) {
+export default function CreateOrderWorkspace({ onClose, onCreated }: Props) {
   const [draft, setDraft] = useState<CreateOrderDraft>(emptyDraft);
   const [agents, setAgents] = useState<CreateOrderAgent[]>([]);
   const [branches, setBranches] = useState<CreateOrderBranch[]>([]);
@@ -91,17 +102,14 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
   const [isConfiguratorOpen, setIsConfiguratorOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<CreateOrderCartItem | null>(null);
   const [removeTarget, setRemoveTarget] = useState<CreateOrderCartItem | null>(null);
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
   const [validationError, setValidationError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createResult, setCreateResult] = useState<AdminOrderCreateResult | null>(null);
 
   const selectedBranch = useMemo(
     () => branches.find((branch) => branch.id === draft.branchId) ?? null,
     [branches, draft.branchId],
-  );
-  const selectedAgent = useMemo(
-    () => agents.find((agent) => agent.id === draft.agentId) ?? null,
-    [agents, draft.agentId],
   );
   const selectedTerm = useMemo(
     () => terms.find((term) => term.id === draft.termId) ?? null,
@@ -124,46 +132,9 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
     [agentClients, draft.agentClientId],
   );
   const priceAccessValidation = getPriceAccessValidation(draft, allowedPriceClasses, selectedAgentAccess);
-  const canCreate = isDraftComplete(draft) && !priceAccessValidation;
-  const canAddProduct = isHeaderComplete(draft) && !priceAccessValidation;
+  const canCreate = isDraftComplete(draft) && !priceAccessValidation && !isSubmitting;
+  const canAddProduct = isHeaderComplete(draft) && !priceAccessValidation && !isSubmitting;
   const addProductDisabledMessage = getAddProductDisabledMessage(draft, priceAccessValidation);
-  const payloadPreview = useMemo(
-    () => ({
-      agent: selectedAgent,
-      pricePreference: draft.pricePreference,
-      customerType: draft.customerType,
-      agentClientId: draft.customerType === 'existing' ? draft.agentClientId : null,
-      clientName: draft.customerType === 'existing' ? draft.clientName : null,
-      client: draft.customerType === 'existing' ? selectedClient : null,
-      guest:
-        draft.customerType === 'guest'
-          ? {
-              fullName: draft.guestFullName,
-              mobileNumber: draft.guestMobileNumber || null,
-              notes: draft.guestNotes || null,
-            }
-          : null,
-      branch: selectedBranch,
-      deliveryTerm: selectedTerm,
-      poNumber: draft.poNumber || null,
-      notes: draft.notes || null,
-      items: draft.items.map((item) => ({
-        productId: item.productId,
-        productName: item.productName,
-        variationId: item.variationId,
-        variationName: item.variationName,
-        unitOptionId: item.unitOption.id,
-        unitLabel: item.unitOption.unitLabel,
-        priceCode: item.priceCode,
-        pricePreference: item.pricePreference,
-        quantity: item.quantity,
-        calculation: item.calculation,
-      })),
-      totals: draft.totals,
-    }),
-    [draft, selectedAgent, selectedBranch, selectedClient, selectedTerm],
-  );
-
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -238,7 +209,7 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
       try {
         const { data, error } = await supabase
           .from('agent_clients')
-          .select('id, client_code, client_name, company_name, contact_person, contact_number, email, status')
+          .select('id, client_code, client_name, company_name, contact_person, contact_number, email, address, tin, status')
           .eq('agent_id', draft.agentId)
           .eq('status', 'Active')
           .order('client_name', { ascending: true });
@@ -258,6 +229,8 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
           contactPerson: String(row.contact_person ?? ''),
           contactNumber: String(row.contact_number ?? ''),
           email: String(row.email ?? ''),
+          address: String(row.address ?? ''),
+          tin: String(row.tin ?? ''),
           status: String(row.status ?? ''),
         }));
 
@@ -333,12 +306,17 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
       setTerms(nextTerms);
       setPriceClasses(nextPriceClasses);
       setCatalogProducts(catalog);
-      setDraft((current) => ({
-        ...current,
-        agentId: current.agentId || nextAgents[0]?.id || '',
-        branchId: current.branchId || nextBranches[0]?.id || '',
-        termId: current.termId || nextTerms.find((term) => term.isDefault)?.id || nextTerms[0]?.id || '',
-      }));
+      setDraft((current) => {
+        const initialBranch = nextBranches.find((branch) => branch.id === current.branchId) ?? nextBranches[0] ?? null;
+        return {
+          ...current,
+          agentId: current.agentId || nextAgents[0]?.id || '',
+          branchId: current.branchId || initialBranch?.id || '',
+          branchName: current.branchName || initialBranch?.branchName || '',
+          branchCode: current.branchCode || initialBranch?.branchCode || '',
+          termId: current.termId || nextTerms.find((term) => term.isDefault)?.id || nextTerms[0]?.id || '',
+        };
+      });
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'Failed to load create order lookups.');
     } finally {
@@ -352,6 +330,12 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
 
   function handleAgentChange(agentId: string) {
     setValidationError('');
+    if (draft.items.length > 0 && agentId !== draft.agentId) {
+      const shouldClear = window.confirm('Changing the agent will clear current order items because price access and clients may change. Continue?');
+      if (!shouldClear) {
+        return;
+      }
+    }
     setDraft((current) => ({
       ...current,
       agentId,
@@ -361,6 +345,25 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
       pricePreference: null,
       items: [],
       totals: emptyTotals,
+    }));
+  }
+
+  function handleBranchChange(branchId: string) {
+    setValidationError('');
+    if (draft.items.length > 0 && branchId !== draft.branchId) {
+      const shouldClear = window.confirm('Changing the branch will clear current order items because branch-specific pricing or promotions may change. Continue?');
+      if (!shouldClear) {
+        return;
+      }
+    }
+    const branch = branches.find((item) => item.id === branchId) ?? null;
+    setDraft((current) => ({
+      ...current,
+      branchId: branch?.id ?? '',
+      branchName: branch?.branchName ?? '',
+      branchCode: branch?.branchCode ?? '',
+      items: branchId === current.branchId ? current.items : [],
+      totals: branchId === current.branchId ? current.totals : emptyTotals,
     }));
   }
 
@@ -458,6 +461,9 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
   }
 
   function handleCancel() {
+    if (isSubmitting) {
+      return;
+    }
     if (!isDraftDirty(draft)) {
       onClose();
       return;
@@ -465,17 +471,95 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
     setIsDiscardConfirmOpen(true);
   }
 
-  function handlePreview() {
+  async function handleCreateOrder() {
+    if (isSubmitting) {
+      return;
+    }
     setValidationError('');
-    if (!isDraftComplete(draft)) {
-      setValidationError('Complete the required order information and add at least one product.');
+    const preflightError = validateDraftForSubmit(draft);
+    if (preflightError) {
+      setValidationError(preflightError);
       return;
     }
     if (priceAccessValidation) {
       setValidationError(priceAccessValidation);
       return;
     }
-    setIsPreviewOpen(true);
+    if (!selectedBranch || !selectedTerm || !draft.pricePreference) {
+      setValidationError('Complete the required order information and add at least one product.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const customerType = normalizeCustomerType(draft.customerType);
+      const branchName = draft.branchName.trim() || selectedBranch.branchName.trim();
+      const branchCode = nullableText(draft.branchCode || selectedBranch.branchCode);
+      const result = await createAdminOrder(
+        {
+          agent_id: draft.agentId.trim(),
+          client_id: customerType === 'existing' ? draft.agentClientId.trim() : null,
+          delivery_term_id: draft.termId.trim(),
+          customer_type: customerType,
+          branch_id: draft.branchId.trim(),
+          branch_name: branchName,
+          branch_code: branchCode,
+          preference_type: draft.pricePreference.priceType,
+          price_code: nullableText(draft.pricePreference.priceCode),
+          client_name:
+            customerType === 'existing'
+              ? selectedClient?.clientName.trim() || draft.clientName.trim()
+              : draft.guestFullName.trim(),
+          client_company:
+            customerType === 'existing'
+              ? nullableText(selectedClient?.companyName)
+              : nullableText(draft.guestCompany),
+          client_address:
+            customerType === 'existing'
+              ? nullableText(selectedClient?.address)
+              : nullableText(draft.guestAddress),
+          client_tin:
+            customerType === 'existing'
+              ? nullableText(selectedClient?.tin)
+              : nullableText(draft.guestTin),
+          client_contact_number:
+            customerType === 'existing'
+              ? nullableText(selectedClient?.contactNumber || selectedClient?.contactPerson)
+              : nullableText(draft.guestMobileNumber),
+          client_email:
+            customerType === 'existing'
+              ? nullableText(selectedClient?.email)
+              : nullableText(draft.guestEmail),
+          guest:
+            customerType === 'guest'
+              ? {
+                  name: draft.guestFullName.trim(),
+                  company: nullableText(draft.guestCompany),
+                  address: nullableText(draft.guestAddress),
+                  tin: nullableText(draft.guestTin),
+                  contact_number: nullableText(draft.guestMobileNumber),
+                  email: nullableText(draft.guestEmail),
+                }
+              : null,
+          remarks: nullableText(draft.notes),
+          subtotal: roundMoney(draft.totals.subtotal),
+          discount_total: roundMoney(draft.totals.discountTotal),
+          surcharge_total: roundMoney(draft.totals.surchargeTotal),
+          grand_total: roundMoney(draft.totals.grandTotal),
+          metadata: {
+            source: 'admin',
+            created_from: 'admin_orders_page',
+          },
+        },
+        buildOrderItemPayloads(draft.items, branchName),
+      );
+      setCreateResult(result);
+      onCreated?.();
+    } catch (error) {
+      setValidationError(error instanceof Error ? error.message : 'The order could not be created.');
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function handleOpenAddProduct() {
@@ -499,7 +583,7 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
             <h2 className={styles.title}>Create Order</h2>
             <p className={styles.subtitle}>Create a direct order for an existing client or guest customer.</p>
           </div>
-          <button type="button" className={styles.closeButton} onClick={handleCancel} aria-label="Cancel create order">
+          <button type="button" className={styles.closeButton} onClick={handleCancel} aria-label="Cancel create order" disabled={isSubmitting}>
             <i className="fa-solid fa-xmark" aria-hidden="true"></i>
           </button>
         </header>
@@ -578,6 +662,13 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
                       customerType: event.target.value as CreateOrderCustomerType,
                       agentClientId: '',
                       clientName: '',
+                      guestFullName: '',
+                      guestCompany: '',
+                      guestAddress: '',
+                      guestTin: '',
+                      guestMobileNumber: '',
+                      guestEmail: '',
+                      guestNotes: '',
                     }))
                   }
                 >
@@ -637,11 +728,27 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
                     <input value={draft.guestFullName} onChange={(event) => updateDraft('guestFullName', event.target.value)} />
                   </label>
                   <label className={styles.field}>
+                    <span>Company</span>
+                    <input value={draft.guestCompany} onChange={(event) => updateDraft('guestCompany', event.target.value)} />
+                  </label>
+                  <label className={styles.field}>
                     <span>Mobile Number</span>
                     <input value={draft.guestMobileNumber} onChange={(event) => updateDraft('guestMobileNumber', event.target.value)} />
                   </label>
+                  <label className={styles.field}>
+                    <span>Email</span>
+                    <input type="email" value={draft.guestEmail} onChange={(event) => updateDraft('guestEmail', event.target.value)} />
+                  </label>
+                  <label className={styles.field}>
+                    <span>TIN</span>
+                    <input value={draft.guestTin} onChange={(event) => updateDraft('guestTin', event.target.value)} />
+                  </label>
                   <label className={`${styles.field} ${styles.wideField}`}>
-                    <span>Address or Notes</span>
+                    <span>Address</span>
+                    <textarea value={draft.guestAddress} onChange={(event) => updateDraft('guestAddress', event.target.value)} />
+                  </label>
+                  <label className={`${styles.field} ${styles.wideField}`}>
+                    <span>Guest Notes</span>
                     <textarea value={draft.guestNotes} onChange={(event) => updateDraft('guestNotes', event.target.value)} />
                   </label>
                 </>
@@ -649,7 +756,7 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
 
               <label className={styles.field}>
                 <span>Branch *</span>
-                <select value={draft.branchId} onChange={(event) => updateDraft('branchId', event.target.value)}>
+                <select value={draft.branchId} onChange={(event) => handleBranchChange(event.target.value)}>
                   <option value="">Select branch</option>
                   {branches.map((branch) => (
                     <option key={branch.id} value={branch.id}>{branch.branchName} ({branch.branchCode})</option>
@@ -665,11 +772,6 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
                     <option key={term.id} value={term.id}>{term.termName} ({term.termCode})</option>
                   ))}
                 </select>
-              </label>
-
-              <label className={styles.field}>
-                <span>P.O. Number</span>
-                <input value={draft.poNumber} onChange={(event) => updateDraft('poNumber', event.target.value)} />
               </label>
 
               <label className={`${styles.field} ${styles.wideField}`}>
@@ -717,13 +819,18 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
                     <span>{formatCurrency(item.calculation.surchargeAmount)}</span>
                     <span>{formatCurrency(item.calculation.finalLineTotal)}</span>
                     <span className={styles.rowActions}>
-                      <button type="button" onClick={() => { setEditingItem(item); setIsConfiguratorOpen(true); }} aria-label={`Edit ${item.productName}`}>
+                      <button
+                        type="button"
+                        onClick={() => { setEditingItem(item); setIsConfiguratorOpen(true); }}
+                        aria-label={`Edit ${item.productName}`}
+                        disabled={isSubmitting}
+                      >
                         <i className="fa-solid fa-pen" aria-hidden="true"></i>
                       </button>
-                      <button type="button" onClick={() => handleDuplicateItem(item)} aria-label={`Duplicate ${item.productName}`}>
+                      <button type="button" onClick={() => handleDuplicateItem(item)} aria-label={`Duplicate ${item.productName}`} disabled={isSubmitting}>
                         <i className="fa-solid fa-copy" aria-hidden="true"></i>
                       </button>
-                      <button type="button" onClick={() => setRemoveTarget(item)} aria-label={`Remove ${item.productName}`}>
+                      <button type="button" onClick={() => setRemoveTarget(item)} aria-label={`Remove ${item.productName}`} disabled={isSubmitting}>
                         <i className="fa-solid fa-trash" aria-hidden="true"></i>
                       </button>
                     </span>
@@ -747,10 +854,10 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
                 <span>Grand total</span><strong>{formatCurrency(draft.totals.grandTotal)}</strong>
               </div>
               {validationError ? <p className={styles.alert}>{validationError}</p> : null}
-              <button type="button" className={styles.primaryButton} disabled={!canCreate} onClick={handlePreview}>
-                Create Order
+              <button type="button" className={styles.primaryButton} disabled={!canCreate} onClick={() => void handleCreateOrder()}>
+                {isSubmitting ? 'Creating Order...' : 'Create Order'}
               </button>
-              <p className={styles.helperText}>Phase 2 review only. This does not create a real order.</p>
+              <p className={styles.helperText}>Order and P.O. numbers are generated after successful creation.</p>
             </section>
           </aside>
         </main>
@@ -811,19 +918,28 @@ export default function CreateOrderWorkspace({ onClose }: Props) {
         </div>
       ) : null}
 
-      {isPreviewOpen ? (
+      {createResult ? (
         <div className={styles.confirmOverlay} role="presentation">
-          <div className={styles.previewModal} role="dialog" aria-modal="true" aria-label="Phase 2 order payload preview">
+          <div className={styles.confirmModal} role="dialog" aria-modal="true" aria-label="Order created">
             <div className={styles.panelHeader}>
-              <h3>Phase 2 Review Payload</h3>
-              <button type="button" className={styles.closeButton} onClick={() => setIsPreviewOpen(false)} aria-label="Close payload preview">
-                <i className="fa-solid fa-xmark" aria-hidden="true"></i>
-              </button>
+              <h3>Order Successfully Created</h3>
             </div>
-            <pre className={styles.payloadPreview}>{JSON.stringify(payloadPreview, null, 2)}</pre>
+            <div className={styles.summaryRows}>
+              <span>Order Number</span><strong>{createResult.order_number}</strong>
+              <span>P.O. Number</span><strong>{createResult.po_number}</strong>
+              <span>Client</span><strong>{createResult.client_name}</strong>
+              <span>Grand Total</span><strong>{formatCurrency(Number(createResult.grand_total ?? 0))}</strong>
+            </div>
             <div className={styles.confirmActions}>
-              <button type="button" className={styles.primaryButton} onClick={() => setIsPreviewOpen(false)}>
-                Close Review
+              <button
+                type="button"
+                className={styles.primaryButton}
+                onClick={() => {
+                  setDraft(emptyDraft);
+                  onClose();
+                }}
+              >
+                Done
               </button>
             </div>
           </div>
@@ -847,6 +963,159 @@ function calculateTotals(items: CreateOrderCartItem[]): CreateOrderTotals {
     }),
     emptyTotals,
   );
+}
+
+function roundMoney(value: number) {
+  return Math.round(safeNumber(value) * 100) / 100;
+}
+
+function safeNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function nullableUuid(value?: string | null) {
+  const trimmed = String(value ?? '').trim();
+  return trimmed && isUuid(trimmed) ? trimmed : null;
+}
+
+function nullableText(value?: string | null) {
+  const trimmed = String(value ?? '').trim();
+  return trimmed || null;
+}
+
+function normalizeCustomerType(value: CreateOrderCustomerType): 'existing' | 'guest' {
+  return value === 'guest' ? 'guest' : 'existing';
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+function buildOrderItemPayloads(
+  items: CreateOrderCartItem[],
+  branchName: string,
+): AdminOrderItemCreatePayload[] {
+  return items.map((item, index) => {
+    const discountPromotions = item.calculation.appliedPromotions.filter(
+      (promotion) => promotion.source === 'discount',
+    );
+    const promoPromotion = item.calculation.appliedPromotions.find(
+      (promotion) => promotion.source === 'surcharge' && promotion.freeQuantity > 0,
+    );
+    const discountPercent =
+      item.calculation.grossSubtotal > 0
+        ? roundMoney((item.calculation.discountAmount / item.calculation.grossSubtotal) * 100)
+        : null;
+    const pricingSnapshot = {
+      source: 'admin_create_order',
+      price: item.price,
+      unit_option: item.unitOption,
+      calculation: item.calculation,
+      price_preference: item.pricePreference,
+    };
+    const metadata = {
+      source: 'admin_create_order',
+      pricing_snapshot: pricingSnapshot,
+      applied_promotions: item.calculation.appliedPromotions,
+      available_promotions: item.calculation.availablePromotions,
+      ineligible_promotions: item.calculation.ineligiblePromotions,
+    };
+    const productKey = [
+      item.productId,
+      `variation:${item.price.variationId}`,
+      `unit-option:${item.unitOption.id}`,
+      `unit-code:${item.unitOption.unitCode}`,
+      `branch:${branchName}`,
+      `type:${item.price.priceType}`,
+      `price:${item.priceCode}`,
+      `promo:${promoPromotion?.id ?? 'none'}`,
+    ].join('|');
+
+    return {
+      product_id: nullableUuid(item.productId),
+      variation_id: nullableUuid(item.price.variationId),
+      product_key: productKey,
+      product_name: item.productName,
+      product_code: item.productCode || null,
+      variant_label: item.variationName || null,
+      branch_name: branchName || item.price.branchName || null,
+      preference_type: item.price.priceType || item.pricePreference.priceType,
+      price_code: item.priceCode || null,
+      image_url: null,
+      image_path: '',
+      unit_price: roundMoney(item.calculation.computedUnitPrice),
+      quantity: safeNumber(item.quantity, 1),
+      discount_amount: roundMoney(item.calculation.discountAmount),
+      surcharge_amount: roundMoney(item.calculation.surchargeAmount),
+      free_quantity: safeNumber(item.calculation.freeQuantity),
+      sort_order: index + 1,
+      metadata,
+      buying_option_id: null,
+      unit_code: item.unitOption.unitCode || null,
+      unit_label: item.unitOption.unitLabel || null,
+      unit_quantity: safeNumber(item.unitOption.quantityInBaseUnit, 1),
+      base_unit_label: item.unitOption.baseUnitCode || null,
+      base_quantity: safeNumber(item.quantity, 1) * safeNumber(item.unitOption.quantityInBaseUnit, 1),
+      discount_id: nullableUuid(discountPromotions.find((promotion) => isUuid(promotion.id))?.id),
+      discount_name: discountPromotions.map((promotion) => promotion.name).filter(Boolean).join(' + ') || null,
+      discount_type: discountPromotions.map((promotion) => promotion.type).filter(Boolean).join(' + ') || null,
+      discount_percent: discountPercent,
+      promo_id: nullableUuid(promoPromotion?.id),
+      promo_label: promoPromotion?.name ?? null,
+      pricing_snapshot: pricingSnapshot,
+      unit_option_id: nullableUuid(item.unitOption.id),
+      ordered_quantity: safeNumber(item.quantity, 1),
+      is_billable: true,
+      admin_notes: null,
+      to_follow_reason: null,
+    };
+  });
+}
+
+function validateDraftForSubmit(draft: CreateOrderDraft) {
+  if (!isUuid(draft.agentId.trim())) {
+    return 'Please select an agent.';
+  }
+  if (!draft.pricePreference || !draft.pricePreferenceId.trim()) {
+    return 'Please select a price preference.';
+  }
+  if (!isUuid(draft.branchId.trim()) || !draft.branchName.trim()) {
+    return 'Please select a valid branch.';
+  }
+  if (!isUuid(draft.termId.trim())) {
+    return 'Please select terms.';
+  }
+  if (draft.customerType === 'existing' && !isUuid(draft.agentClientId.trim())) {
+    return 'Please select an existing client.';
+  }
+  if (draft.customerType === 'guest' && !draft.guestFullName.trim()) {
+    return 'Guest customer name is required.';
+  }
+  if (draft.items.length === 0) {
+    return 'Add at least one order item.';
+  }
+
+  const invalidItem = draft.items.find((item) => {
+    const quantity = safeNumber(item.quantity);
+    const unitPrice = safeNumber(item.calculation.computedUnitPrice, Number.NaN);
+    const subtotal = safeNumber(item.calculation.grossSubtotal, Number.NaN);
+    const total = safeNumber(item.calculation.finalLineTotal, Number.NaN);
+    return (
+      !item.productName.trim() ||
+      quantity <= 0 ||
+      !Number.isFinite(unitPrice) ||
+      unitPrice < 0 ||
+      !Number.isFinite(subtotal) ||
+      !Number.isFinite(total)
+    );
+  });
+
+  if (invalidItem) {
+    return `Review ${invalidItem.productName || 'the selected item'} before creating this order.`;
+  }
+
+  return '';
 }
 
 function isDraftComplete(draft: CreateOrderDraft) {
@@ -922,9 +1191,12 @@ function isDraftDirty(draft: CreateOrderDraft) {
     draft.agentClientId ||
     draft.clientName.trim() ||
     draft.guestFullName.trim() ||
+    draft.guestCompany.trim() ||
+    draft.guestAddress.trim() ||
+    draft.guestTin.trim() ||
     draft.guestMobileNumber.trim() ||
+    draft.guestEmail.trim() ||
     draft.guestNotes.trim() ||
-    draft.poNumber.trim() ||
     draft.notes.trim() ||
     draft.items.length > 0
   );

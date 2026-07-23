@@ -21,7 +21,15 @@ export default function YearlySales({
   onClick,
   disabled = false,
 }: YearlySalesProps) {
-  const isUp = amount >= lastYear;
+  const tone = amount === 0 && lastYear === 0 ? 'neutral' : amount >= lastYear ? 'up' : 'down';
+  const isUp = tone === 'up';
+  const trendIcon = tone === 'neutral' ? 'fa-minus' : isUp ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down';
+  const subtitle =
+    tone === 'neutral'
+      ? 'No completed sales for this year or last year.'
+      : isUp
+        ? 'This year is ahead of last year.'
+        : 'This year is behind last year.';
 
   return (
     <button
@@ -33,11 +41,9 @@ export default function YearlySales({
     >
       <div className={styles.top}>
         <div>
-          <p className={`${styles.trend} ${isUp ? styles.up : styles.down}`}>
+          <p className={`${styles.trend} ${styles[tone]}`}>
             <i
-              className={`fa-solid ${
-                isUp ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down'
-              }`}
+              className={`fa-solid ${trendIcon}`}
               aria-hidden="true"
             ></i>{' '}
             {formatCurrency(lastYear)} last year
@@ -54,8 +60,8 @@ export default function YearlySales({
         <div className={styles.wave}></div>
       </div>
 
-      <p className={`${styles.subtitle} ${isUp ? styles.up : styles.down}`}>
-        {isUp ? 'This year is ahead of last year.' : 'This year is behind last year.'}
+      <p className={`${styles.subtitle} ${styles[tone]}`}>
+        {subtitle}
       </p>
     </button>
   );

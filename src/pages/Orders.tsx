@@ -33,6 +33,7 @@ export default function Orders() {
   const [appliedRangeStart, setAppliedRangeStart] = useState<string | null>(null);
   const [appliedRangeEnd, setAppliedRangeEnd] = useState<string | null>(null);
   const [isCreateOrderOpen, setIsCreateOrderOpen] = useState(false);
+  const [ordersRefreshKey, setOrdersRefreshKey] = useState(0);
 
   function buildCalendarDays() {
     const firstDay = new Date(calendarYear, calendarMonth, 1);
@@ -183,9 +184,15 @@ export default function Orders() {
         appliedSingleDate={appliedSingleDate}
         appliedRangeStart={appliedRangeStart}
         appliedRangeEnd={appliedRangeEnd}
+        refreshKey={ordersRefreshKey}
       />
 
-      {isCreateOrderOpen ? <CreateOrderWorkspace onClose={() => setIsCreateOrderOpen(false)} /> : null}
+      {isCreateOrderOpen ? (
+        <CreateOrderWorkspace
+          onClose={() => setIsCreateOrderOpen(false)}
+          onCreated={() => setOrdersRefreshKey((current) => current + 1)}
+        />
+      ) : null}
     </div>
   );
 }

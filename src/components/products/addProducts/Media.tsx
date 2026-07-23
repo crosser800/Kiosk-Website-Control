@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
 import styles from './Media.module.css';
-import type { MediaItem } from '../../../services/types';
+import type { MediaItem } from './types';
 
 type MediaProps = {
   onBack?: () => void;

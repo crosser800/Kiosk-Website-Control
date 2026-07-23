@@ -1,7 +1,8 @@
 .header {
-  position: fixed;        /* ← fixed so it stays on top */
+  position: fixed;
   top: 0;
-  right: 0;               /* ← stretches to right edge */
+  right: 0;
+  left: var(--sidebar-expanded-width);
   height: 3.75rem;
   background-color: var(--card-bg);
   border-bottom: 1px solid var(--card-border);
@@ -13,6 +14,10 @@
   transition: background-color 0.3s, left 0.3s ease;
 }
 
+.header.collapsed {
+  left: var(--sidebar-collapsed-width);
+}
+
 .title {
   font-size: 1.25rem;
   font-weight: bold;
@@ -21,10 +26,11 @@
 }
 
 @media (max-width: 1024px) {
-  .header {
-    left: 72px !important;
+  .header,
+  .header.collapsed {
+    left: var(--sidebar-tablet-width);
     padding: 0 1rem;
-    transition: none !important;
+    transition: none;
   }
 
   .title {
@@ -37,8 +43,9 @@
 }
 
 @media (max-width: 600px) {
-  .header {
-    left: 64px !important;
+  .header,
+  .header.collapsed {
+    left: var(--sidebar-mobile-width);
     padding: 0 0.75rem;
   }
 
