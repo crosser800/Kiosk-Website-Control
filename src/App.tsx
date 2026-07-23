@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './App.css';
 
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import MainContent from './components/MainContent';
+import AccountProfilePanel from './components/account/AccountProfilePanel';
 
 import Dashboard from './pages/Dashboard';
 import Products from './pages/Products';
@@ -20,13 +21,29 @@ import {
   signOutAdmin,
   type AuthAccessState,
 } from './services/auth';
+import { useCurrentAdminProfile } from './hooks/useCurrentAdminProfile';
+import { getVersionedImageUrl } from './utils/profileImages';
 
 type ProductView = 'summary' | 'add';
+
+function logAppLifecycle(message: string, details: Record<string, unknown> = {}) {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+
+  console.info(`[app-lifecycle] ${message}`, details);
+}
 
 export default function App() {
   const [active, setActive] = useState('Dashboard');
   const [isDark, setIsDark] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] =
+    useState(false);
+  const [isAccountProfileOpen, setIsAccountProfileOpen] =
+    useState(false);
+  const [isLoggingOut, setIsLoggingOut] =
+    useState(false);
   const [productView, setProductView] =
     useState<ProductView>('summary');
 
@@ -44,6 +61,47 @@ export default function App() {
   const isAuthenticated =
     authAccessState.kind === 'admin' ||
     authAccessState.kind === 'agent_password_change';
+
+  const activeRef = useRef(active);
+  const productViewRef = useRef(productView);
+  const authAccessStateRef = useRef(authAccessState);
+  const isInitializingAuthRef = useRef(isInitializingAuth);
+
+  const currentAdminProfile = useCurrentAdminProfile(
+    authAccessState.kind === 'admin',
+  );
+
+  useEffect(() => {
+    activeRef.current = active;
+    productViewRef.current = productView;
+    authAccessStateRef.current = authAccessState;
+    isInitializingAuthRef.current = isInitializingAuth;
+  }, [active, productView, authAccessState, isInitializingAuth]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      logAppLifecycle('document visibility changed', {
+        visibilityState: document.visibilityState,
+        active: activeRef.current,
+        productView: productViewRef.current,
+      });
+    };
+
+    const handleWindowFocus = () => {
+      logAppLifecycle('window focused', {
+        active: activeRef.current,
+        productView: productViewRef.current,
+      });
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, []);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(
@@ -81,10 +139,15 @@ export default function App() {
 
   const applyAccessState = (
     accessState: AuthAccessState,
+    options: { resetNavigation?: boolean; reason?: string } = {},
   ) => {
     setAuthAccessState(accessState);
 
-    if (accessState.kind === 'admin') {
+    if (options.resetNavigation && accessState.kind === 'admin') {
+      logAppLifecycle('navigation reset after interactive auth', {
+        reason: options.reason ?? 'unknown',
+        from: activeRef.current,
+      });
       setActive('Dashboard');
       setProductView('summary');
     }
@@ -102,7 +165,9 @@ export default function App() {
           return;
         }
 
-        applyAccessState(accessState);
+        applyAccessState(accessState, {
+          reason: 'initial-session',
+        });
       } catch (error) {
         console.error(
           'Failed to initialize authentication:',
@@ -124,23 +189,52 @@ export default function App() {
     const { data: authSubscription } =
       supabase.auth.onAuthStateChange(
         (event, session) => {
-          if (
-            event === 'SIGNED_OUT' ||
-            !session
-          ) {
+          logAppLifecycle('supabase auth event', {
+            event,
+            hasSession: Boolean(session),
+            active: activeRef.current,
+            productView: productViewRef.current,
+          });
+
+          if (event === 'SIGNED_OUT') {
+            logAppLifecycle('signed out navigation', {
+              from: activeRef.current,
+            });
             setAuthAccessState({ kind: 'none' });
+            setIsInitializingAuth(false);
+            return;
+          }
+
+          if (!session) {
+            if (
+              event === 'INITIAL_SESSION' ||
+              authAccessStateRef.current.kind === 'none'
+            ) {
+              setAuthAccessState({ kind: 'none' });
+            }
             return;
           }
 
           /*
            * Resolve the actual admin/agent access state
-           * after sign-in or token restoration.
+           * after sign-in, token refresh, or session restoration. Background
+           * auth events must not navigate or remount the current workspace.
            */
+          const shouldBlockUi =
+            authAccessStateRef.current.kind === 'none' &&
+            isInitializingAuthRef.current;
+
+          if (shouldBlockUi) {
+            setIsInitializingAuth(true);
+          }
+
           window.setTimeout(() => {
             void resolveAuthenticatedAccess()
               .then((accessState) => {
                 if (mounted) {
-                  applyAccessState(accessState);
+                  applyAccessState(accessState, {
+                    reason: `auth-event:${event}`,
+                  });
                 }
               })
               .catch((error) => {
@@ -149,10 +243,16 @@ export default function App() {
                   error,
                 );
 
-                if (mounted) {
+                if (mounted && authAccessStateRef.current.kind === 'none') {
                   setAuthAccessState({
-                    kind: 'none',
+                    kind: 'error',
+                    message: 'Unable to verify account access. Please try again.',
                   });
+                }
+              })
+              .finally(() => {
+                if (mounted && shouldBlockUi) {
+                  setIsInitializingAuth(false);
                 }
               });
           }, 0);
@@ -170,7 +270,33 @@ export default function App() {
       ? 'Products > Add New Product'
       : active;
 
+  const sidebarAccountName =
+    currentAdminProfile.profile?.fullName ||
+    (authAccessState.kind === 'admin' &&
+    authAccessState.email
+      ? authAccessState.email.split('@')[0]
+      : 'Admin User');
+
+  const sidebarAccountRole =
+    currentAdminProfile.profile?.roleLabel ||
+    (authAccessState.kind === 'admin' &&
+    authAccessState.role === 'admin'
+      ? 'Admin'
+      : 'Super Admin');
+
+  const sidebarAccountImage =
+    currentAdminProfile.profile?.profileImageUrl
+      ? getVersionedImageUrl(
+          currentAdminProfile.profile.profileImageUrl,
+          currentAdminProfile.profile.updatedAt,
+        )
+      : '';
+
   const handleNavigate = (item: string) => {
+    logAppLifecycle('user navigation', {
+      from: activeRef.current,
+      to: item,
+    });
     setActive(item);
 
     if (item !== 'Products') {
@@ -185,7 +311,10 @@ export default function App() {
       const accessState =
         await resolveAuthenticatedAccess();
 
-      applyAccessState(accessState);
+      applyAccessState(accessState, {
+        resetNavigation: true,
+        reason: 'login',
+      });
     } catch (error) {
       console.error(
         'Failed to resolve login access:',
@@ -198,11 +327,31 @@ export default function App() {
     }
   };
 
-  const handleLogout = async () => {
+  const handleLogoutRequest = () => {
+    setIsLogoutConfirmOpen(true);
+  };
+
+  const handleCancelLogout = () => {
+    if (isLoggingOut) {
+      return;
+    }
+
+    setIsLogoutConfirmOpen(false);
+  };
+
+  const handleConfirmLogout = async () => {
+    if (isLoggingOut) {
+      return;
+    }
+
+    setIsLoggingOut(true);
+
     try {
       await signOutAdmin();
     } finally {
       setAuthAccessState({ kind: 'none' });
+      setIsLogoutConfirmOpen(false);
+      setIsLoggingOut(false);
       setIsCollapsed(false);
       setActive('Dashboard');
       setProductView('summary');
@@ -215,7 +364,10 @@ export default function App() {
         await resolveAuthenticatedAccess();
 
       if (accessState.kind === 'admin') {
-        applyAccessState(accessState);
+        applyAccessState(accessState, {
+          resetNavigation: true,
+          reason: 'password-change-complete',
+        });
         return;
       }
 
@@ -298,7 +450,11 @@ export default function App() {
         }
         canToggle={!isCompactNavigation}
         onToggle={setIsCollapsed}
-        onLogout={handleLogout}
+        onLogout={handleLogoutRequest}
+        onAccount={() => setIsAccountProfileOpen(true)}
+        accountName={sidebarAccountName}
+        accountRole={sidebarAccountRole}
+        accountImageUrl={sidebarAccountImage}
       />
 
       <Header
@@ -318,6 +474,73 @@ export default function App() {
       >
         {renderPage()}
       </MainContent>
+
+      {isLogoutConfirmOpen ? (
+        <div
+          className="auth-confirm-overlay"
+          role="presentation"
+        >
+          <section
+            className="auth-confirm-modal logout-confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="logout-confirm-title"
+            aria-describedby="logout-confirm-message"
+          >
+            <p className="auth-confirm-eyebrow logout-confirm-eyebrow">
+              Session
+            </p>
+            <h2
+              id="logout-confirm-title"
+              className="auth-confirm-title"
+            >
+              Log Out
+            </h2>
+            <p
+              id="logout-confirm-message"
+              className="auth-confirm-text"
+            >
+              Are you sure you want to log out of your
+              account?
+            </p>
+            <p className="logout-confirm-support">
+              Your current session will end and you will
+              need to sign in again.
+            </p>
+            <div className="auth-confirm-actions">
+              <button
+                type="button"
+                className="auth-confirm-cancel"
+                onClick={handleCancelLogout}
+                disabled={isLoggingOut}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="auth-confirm-proceed"
+                onClick={handleConfirmLogout}
+                disabled={isLoggingOut}
+              >
+                {isLoggingOut
+                  ? 'Logging Out...'
+                  : 'Log Out'}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isAccountProfileOpen ? (
+        <AccountProfilePanel
+          profile={currentAdminProfile.profile}
+          isLoading={currentAdminProfile.isLoading}
+          error={currentAdminProfile.error}
+          onReload={currentAdminProfile.reload}
+          onProfileUpdated={currentAdminProfile.setProfile}
+          onClose={() => setIsAccountProfileOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

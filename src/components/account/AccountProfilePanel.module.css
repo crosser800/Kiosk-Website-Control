@@ -1,0 +1,407 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 430;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 4.5rem 1.25rem 1.25rem;
+  background: rgba(15, 23, 42, 0.5);
+  overflow-y: auto;
+}
+
+.panel {
+  width: min(62rem, 100%);
+  max-height: calc(100vh - 5.75rem);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--yellow) 24%, var(--card-border));
+  border-radius: 0.85rem;
+  background: var(--card-bg);
+  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.24);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.2rem;
+  border-bottom: 1px solid var(--card-border);
+  background:
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.16), transparent 30%),
+    var(--card-bg);
+}
+
+.identity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.avatar,
+.profilePreview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--yellow) 32%, var(--card-border));
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffd21f 0%, #ffb000 100%);
+  color: #111827;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 900;
+}
+
+.avatar {
+  width: 4.5rem;
+  height: 4.5rem;
+  flex: 0 0 4.5rem;
+  font-size: 1.6rem;
+}
+
+.profilePreview {
+  width: 7rem;
+  height: 7rem;
+  flex: 0 0 7rem;
+  font-size: 2rem;
+}
+
+.avatarImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.identityText {
+  min-width: 0;
+}
+
+.eyebrow {
+  margin: 0 0 0.3rem;
+  color: #b77900;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.07rem;
+  text-transform: uppercase;
+}
+
+.identityText h2,
+.formSection h3,
+.securitySection h3,
+.confirmModal h3 {
+  margin: 0;
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 800;
+}
+
+.identityText h2 {
+  font-size: 1.35rem;
+}
+
+.metaLine {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.4rem;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.roleBadge,
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: 0 0.65rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.roleBadge {
+  background: color-mix(in srgb, var(--yellow) 22%, var(--surface));
+  color: #7c5300;
+}
+
+.statusBadge {
+  background: var(--status-active-bg);
+  color: var(--status-active-text);
+}
+
+.closeButton {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--card-border);
+  border-radius: 0.55rem;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.body {
+  min-height: 0;
+  display: grid;
+  gap: 1rem;
+  padding: 1.2rem;
+  overflow-y: auto;
+}
+
+.photoSection,
+.formSection,
+.securitySection,
+.errorBox {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.photoSection {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.photoActions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.photoActions p,
+.securitySection p,
+.errorBox p,
+.confirmModal p {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.84rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.field,
+.summaryField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  border: 1px solid var(--card-border);
+  border-radius: 0.55rem;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 650;
+  outline: none;
+}
+
+.field input {
+  min-height: 2.65rem;
+  padding: 0 0.85rem;
+}
+
+.field textarea {
+  min-height: 5.5rem;
+  padding: 0.75rem 0.85rem;
+  resize: vertical;
+}
+
+.field input:focus,
+.field textarea:focus {
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--yellow) 24%, transparent);
+}
+
+.summaryField {
+  justify-content: center;
+  min-height: 4.1rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px dashed var(--card-border);
+  border-radius: 0.55rem;
+}
+
+.summaryField strong {
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.wideField {
+  grid-column: 1 / -1;
+}
+
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.primaryButton,
+.secondaryButton,
+.dangerButton {
+  min-height: 2.55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 0 0.95rem;
+  border-radius: 0.55rem;
+  cursor: pointer;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.primaryButton {
+  border: 1px solid #ffb000;
+  background: linear-gradient(135deg, #ffd21f 0%, #ffb000 100%);
+  color: #111827;
+}
+
+.secondaryButton {
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.dangerButton {
+  border: 1px solid #dc2626;
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.dangerButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.validationError,
+.successMessage,
+.notice {
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.55rem;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.validationError {
+  border: 1px solid var(--status-inactive-border);
+  background: var(--status-inactive-bg);
+  color: var(--status-inactive-text);
+}
+
+.successMessage {
+  border: 1px solid var(--status-active-border);
+  background: var(--status-active-bg);
+  color: var(--status-active-text);
+}
+
+.notice {
+  border: 1px solid color-mix(in srgb, var(--yellow) 42%, var(--card-border));
+  background: color-mix(in srgb, var(--yellow) 14%, var(--surface));
+  color: var(--text);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.95rem 1.2rem;
+  border-top: 1px solid var(--card-border);
+  background: var(--card-bg);
+}
+
+.footer > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.confirmOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 520;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.48);
+}
+
+.confirmModal {
+  width: min(100%, 34rem);
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .overlay {
+    padding: 1rem;
+  }
+
+  .panel {
+    max-height: calc(100vh - 2rem);
+  }
+
+  .header,
+  .photoSection,
+  .footer {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .primaryButton {
+    width: 100%;
+  }
+}

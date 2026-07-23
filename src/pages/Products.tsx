@@ -28,7 +28,13 @@ function buildVariationGroupKey(variation: ProductVariationRow) {
   return `sku::${normalizedSku}`;
 }
 
-export default function Products() {
+type ProductsProps = {
+  view?: 'summary' | 'add';
+  onOpenAddProduct?: () => void;
+  onCloseAddProduct?: () => void;
+};
+
+export default function Products(_props: ProductsProps) {
   const [activeProducts, setActiveProducts] = useState(0);
   const [activeVariations, setActiveVariations] = useState(0);
 

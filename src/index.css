@@ -5,6 +5,10 @@
 }
 
 :root {
+  --sidebar-expanded-width: 280px;
+  --sidebar-collapsed-width: 92px;
+  --sidebar-tablet-width: 80px;
+  --sidebar-mobile-width: 72px;
   --yellow: #f5c518;
   --background: #ffffff;
   --surface: #f5f5f5;

@@ -3,6 +3,14 @@ import type { AccountSummaryItem } from './AccountsSummary';
 import { loadAccountItems } from '../../services/accounts';
 import { supabase } from '../../lib/supabase';
 import type { OrderPriceCode } from '../../services/orderPricing';
+import {
+  convertImageToWebp,
+  getAgentProfilePath,
+  getVersionedImageUrl,
+  MAX_PROFILE_IMAGE_DIMENSION,
+  PROFILE_IMAGE_BUCKET,
+  PROFILE_IMAGE_QUALITY,
+} from '../../utils/profileImages';
 import styles from './AgentProfilePanel.module.css';
 
 type AgentProfilePanelProps = {
@@ -91,21 +99,9 @@ const sections: { id: PanelSection; label: string; icon: string }[] = [
 ];
 
 const priceCodes: OrderPriceCode[] = ['R1', 'R2', 'W1', 'W2', 'SP', 'CP'];
-const PROFILE_IMAGE_BUCKET = 'agent-profiles';
-const MAX_PROFILE_IMAGE_BYTES = 5 * 1024 * 1024;
-const MAX_PROFILE_IMAGE_DIMENSION = 720;
-const PROFILE_IMAGE_QUALITY = 0.82;
-const ACCEPTED_PROFILE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
-
 type PendingProfileImage = {
   blob: Blob;
   previewUrl: string;
-};
-
-type ConvertImageOptions = {
-  maxWidth: number;
-  maxHeight: number;
-  quality: number;
 };
 
 function createTempId() {
@@ -129,75 +125,6 @@ function normalizeText(value: string | null | undefined) {
   return String(value ?? '').trim();
 }
 
-function getAgentProfilePath(agentId: string) {
-  return `agents/${agentId}/profile.webp`;
-}
-
-function getVersionedImageUrl(url: string, version: string) {
-  if (!url) return '';
-  const separator = url.includes('?') ? '&' : '?';
-  return `${url}${separator}v=${encodeURIComponent(version || String(Date.now()))}`;
-}
-
-async function convertImageToWebp(file: File, options: ConvertImageOptions) {
-  if (!ACCEPTED_PROFILE_IMAGE_TYPES.has(file.type)) {
-    throw new Error('Upload a JPG, PNG, or WEBP image.');
-  }
-
-  if (file.size > MAX_PROFILE_IMAGE_BYTES) {
-    throw new Error('Profile image must be 5 MB or smaller.');
-  }
-
-  const sourceUrl = URL.createObjectURL(file);
-
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const element = new Image();
-      element.onload = () => resolve(element);
-      element.onerror = () => reject(new Error('Unable to decode this image.'));
-      element.src = sourceUrl;
-    });
-
-    const sourceWidth = image.naturalWidth;
-    const sourceHeight = image.naturalHeight;
-
-    if (!sourceWidth || !sourceHeight) {
-      throw new Error('Unable to read this image size.');
-    }
-
-    const scale = Math.min(options.maxWidth / sourceWidth, options.maxHeight / sourceHeight, 1);
-    const outputWidth = Math.max(1, Math.round(sourceWidth * scale));
-    const outputHeight = Math.max(1, Math.round(sourceHeight * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = outputWidth;
-    canvas.height = outputHeight;
-
-    const context = canvas.getContext('2d');
-    if (!context) {
-      throw new Error('Unable to prepare image conversion.');
-    }
-
-    context.drawImage(image, 0, 0, outputWidth, outputHeight);
-
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob(
-        (nextBlob) => {
-          if (!nextBlob) {
-            reject(new Error('WEBP conversion failed.'));
-            return;
-          }
-          resolve(nextBlob);
-        },
-        'image/webp',
-        options.quality,
-      );
-    });
-
-    return blob;
-  } finally {
-    URL.revokeObjectURL(sourceUrl);
-  }
-}
 
 function mapAccountToAgentDraft(account: AccountSummaryItem): AgentDraft {
   return {
@@ -481,7 +408,7 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
           .from('agent_accounts')
           .select('id, auth_user_id, agent_code, full_name, company_name, contact_number, email, address, profile_image_url, status, notes, must_change_password, password_reset_at, updated_at')
           .eq('id', account.id)
-          .single(),
+          .maybeSingle(),
         supabase
           .from('agent_clients')
           .select('id, agent_id, client_code, client_name, company_name, contact_person, contact_number, email, address, tin, status, notes, created_at')
@@ -495,6 +422,9 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
 
       const error = agentRes.error ?? clientsRes.error ?? priceRes.error;
       if (error) throw new Error(error.message);
+      if (!agentRes.data) {
+        throw new Error('Agent profile was not found. Check the selected agent and agent account access policies.');
+      }
 
       const nextAgent = mapAgentRow(agentRes.data as AgentRow);
       const nextClients = ((clientsRes.data ?? []) as ClientRow[]).map(mapClientRow);
@@ -674,11 +604,19 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
               status: trimmedAgent.status,
             })
             .eq('id', trimmedAgent.id)
-            .select('id, profile_image_url')
-            .single()
+            .select(
+              'id, auth_user_id, agent_code, full_name, company_name, contact_number, email, address, profile_image_url, status, notes, must_change_password, password_reset_at, updated_at',
+            )
+            .maybeSingle()
             .then(({ data, error }) => {
               if (error) throw new Error(error.message);
-              const persistedProfileImageUrl = String(data?.profile_image_url ?? '');
+              if (!data) {
+                throw new Error(
+                  'Agent profile update returned no row. Check the agent ID and agent_accounts UPDATE/SELECT policies.',
+                );
+              }
+
+              const persistedProfileImageUrl = String(data.profile_image_url ?? '');
               if (profileImageChanged && persistedProfileImageUrl !== nextProfileImageUrl) {
                 throw new Error('Profile image URL was not persisted on the agent account.');
               }

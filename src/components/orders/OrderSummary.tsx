@@ -8,6 +8,7 @@ type OrderSummaryProps = {
   appliedSingleDate: string | null;
   appliedRangeStart: string | null;
   appliedRangeEnd: string | null;
+  refreshKey?: number;
 };
 
 type OrderItem = {
@@ -265,6 +266,7 @@ export default function OrderSummary({
   appliedSingleDate,
   appliedRangeStart,
   appliedRangeEnd,
+  refreshKey = 0,
 }: OrderSummaryProps) {
   const warnedMissingAgentIdsRef = useRef<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
@@ -493,7 +495,7 @@ export default function OrderSummary({
     }
   useEffect(() => {
     void loadOrders();
-  }, []);
+  }, [refreshKey]);
 
   useEffect(() => {
     setCurrentPage((prev) => Math.min(prev, totalPages));
@@ -1512,4 +1514,4 @@ export default function OrderSummary({
     </section>
   );
 }
-  
+    

@@ -1,31 +1,35 @@
 .mainContent {
-    margin-left: 300px; 
-    margin-top: 3.75rem;
-    height: calc(100vh - 3.75rem);
-    overflow-y: auto;
-    overflow-x: hidden;
-    background-color: var(--background);
-    padding: 0;              /* ← remove padding, let each page handle its own */
-    flex: 1;
-    transition: margin-left 0.3s ease;
-  }
-  
+  margin-left: var(--sidebar-expanded-width);
+  margin-top: 3.75rem;
+  height: calc(100vh - 3.75rem);
+  overflow-y: auto;
+  overflow-x: hidden;
+  background-color: var(--background);
+  padding: 0;
+  flex: 1;
+  transition: margin-left 0.3s ease;
+}
+
+.mainContent.collapsed {
+  margin-left: var(--sidebar-collapsed-width);
+}
+
+.contentFrame {
+  min-height: 100%;
+}
+
+@media (max-width: 1024px) {
+  .mainContent,
   .mainContent.collapsed {
-    margin-left: 80px;
+    min-width: 0;
+    margin-left: var(--sidebar-tablet-width);
+    transition: none;
   }
+}
 
-  @media (max-width: 1024px) {
-    .mainContent,
-    .mainContent.collapsed {
-      min-width: 0;
-      margin-left: 72px;
-      transition: none;
-    }
+@media (max-width: 600px) {
+  .mainContent,
+  .mainContent.collapsed {
+    margin-left: var(--sidebar-mobile-width);
   }
-
-  @media (max-width: 600px) {
-    .mainContent,
-    .mainContent.collapsed {
-      margin-left: 64px;
-    }
-  }
+}

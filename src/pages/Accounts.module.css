@@ -71,6 +71,61 @@
   gap: 1rem;
 }
 
+.loadNotice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 22%, var(--card-border));
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(255, 210, 31, 0.12), rgba(255, 255, 255, 0.98));
+  color: var(--text);
+  box-shadow: var(--card-shadow);
+}
+
+.loadNotice div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.loadNotice strong,
+.loadNotice span,
+.loadNotice button {
+  font-family: 'Montserrat', sans-serif;
+}
+
+.loadNotice strong {
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.loadNotice span {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.loadNotice button {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+  background: linear-gradient(135deg, #ffd21f, #ffb000);
+  color: #111827;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 800;
+  box-shadow: 0 10px 22px rgba(245, 158, 11, 0.18);
+}
+
+:global(:root.dark) .loadNotice {
+  border-color: color-mix(in srgb, var(--yellow) 32%, var(--card-border));
+  background:
+    radial-gradient(circle at top right, rgba(245, 197, 24, 0.12), transparent 34%),
+    linear-gradient(135deg, #1f1f1f 0%, #171717 100%);
+}
+
 @media (max-width: 768px) {
   .accounts {
     padding: 1rem;

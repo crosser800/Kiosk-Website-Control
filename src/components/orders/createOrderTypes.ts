@@ -38,6 +38,8 @@ export type CreateOrderClient = {
   contactPerson: string;
   contactNumber: string;
   email: string;
+  address: string;
+  tin: string;
   status: string;
 };
 
@@ -83,11 +85,16 @@ export type CreateOrderDraft = {
   agentClientId: string;
   clientName: string;
   guestFullName: string;
+  guestCompany: string;
+  guestAddress: string;
+  guestTin: string;
   guestMobileNumber: string;
+  guestEmail: string;
   guestNotes: string;
   branchId: string;
+  branchName: string;
+  branchCode: string;
   termId: string;
-  poNumber: string;
   notes: string;
   items: CreateOrderCartItem[];
   totals: CreateOrderTotals;

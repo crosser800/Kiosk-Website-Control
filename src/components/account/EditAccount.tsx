@@ -48,6 +48,10 @@ function getInitialForm(account: AccountSummaryItem): AccountForm {
   };
 }
 
+function isValidEmail(email: string) {
+  return !email.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
 export default function EditAccount({ account, onSave, onClose }: EditAccountProps) {
   if (account.role === 'agents') {
     return <AgentProfilePanel account={account} onSave={onSave} onClose={onClose} />;
@@ -107,17 +111,22 @@ function AdminEditAccount({ account, onSave, onClose }: EditAccountProps) {
   }
 
   function validateForm() {
-    const requiredValues = [
-      form.name,
-      form.role,
-      form.contact,
-      form.branch,
-    ];
-    const hasRoleSpecificValue =
-      form.role === 'admins' ? form.access.length > 0 : Boolean(form.handling.trim());
+    const requiredValues =
+      form.role === 'admins'
+        ? [form.name, form.email, form.contact]
+        : [form.name, form.role, form.contact, form.branch, form.handling];
 
-    if (requiredValues.some((value) => !value.trim()) || !hasRoleSpecificValue) {
-      setValidationError('Complete all required fields except email address.');
+    if (requiredValues.some((value) => !value.trim())) {
+      setValidationError(
+        form.role === 'admins'
+          ? 'Name, email, and contact are required for admin accounts.'
+          : 'Complete all required fields except email address.',
+      );
+      return false;
+    }
+
+    if (!isValidEmail(form.email)) {
+      setValidationError('Enter a valid email address.');
       return false;
     }
 
@@ -306,12 +315,11 @@ function AdminEditAccount({ account, onSave, onClose }: EditAccountProps) {
 
             {form.role === 'admins' ? (
               <label className={styles.field}>
-                <span className={styles.label}>Choose Branch</span>
+                <span className={styles.label}>Department</span>
                 <select
                   value={form.branch}
                   onChange={(event) => updateField('branch', event.target.value)}
                   className={styles.select}
-                  required
                 >
                   <option value=""></option>
                   {branchOptions.map((branch) => (

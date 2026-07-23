@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import styles from './VarAndPrice.module.css';
-import type { SurchargeItem } from '../../../services/types';
+import type { SurchargeItem } from './types';
 
 type SurchargeProps = {
   onBack: () => void;
