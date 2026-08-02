@@ -336,6 +336,37 @@
   background: linear-gradient(135deg, rgba(250, 204, 21, 0.14), rgba(250, 204, 21, 0.04));
 }
 
+.accessSummaryButton {
+  width: fit-content;
+  min-width: 7.2rem;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.12rem;
+  padding: 0.42rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 22%, var(--card-border));
+  border-radius: 0.7rem;
+  background: color-mix(in srgb, var(--yellow) 8%, var(--surface));
+  color: var(--text);
+  cursor: pointer;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 800;
+  line-height: 1.15;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.accessSummaryButton:hover {
+  border-color: var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 16%, var(--surface));
+  transform: translateY(-1px);
+}
+
+.accessSummaryButton small {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .actionButton:disabled {
   cursor: not-allowed;
   opacity: 0.45;
@@ -362,6 +393,14 @@
   color: #7c5300;
   font-size: 0.68rem;
   font-weight: 800;
+}
+
+.metaText {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 :global(:root.dark) .actionButton {
@@ -503,6 +542,181 @@
 .paginationIcon {
   width: 1rem;
   height: 1rem;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(17, 24, 39, 0.42);
+  backdrop-filter: blur(5px);
+}
+
+.accessModal {
+  width: min(42rem, 100%);
+  max-height: min(42rem, calc(100vh - 2rem));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--yellow) 28%, var(--card-border));
+  border-radius: 1.1rem;
+  background:
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.16), transparent 32%),
+    var(--card-bg);
+  box-shadow: 0 24px 64px rgba(17, 24, 39, 0.24);
+}
+
+.accessModalHeader,
+.accessModalActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+}
+
+.accessModalHeader {
+  border-bottom: 1px solid color-mix(in srgb, var(--yellow) 18%, var(--card-border));
+}
+
+.accessModalHeader h2,
+.accessModalHeader p {
+  margin: 0;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.accessModalHeader h2 {
+  color: var(--text);
+  font-size: 1.15rem;
+  font-weight: 850;
+}
+
+.accessModalHeader p {
+  margin-top: 0.22rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.accessModalClose {
+  width: 2.2rem;
+  height: 2.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--yellow) 18%, var(--card-border));
+  border-radius: 0.72rem;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.accessModalMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1.15rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--yellow) 12%, var(--card-border));
+}
+
+.accessModalMeta span,
+.accessModalMeta strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: 0 0.7rem;
+  border-radius: 999px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.accessModalMeta span {
+  border: 1px solid var(--card-border);
+  color: var(--text-muted);
+  background: var(--surface);
+}
+
+.accessModalMeta strong {
+  border: 1px solid color-mix(in srgb, var(--yellow) 34%, var(--card-border));
+  color: #7c5300;
+  background: color-mix(in srgb, var(--yellow) 16%, var(--surface));
+}
+
+.accessModalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.15rem;
+  overflow-y: auto;
+}
+
+.permissionGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 12%, var(--card-border));
+  border-radius: 0.85rem;
+  background: color-mix(in srgb, var(--surface) 86%, white);
+}
+
+.permissionGroup h3 {
+  margin: 0;
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+}
+
+.permissionList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.35rem 0.75rem;
+}
+
+.permissionItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.permissionItem i {
+  color: #0f9f6e;
+  font-size: 0.72rem;
+}
+
+.emptyPermissions {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.accessModalActions {
+  justify-content: flex-end;
+  border-top: 1px solid color-mix(in srgb, var(--yellow) 12%, var(--card-border));
+}
+
+:global(:root.dark) .accessSummaryButton,
+:global(:root.dark) .accessModalClose,
+:global(:root.dark) .permissionGroup,
+:global(:root.dark) .accessModalMeta span {
+  border-color: color-mix(in srgb, var(--yellow) 24%, var(--card-border));
+  background:
+    radial-gradient(circle at top right, rgba(245, 197, 24, 0.08), transparent 42%),
+    linear-gradient(180deg, #202020 0%, #171717 100%);
 }
 
 @media (max-width: 900px) {

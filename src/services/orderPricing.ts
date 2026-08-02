@@ -89,6 +89,10 @@ export type DiscountRule = {
   priceType: string | null;
   priceCode: string | null;
   priority: number;
+  applySequence: number;
+  calculationMethod: string | null;
+  discountGroup: string | null;
+  appliesTo: string | null;
   stackable: boolean;
   startsAt: string | null;
   endsAt: string | null;
@@ -207,30 +211,12 @@ export function calculateOrderLine(input: {
   const surchargeEvaluations = dedupeRules(input.surcharges ?? [], 'surcharge').map((rule) =>
     evaluateSurchargeRule(rule, context),
   );
-  const discountPromotions = discountEvaluations
+  const eligibleDiscountRules = discountEvaluations
     .filter((evaluation) => evaluation.reasons.length === 0)
     .map((evaluation) => evaluation.rule)
-    .sort(comparePromotions)
-    .filter(createStackingFilter())
-    .map((rule) => {
-      const discountAmount =
-        rule.type === 'Percent'
-          ? grossSubtotal * ((rule.percent ?? 0) / 100)
-          : Math.min(rule.amount ?? 0, grossSubtotal);
-      return {
-        id: rule.id,
-        source: 'discount' as const,
-        dedupeKey: createPromotionDedupeKey(rule, 'discount'),
-        name: rule.name,
-        type: rule.type,
-        priority: rule.priority,
-        stackable: rule.stackable,
-        discountAmount,
-        surchargeAmount: 0,
-        freeQuantity: 0,
-        description: describeDiscountRule(rule, discountAmount),
-      };
-    });
+    .sort(compareDiscountRules);
+  const selectedDiscountRules = selectBestDiscountRuleGroup(eligibleDiscountRules);
+  const discountPromotions = calculateDiscountPromotions(selectedDiscountRules, grossSubtotal);
 
   const surchargePromotions = surchargeEvaluations
     .filter((evaluation) => evaluation.reasons.length === 0)
@@ -304,17 +290,93 @@ function comparePromotions(left: { priority: number }, right: { priority: number
   return left.priority - right.priority;
 }
 
-function createStackingFilter() {
-  let acceptedNonStackable = false;
-  return (rule: DiscountRule) => {
-    if (acceptedNonStackable) {
-      return rule.stackable;
+function compareDiscountRules(left: DiscountRule, right: DiscountRule) {
+  const leftOrder = toSafeNumber(left.applySequence, Number.NaN);
+  const rightOrder = toSafeNumber(right.applySequence, Number.NaN);
+  if (Number.isFinite(leftOrder) && Number.isFinite(rightOrder) && leftOrder !== rightOrder) {
+    return leftOrder - rightOrder;
+  }
+  if (Number.isFinite(leftOrder) !== Number.isFinite(rightOrder)) {
+    return Number.isFinite(leftOrder) ? -1 : 1;
+  }
+  return left.priority - right.priority;
+}
+
+function selectBestDiscountRuleGroup(rules: DiscountRule[]) {
+  if (rules.length <= 1) return rules;
+
+  const groups = new Map<string, DiscountRule[]>();
+  rules.forEach((rule) => {
+    const key = normalizeText(rule.discountGroup) || rule.id;
+    groups.set(key, [...(groups.get(key) ?? []), rule]);
+  });
+
+  const sortedGroups = Array.from(groups.values()).sort((left, right) => {
+    const leftSpecificity = getDiscountRuleGroupSpecificity(left);
+    const rightSpecificity = getDiscountRuleGroupSpecificity(right);
+    if (leftSpecificity !== rightSpecificity) {
+      return rightSpecificity - leftSpecificity;
     }
-    if (!rule.stackable) {
-      acceptedNonStackable = true;
+    return Math.min(...left.map((rule) => rule.priority)) - Math.min(...right.map((rule) => rule.priority));
+  });
+
+  return (sortedGroups[0] ?? []).slice().sort(compareDiscountRules);
+}
+
+function getDiscountRuleGroupSpecificity(rules: DiscountRule[]) {
+  return Math.max(
+    ...rules.map((rule) =>
+      Math.max(
+        toSafeNumber(rule.minQuantity, 1),
+        ...rule.classes.map((item) => toSafeNumber(item.minOrderQuantity, 1)),
+      ),
+    ),
+  );
+}
+
+function calculateDiscountPromotions(rules: DiscountRule[], grossSubtotal: number): ApplicablePromotion[] {
+  const cascadingGroups = new Set(
+    rules
+      .filter((rule) => isCascadingRule(rule))
+      .map((rule) => normalizeText(rule.discountGroup) || rule.id),
+  );
+  const remainingByGroup = new Map<string, number>();
+
+  return rules.map((rule) => {
+    const groupKey = normalizeText(rule.discountGroup) || rule.id;
+    const usesCascading = cascadingGroups.has(groupKey) && isCascadingRule(rule);
+    const basis = usesCascading ? remainingByGroup.get(groupKey) ?? grossSubtotal : grossSubtotal;
+    const discountAmount =
+      rule.type === 'Percent'
+        ? basis * ((rule.percent ?? 0) / 100)
+        : Math.min(rule.amount ?? 0, basis);
+    const boundedDiscount = Math.min(Math.max(0, discountAmount), basis);
+
+    if (usesCascading) {
+      remainingByGroup.set(groupKey, Math.max(0, basis - boundedDiscount));
     }
-    return true;
-  };
+
+    return {
+      id: rule.id,
+      source: 'discount' as const,
+      dedupeKey: createPromotionDedupeKey(rule, 'discount'),
+      name: rule.name,
+      type: rule.type,
+      priority: rule.priority,
+      stackable: rule.stackable,
+      discountAmount: boundedDiscount,
+      surchargeAmount: 0,
+      freeQuantity: 0,
+      description: describeDiscountRule(rule, boundedDiscount),
+    };
+  });
+}
+
+function isCascadingRule(rule: DiscountRule) {
+  return (
+    rule.stackable === true &&
+    String(rule.calculationMethod ?? '').trim().toLowerCase() === 'cascading'
+  );
 }
 
 function evaluateDiscountRule(rule: DiscountRule, context: RuleMatchContext): DiscountEvaluation {
@@ -502,6 +564,9 @@ function createPromotionDedupeKey(rule: DiscountRule | SurchargeRule, source: 'd
     normalizeText(rule.priceType),
     normalizeText(rule.branchName),
     normalizeText(rule.type),
+    'calculationMethod' in rule ? normalizeText(rule.calculationMethod) : '',
+    'discountGroup' in rule ? normalizeText(rule.discountGroup) : '',
+    'applySequence' in rule ? rule.applySequence ?? '' : '',
     rule.minQuantity,
     rule.maxQuantity ?? '',
     rule.percent ?? '',

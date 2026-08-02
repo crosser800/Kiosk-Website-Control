@@ -13,6 +13,7 @@ type SidebarProps = {
   accountName: string;
   accountRole: string;
   accountImageUrl?: string;
+  allowedItems?: string[];
 };
 
 const navItems = [
@@ -35,12 +36,16 @@ export default function Sidebar({
   accountName,
   accountRole,
   accountImageUrl = '',
+  allowedItems,
 }: SidebarProps) {
   const [isAccountMenuOpen, setIsAccountMenuOpen] =
     useState(false);
   const accountAreaRef = useRef<HTMLDivElement | null>(null);
   const accountInitial =
     accountName.trim().charAt(0).toUpperCase() || 'A';
+  const visibleNavItems = allowedItems
+    ? navItems.filter((item) => allowedItems.includes(item.name))
+    : navItems;
 
   useEffect(() => {
     if (!isAccountMenuOpen) return;
@@ -107,7 +112,7 @@ export default function Sidebar({
       </div>
 
       <nav className={styles.nav}>
-        {navItems.map((item) => (
+        {visibleNavItems.map((item) => (
           <button
             key={item.name}
             type="button"

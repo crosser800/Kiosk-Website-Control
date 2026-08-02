@@ -54,6 +54,7 @@ type SupabaseSettingsSectionProps<
   emptyText: string;
   onReorder?: (orderedIds: string[]) => void | Promise<unknown>;
   renderForm?: () => React.ReactNode;
+  canCreate?: boolean;
 };
 
 export default function SupabaseSettingsSection<
@@ -84,6 +85,7 @@ export default function SupabaseSettingsSection<
   emptyText,
   onReorder,
   renderForm,
+  canCreate = true,
 }: SupabaseSettingsSectionProps<TRecord, TForm>) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -298,9 +300,11 @@ export default function SupabaseSettingsSection<
       </div>
 
       <div className={styles.toolbar}>
-        <button type="button" className={styles.primaryButton} onClick={handleOpenCreate}>
-          Add Record
-        </button>
+        {canCreate ? (
+          <button type="button" className={styles.primaryButton} onClick={handleOpenCreate}>
+            Add Record
+          </button>
+        ) : null}
         {onReorder ? (
           <p className={styles.reorderHint}>
             {searchValue.trim()

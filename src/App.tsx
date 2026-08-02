@@ -18,9 +18,12 @@ import CreateNewPassword from './pages/CreateNewPassword';
 import { supabase } from './lib/supabase';
 import {
   resolveAuthenticatedAccess,
+  signOutInternalAdminOnly,
   signOutAdmin,
+  signOutOperationsGateway,
   type AuthAccessState,
 } from './services/auth';
+import { hasModulePermission } from './services/internalAdminAuth';
 import { useCurrentAdminProfile } from './hooks/useCurrentAdminProfile';
 import { getVersionedImageUrl } from './utils/profileImages';
 
@@ -68,8 +71,20 @@ export default function App() {
   const isInitializingAuthRef = useRef(isInitializingAuth);
 
   const currentAdminProfile = useCurrentAdminProfile(
-    authAccessState.kind === 'admin',
+    authAccessState.kind === 'admin' && !authAccessState.internalSession,
   );
+
+  const internalPermissions =
+    authAccessState.kind === 'admin'
+      ? authAccessState.internalSession?.permissions ?? null
+      : null;
+
+  const allowedNavigationItems =
+    internalPermissions === null
+      ? undefined
+      : ['Dashboard', 'Products', 'Order', 'Sales', 'Accounts', 'Settings'].filter((item) =>
+          item === 'Dashboard' || hasModulePermission(internalPermissions, item),
+        );
 
   useEffect(() => {
     activeRef.current = active;
@@ -271,6 +286,9 @@ export default function App() {
       : active;
 
   const sidebarAccountName =
+    (authAccessState.kind === 'admin'
+      ? authAccessState.internalSession?.account.fullName
+      : '') ||
     currentAdminProfile.profile?.fullName ||
     (authAccessState.kind === 'admin' &&
     authAccessState.email
@@ -278,14 +296,20 @@ export default function App() {
       : 'Admin User');
 
   const sidebarAccountRole =
+    (authAccessState.kind === 'admin' && authAccessState.internalSession ? 'Internal Admin' : '') ||
     currentAdminProfile.profile?.roleLabel ||
     (authAccessState.kind === 'admin' &&
     authAccessState.role === 'admin'
       ? 'Admin'
       : 'Super Admin');
 
-  const sidebarAccountImage =
-    currentAdminProfile.profile?.profileImageUrl
+  const internalProfileImage =
+    authAccessState.kind === 'admin'
+      ? authAccessState.internalSession?.account.profileImageUrl ?? ''
+      : '';
+  const sidebarAccountImage = internalProfileImage
+    ? internalProfileImage
+    : currentAdminProfile.profile?.profileImageUrl
       ? getVersionedImageUrl(
           currentAdminProfile.profile.profileImageUrl,
           currentAdminProfile.profile.updatedAt,
@@ -293,6 +317,9 @@ export default function App() {
       : '';
 
   const handleNavigate = (item: string) => {
+    if (allowedNavigationItems && !allowedNavigationItems.includes(item)) {
+      return;
+    }
     logAppLifecycle('user navigation', {
       from: activeRef.current,
       to: item,
@@ -347,9 +374,17 @@ export default function App() {
     setIsLoggingOut(true);
 
     try {
-      await signOutAdmin();
+      if (authAccessStateRef.current.kind === 'admin' && authAccessStateRef.current.internalSession) {
+        await signOutInternalAdminOnly();
+      } else {
+        await signOutAdmin();
+      }
     } finally {
-      setAuthAccessState({ kind: 'none' });
+      const nextAccessState =
+        authAccessStateRef.current.kind === 'admin' && authAccessStateRef.current.internalSession
+          ? ({ kind: 'internal_login_required', email: authAccessStateRef.current.email } as AuthAccessState)
+          : ({ kind: 'none' } as AuthAccessState);
+      setAuthAccessState(nextAccessState);
       setIsLogoutConfirmOpen(false);
       setIsLoggingOut(false);
       setIsCollapsed(false);
@@ -426,6 +461,24 @@ export default function App() {
   }
 
   if (!isAuthenticated) {
+    if (authAccessState.kind === 'internal_login_required') {
+      return (
+        <Login
+          mode="internal"
+          onLogin={handleLogin}
+          onGatewayLogout={async () => {
+            if (!window.confirm('Log out the Operations gateway account?')) return;
+            await signOutOperationsGateway();
+            setAuthAccessState({ kind: 'none' });
+          }}
+        />
+      );
+    }
+
+    if (authAccessState.kind === 'internal_password_change') {
+      return <Login mode="internalPasswordChange" onLogin={handleLogin} />;
+    }
+
     return <Login onLogin={handleLogin} />;
   }
 
@@ -455,6 +508,7 @@ export default function App() {
         accountName={sidebarAccountName}
         accountRole={sidebarAccountRole}
         accountImageUrl={sidebarAccountImage}
+        allowedItems={allowedNavigationItems}
       />
 
       <Header

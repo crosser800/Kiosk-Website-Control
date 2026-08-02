@@ -119,11 +119,31 @@
   box-shadow: 0 10px 22px rgba(245, 158, 11, 0.18);
 }
 
+.successNotice {
+  width: fit-content;
+  align-self: flex-end;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(15, 159, 110, 0.28);
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 800;
+  box-shadow: var(--card-shadow);
+}
+
 :global(:root.dark) .loadNotice {
   border-color: color-mix(in srgb, var(--yellow) 32%, var(--card-border));
   background:
     radial-gradient(circle at top right, rgba(245, 197, 24, 0.12), transparent 34%),
     linear-gradient(135deg, #1f1f1f 0%, #171717 100%);
+}
+
+:global(:root.dark) .successNotice {
+  border-color: rgba(16, 185, 129, 0.34);
+  background: rgba(16, 185, 129, 0.16);
+  color: #6ee7b7;
 }
 
 @media (max-width: 768px) {

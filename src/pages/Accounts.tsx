@@ -33,6 +33,7 @@ export default function Accounts() {
   const [editingAccount, setEditingAccount] = useState<AccountSummaryItem | null>(null);
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const adminCount = useMemo(
     () => accounts.filter((account) => account.role === 'admins').length,
     [accounts],
@@ -73,6 +74,14 @@ export default function Accounts() {
       .finally(() => setIsLoadingAccounts(false));
   }
 
+  function handleAccountsSaved(nextAccounts: AccountSummaryItem[], message: string) {
+    setAccounts(nextAccounts);
+    setCreateAccountType(null);
+    setEditingAccount(null);
+    setSuccessMessage(message);
+    window.setTimeout(() => setSuccessMessage(''), 3200);
+  }
+
   return (
     <div className={styles.accounts}>
       <section className={styles.hero}>
@@ -111,6 +120,12 @@ export default function Accounts() {
         </div>
       ) : null}
 
+      {successMessage ? (
+        <div className={styles.successNotice} role="status">
+          {successMessage}
+        </div>
+      ) : null}
+
       <AccountsSummary
         accounts={accounts}
         onCreateAccount={setCreateAccountType}
@@ -120,10 +135,9 @@ export default function Accounts() {
       {createAccountType && (
         <CreateAccount
           accountType={createAccountType}
-          onCreate={(nextAccounts) => {
+          onCreate={(nextAccounts, message = 'Internal admin created successfully.') => {
             void Promise.resolve(nextAccounts).then((resolved) => {
-              setAccounts(resolved);
-              setCreateAccountType(null);
+              handleAccountsSaved(resolved, message);
             });
           }}
           onClose={() => setCreateAccountType(null)}
@@ -133,8 +147,12 @@ export default function Accounts() {
       {editingAccount && (
         <EditAccount
           account={editingAccount}
-          onSave={(nextAccounts) => {
+          onSave={(nextAccounts, message = 'Internal admin updated successfully.') => {
             void Promise.resolve(nextAccounts).then((resolved) => {
+              if (editingAccount.role === 'admins') {
+                handleAccountsSaved(resolved, message);
+                return;
+              }
               setAccounts(resolved);
             });
           }}

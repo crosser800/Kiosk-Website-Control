@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { DragEvent } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './VarAndPrice.module.css';
 import { supabase } from '../../../lib/supabase';
@@ -64,6 +65,9 @@ type DiscountDraftRow = {
   discountName: string;
   discountType: DiscountItem['discountType'];
   amount: string;
+  calculationMethod: DiscountItem['calculationMethod'];
+  applySequence: string;
+  discountGroup: string;
   unitCondition: UnitCondition;
   unitOptionId: string;
   minOrderQuantity: string;
@@ -74,6 +78,7 @@ type DiscountDraftRow = {
   promoType: DiscountItem['promoType'];
   promoRewardUnitCode: string;
   promoRewardQuantity: string;
+  promoSourceSurchargeId: string;
   promoRewardTargetType: RewardTargetType;
   promoRewardProductId: string;
   promoRewardProductLabel: string;
@@ -213,6 +218,33 @@ function getDiscountAmountPreview(
   return discountType === 'Percent' ? baseAmount * (amount / 100) : Math.min(amount, baseAmount);
 }
 
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function getDiscountValueLabel(type: DiscountItem['discountType'], value: string) {
+  if (!value) return '-';
+  return type === 'Percent' ? `-${parseNumberInput(value)}%` : `-${formatCurrency(parseNumberInput(value))}`;
+}
+
+function getLessPhrase(type: DiscountItem['discountType'], value: string) {
+  if (!value.trim()) return '';
+  return type === 'Percent' ? `less ${parseNumberInput(value)}%` : `less ${formatCurrency(parseNumberInput(value))}`;
+}
+
+function getSuggestedNameValue(type: DiscountItem['discountType'], value: string) {
+  if (!value.trim()) return '';
+  return type === 'Percent' ? `-${parseNumberInput(value)}%` : `-${formatCurrency(parseNumberInput(value))}`;
+}
+
+function pluralizeUnitLabel(unitLabel: string, quantity: string) {
+  const trimmed = unitLabel.trim() || 'unit';
+  const amount = Number(quantity || '1');
+  if (amount === 1 || trimmed.endsWith('s')) return trimmed;
+  if (trimmed.endsWith('x') || trimmed.endsWith('ch') || trimmed.endsWith('sh')) return `${trimmed}es`;
+  return `${trimmed}s`;
+}
+
 function formatSignedValue(type: DiscountItem['discountType'] | SurchargeItem['surchargeType'], value: string) {
   if (!value) {
     return '-';
@@ -310,6 +342,14 @@ function flattenCards(cards: VariationCard[]): VariationItem[] {
       availability: card.availability || 'Available',
     })),
   );
+}
+
+function countDiscountGroups(items: DiscountItem[]) {
+  return new Set(items.map((item) => item.discountGroup?.trim() || item.id)).size;
+}
+
+function formatDiscountCount(count: number) {
+  return `${count} ${count === 1 ? 'discount' : 'discounts'}`;
 }
 
 function createDefaultUnitOption(
@@ -448,6 +488,11 @@ export default function VarAndPrice({
   const [discountDraft, setDiscountDraft] = useState<DiscountDraftRow[]>([]);
   const [activeDiscountTabId, setActiveDiscountTabId] = useState<string>('');
   const [discountModalError, setDiscountModalError] = useState('');
+  const [discountManagedIds, setDiscountManagedIds] = useState<Set<string>>(new Set());
+  const [draggingDiscountStackId, setDraggingDiscountStackId] = useState<string | null>(null);
+  const [dragOverDiscountStackId, setDragOverDiscountStackId] = useState<string | null>(null);
+  const [pendingRemoveDiscountGroupId, setPendingRemoveDiscountGroupId] = useState<string | null>(null);
+  const [pendingDisablePromoGroupId, setPendingDisablePromoGroupId] = useState<string | null>(null);
   const [rewardSearchResults, setRewardSearchResults] = useState<Record<string, RewardProductSearchItem[]>>({});
   const [rewardVariationOptions, setRewardVariationOptions] = useState<Record<string, RewardVariationOption[]>>({});
   const [rewardUnitOptions, setRewardUnitOptions] = useState<Record<string, VariationUnitOptionItem[]>>({});
@@ -546,10 +591,46 @@ export default function VarAndPrice({
       }
       return;
     }
-    if (!activeDiscountTabId || !discountDraft.some((item) => item.id === activeDiscountTabId)) {
-      setActiveDiscountTabId(discountDraft[0].id);
+    const groups = getDiscountRuleGroups();
+    const hasActiveGroup = groups.some(
+      (group) =>
+        group.groupKey === activeDiscountTabId ||
+        group.rows.some((item) => item.id === activeDiscountTabId),
+    );
+    if (!activeDiscountTabId || !hasActiveGroup) {
+      setActiveDiscountTabId(groups[0]?.groupKey ?? discountDraft[0].id);
     }
   }, [activeDiscountTabId, discountDraft]);
+
+  useEffect(() => {
+    if (!pendingRemoveDiscountGroupId) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setPendingRemoveDiscountGroupId(null);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pendingRemoveDiscountGroupId]);
+
+  useEffect(() => {
+    if (!pendingDisablePromoGroupId) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setPendingDisablePromoGroupId(null);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pendingDisablePromoGroupId]);
 
   function pushCards(nextCards: VariationCard[]) {
     onChange(flattenCards(nextCards));
@@ -926,12 +1007,175 @@ export default function VarAndPrice({
     return `Buy at least ${tier.minOrderQuantity || '1'} ${orderUnitLabel}, get ${tier.promoRewardQuantity} ${rewardUnitLabel} of ${targetLabel} free once.`;
   }
 
+  function buildStackingPreview(rows: DiscountDraftRow[], basePrice: number) {
+    const orderedRows = normalizeDiscountRuleRows(rows, getDraftRuleKey(rows[0] ?? createEmptyDiscountDraft()));
+    let remainingPrice = roundMoney(basePrice);
+    const eligibleRows = orderedRows.filter((row) => {
+      const minQuantity = parseNumberInput(row.minOrderQuantity || '1') || 1;
+      const maxQuantity = parseNumberInput(row.maxOrderQuantity);
+      const previewQuantity = minQuantity;
+      if (row.status !== 'Active') return false;
+      if (!row.amount.trim()) return false;
+      if (previewQuantity < minQuantity) return false;
+      if (maxQuantity > 0 && previewQuantity > maxQuantity) return false;
+      if (row.unitCondition === 'selected_unit' && !row.unitOptionId) return false;
+      return true;
+    });
+
+    const steps = eligibleRows.map((row) => {
+      const before = remainingPrice;
+      const amount = parseNumberInput(row.amount);
+      const discountAmount =
+        row.discountType === 'Percent'
+          ? before * (amount / 100)
+          : Math.min(amount, before);
+      remainingPrice = roundMoney(Math.max(0, before - discountAmount));
+      return {
+        id: row.id,
+        label: getDiscountValueLabel(row.discountType, row.amount),
+        before,
+        after: remainingPrice,
+      };
+    });
+    const totalDiscount = roundMoney(Math.max(0, basePrice - remainingPrice));
+    const effectiveDiscount = basePrice > 0 ? roundMoney((totalDiscount / basePrice) * 100) : 0;
+
+    return {
+      steps,
+      finalPrice: remainingPrice,
+      totalDiscount,
+      effectiveDiscount,
+    };
+  }
+
+  function buildDiscountRulePreview(
+    rule: DiscountDraftRow,
+    rows: DiscountDraftRow[],
+    selectedOption: VariationUnitOptionItem | null,
+  ) {
+    if (rule.unitCondition === 'selected_unit' && !rule.unitOptionId) {
+      return 'Select an order unit to complete this rule.';
+    }
+    if (!rule.minOrderQuantity || Number(rule.minOrderQuantity) <= 0) {
+      return 'Enter a minimum order quantity.';
+    }
+    if (rows.length === 0) {
+      return 'Add at least one discount stack.';
+    }
+    const missingStackIndex = rows.findIndex((row) => !row.amount.trim());
+    if (missingStackIndex >= 0) {
+      return `Enter a value for Stack ${missingStackIndex + 1}.`;
+    }
+
+    const unitLabel =
+      rule.unitCondition === 'selected_unit'
+        ? getUnitOptionLabel(selectedOption)
+        : 'unit';
+    const minQty = rule.minOrderQuantity || '1';
+    const maxQty = rule.maxOrderQuantity;
+    const minLabel = `${minQty} ${pluralizeUnitLabel(unitLabel, minQty)}`;
+    const maxLabel = `${maxQty} ${pluralizeUnitLabel(unitLabel, maxQty)}`;
+    const quantityText = maxQty
+      ? `Orders from ${minLabel} to ${maxLabel}`
+      : `Orders of ${minLabel} and above`;
+    const stackText = rows.map((row) => getLessPhrase(row.discountType, row.amount)).filter(Boolean);
+    const discountText = stackText.length > 1
+      ? `${stackText.slice(0, -1).join(', then ')}, then ${stackText[stackText.length - 1]}`
+      : stackText[0] ?? '';
+    const prefixes = [
+      rule.status === 'Inactive' ? 'INACTIVE' : '',
+      rule.hasPromo ? 'PROMO ENABLED' : '',
+    ].filter(Boolean);
+    const prefixText = prefixes.length > 0 ? `${prefixes.join(' — ')} — ` : '';
+    const promoText = rule.hasPromo ? ', with the configured reward' : '';
+
+    return `${prefixText}${quantityText}: ${discountText}${promoText}.`;
+  }
+
+  function buildSuggestedDiscountName(
+    rule: DiscountDraftRow,
+    rows: DiscountDraftRow[],
+    selectedOption: VariationUnitOptionItem | null,
+  ) {
+    if (!rule.minOrderQuantity || rows.length === 0 || rows.some((row) => !row.amount.trim())) {
+      return '';
+    }
+    const unitLabel =
+      rule.unitCondition === 'selected_unit'
+        ? getUnitOptionLabel(selectedOption)
+        : 'unit';
+    const quantityText = `${rule.minOrderQuantity} ${pluralizeUnitLabel(unitLabel, rule.minOrderQuantity)}`;
+    const discountText = rows
+      .map((row) => getSuggestedNameValue(row.discountType, row.amount))
+      .filter(Boolean)
+      .join(' ');
+    return `${quantityText} order ${discountText}`.trim();
+  }
+
+  function buildOrderQuantityPreview(
+    variationId: string,
+    rule: DiscountDraftRow,
+    selectedOption: VariationUnitOptionItem | null,
+  ) {
+    if (rule.unitCondition !== 'selected_unit') {
+      return 'Quantity preview depends on the unit selected during ordering.';
+    }
+    if (!selectedOption) {
+      return 'Select an order unit to preview the converted base quantity.';
+    }
+    const minQty = rule.minOrderQuantity || '1';
+    const basePreview = computeBaseQuantityPreview(
+      variationId,
+      rule.unitCondition,
+      rule.unitOptionId,
+      minQty,
+    );
+    if (!basePreview) {
+      return 'Enter a minimum order quantity to preview the converted base quantity.';
+    }
+    const [baseQuantity, ...baseUnitParts] = basePreview.split(' ');
+    const baseUnit = baseUnitParts.join(' ') || selectedOption.baseUnitCode || selectedOption.unitCode;
+    return `${minQty} ${pluralizeUnitLabel(getUnitOptionLabel(selectedOption), minQty)} = ${baseQuantity} ${pluralizeUnitLabel(baseUnit, baseQuantity)}`;
+  }
+
+  function getPromoValidationMessage(rule: DiscountDraftRow, orderableOptions: VariationUnitOptionItem[]) {
+    if (!rule.hasPromo) return '';
+    if (!rule.promoRewardQuantity || Number(rule.promoRewardQuantity) <= 0) {
+      return 'Enter a reward quantity greater than zero.';
+    }
+    if (!rule.promoRewardUnitOptionId || !rule.promoRewardUnitCode) {
+      return 'Select a reward unit.';
+    }
+    if (
+      rule.promoRewardTargetType === 'same_item' &&
+      !orderableOptions.some((option) => option.id === rule.promoRewardUnitOptionId)
+    ) {
+      return 'Select a reward unit from this item.';
+    }
+    if (
+      rule.promoRewardTargetType === 'different_item' &&
+      (!rule.promoRewardProductId || !rule.promoRewardVariationId || !rule.promoRewardUnitOptionId)
+    ) {
+      return 'Select the reward product, variation, and unit.';
+    }
+    if (
+      rule.promoRewardRepeatMode === 'every' &&
+      (!rule.promoRewardEveryQuantity || Number(rule.promoRewardEveryQuantity) <= 0)
+    ) {
+      return 'Enter an every-quantity trigger greater than zero.';
+    }
+    return '';
+  }
+
   function createEmptyDiscountDraft(): DiscountDraftRow {
     return {
       id: crypto.randomUUID(),
       discountName: '',
       discountType: 'Percent',
       amount: '',
+      calculationMethod: 'Single',
+      applySequence: '1',
+      discountGroup: '',
       unitCondition: 'any_unit',
       unitOptionId: '',
       minOrderQuantity: '1',
@@ -942,6 +1186,7 @@ export default function VarAndPrice({
       promoType: 'Freebie',
       promoRewardUnitCode: '',
       promoRewardQuantity: '1',
+      promoSourceSurchargeId: '',
       promoRewardTargetType: 'same_item',
       promoRewardProductId: '',
       promoRewardProductLabel: '',
@@ -952,6 +1197,305 @@ export default function VarAndPrice({
       promoRewardEveryQuantity: '',
       promoRewardSearchQuery: '',
     };
+  }
+
+  function createDiscountGroupId() {
+    return `rule-${discountContext?.variationId ?? 'variation'}-${discountContext?.code ?? 'price'}-${crypto.randomUUID()}`;
+  }
+
+  function getDraftRuleKey(row: DiscountDraftRow) {
+    return row.discountGroup.trim() || `legacy-${row.id}`;
+  }
+
+  function getDiscountRuleGroups(rows = discountDraft) {
+    const groups = new Map<string, DiscountDraftRow[]>();
+    rows.forEach((row) => {
+      const key = getDraftRuleKey(row);
+      groups.set(key, [...(groups.get(key) ?? []), row]);
+    });
+
+    return Array.from(groups.entries()).map(([groupKey, groupRows]) => ({
+      groupKey,
+      rows: groupRows
+        .slice()
+        .sort(
+          (left, right) =>
+            Number(left.applySequence || '1') -
+            Number(right.applySequence || '1'),
+        ),
+    }));
+  }
+
+  function normalizeDiscountRuleRows(rows: DiscountDraftRow[], groupKey: string) {
+    const rule = rows[0] ?? createEmptyDiscountDraft();
+    const group = groupKey.startsWith('legacy-') ? createDiscountGroupId() : groupKey;
+    const stacked = rows.length > 1;
+
+    return rows.map((row, index) => ({
+      ...row,
+      discountName: rule.discountName,
+      unitCondition: rule.unitCondition,
+      unitOptionId: rule.unitOptionId,
+      minOrderQuantity: rule.minOrderQuantity || '1',
+      maxOrderQuantity: rule.maxOrderQuantity,
+      status: rule.status,
+      hasPromo: rule.hasPromo,
+      promoType: rule.promoType,
+      promoRewardUnitCode: rule.promoRewardUnitCode,
+      promoRewardQuantity: rule.promoRewardQuantity,
+      promoSourceSurchargeId: rule.promoSourceSurchargeId,
+      promoRewardTargetType: rule.promoRewardTargetType,
+      promoRewardProductId: rule.promoRewardProductId,
+      promoRewardProductLabel: rule.promoRewardProductLabel,
+      promoRewardVariationId: rule.promoRewardVariationId,
+      promoRewardVariationLabel: rule.promoRewardVariationLabel,
+      promoRewardUnitOptionId: rule.promoRewardUnitOptionId,
+      promoRewardRepeatMode: rule.promoRewardRepeatMode,
+      promoRewardEveryQuantity: rule.promoRewardEveryQuantity,
+      applySequence: String(index + 1),
+      discountGroup: group,
+      stackable: stacked,
+      calculationMethod: stacked ? ('Cascading' as const) : ('Single' as const),
+    }));
+  }
+
+  function normalizeAllDiscountRules(rows = discountDraft) {
+    return getDiscountRuleGroups(rows).flatMap((group) =>
+      normalizeDiscountRuleRows(group.rows, group.groupKey),
+    );
+  }
+
+  function replaceDiscountGroupRows(
+    current: DiscountDraftRow[],
+    matchGroupKey: string,
+    nextGroupRows: DiscountDraftRow[],
+    nextGroupKey = matchGroupKey,
+  ) {
+    const normalizedGroupRows = normalizeDiscountRuleRows(nextGroupRows, nextGroupKey);
+    const nextRows: DiscountDraftRow[] = [];
+    let inserted = false;
+
+    current.forEach((row) => {
+      if (getDraftRuleKey(row) !== matchGroupKey) {
+        nextRows.push(row);
+        return;
+      }
+      if (!inserted) {
+        nextRows.push(...normalizedGroupRows);
+        inserted = true;
+      }
+    });
+
+    if (!inserted) {
+      nextRows.push(...normalizedGroupRows);
+    }
+
+    return normalizeAllDiscountRules(nextRows);
+  }
+
+  function addDiscountRule() {
+    const nextRule = {
+      ...createEmptyDiscountDraft(),
+      discountName: '',
+      discountGroup: createDiscountGroupId(),
+    };
+    setDiscountDraft((current) => [...current, nextRule]);
+    setActiveDiscountTabId(nextRule.discountGroup);
+  }
+
+  function addDiscountStack(groupKey: string) {
+    const group = getDiscountRuleGroups().find((item) => item.groupKey === groupKey);
+    const base = group?.rows[0] ?? createEmptyDiscountDraft();
+    const resolvedGroupKey = groupKey.startsWith('legacy-') ? createDiscountGroupId() : groupKey;
+    const existingGroupRows = (group?.rows ?? []).map((row) => ({
+      ...row,
+      discountGroup: resolvedGroupKey,
+    }));
+    const nextStack = {
+      ...base,
+      id: crypto.randomUUID(),
+      discountName: '',
+      discountType: 'Percent' as const,
+      amount: '',
+      applySequence: String((group?.rows.length ?? 0) + 1),
+      discountGroup: resolvedGroupKey,
+      stackable: true,
+      calculationMethod: 'Cascading' as const,
+      hasPromo: false,
+    };
+    setDiscountDraft((current) =>
+      replaceDiscountGroupRows(current, groupKey, [...existingGroupRows, nextStack], resolvedGroupKey),
+    );
+    setActiveDiscountTabId(resolvedGroupKey);
+  }
+
+  function updateDiscountRule(groupKey: string, patch: Partial<DiscountDraftRow>) {
+    setDiscountDraft((current) =>
+      normalizeAllDiscountRules(
+        current.map((item) => (getDraftRuleKey(item) === groupKey ? { ...item, ...patch } : item)),
+      ),
+    );
+  }
+
+  function updateDiscountPromo(groupKey: string, patch: Partial<DiscountDraftRow>) {
+    updateDiscountRule(groupKey, patch);
+  }
+
+  function enableDiscountPromo(groupKey: string, enabled: boolean) {
+    const group = getDiscountRuleGroups().find((item) => item.groupKey === groupKey);
+    const rule = group?.rows[0];
+    if (!rule) return;
+
+    if (!enabled && rule.hasPromo && rule.promoSourceSurchargeId) {
+      setPendingDisablePromoGroupId(groupKey);
+      return;
+    }
+
+    updateDiscountPromo(groupKey, { hasPromo: enabled });
+  }
+
+  function confirmDisableDiscountPromo() {
+    if (!pendingDisablePromoGroupId) return;
+    updateDiscountPromo(pendingDisablePromoGroupId, { hasPromo: false });
+    setPendingDisablePromoGroupId(null);
+  }
+
+  function updateDiscountStack(rowId: string, patch: Partial<DiscountDraftRow>) {
+    setDiscountDraft((current) =>
+      normalizeAllDiscountRules(current.map((item) => (item.id === rowId ? { ...item, ...patch } : item))),
+    );
+  }
+
+  function requestRemoveDiscountRule(groupKey: string) {
+    setPendingRemoveDiscountGroupId(groupKey);
+  }
+
+  function confirmRemoveDiscountRule() {
+    if (!pendingRemoveDiscountGroupId) return;
+    setDiscountDraft((current) => {
+      const groups = getDiscountRuleGroups(current);
+      const removedIndex = groups.findIndex((item) => item.groupKey === pendingRemoveDiscountGroupId);
+      const next = current.filter((item) => getDraftRuleKey(item) !== pendingRemoveDiscountGroupId);
+      const nextGroups = getDiscountRuleGroups(next);
+      const nextActiveGroup =
+        nextGroups[Math.max(0, removedIndex - 1)] ?? nextGroups[removedIndex] ?? nextGroups[0] ?? null;
+      setActiveDiscountTabId(nextActiveGroup?.groupKey ?? '');
+      return next.length > 0 ? normalizeAllDiscountRules(next) : [];
+    });
+    setPendingRemoveDiscountGroupId(null);
+  }
+
+  function removeDiscountStack(rowId: string) {
+    setDiscountDraft((current) => normalizeAllDiscountRules(current.filter((item) => item.id !== rowId)));
+  }
+
+  function moveDiscountStack(rowId: string, direction: -1 | 1) {
+    setDiscountDraft((current) => {
+      const group = getDiscountRuleGroups(current).find((item) =>
+        item.rows.some((row) => row.id === rowId),
+      );
+      if (!group) return current;
+      const stackIndex = group.rows.findIndex((row) => row.id === rowId);
+      const targetIndex = stackIndex + direction;
+      if (targetIndex < 0 || targetIndex >= group.rows.length) return current;
+      const nextGroupRows = group.rows.slice();
+      const [item] = nextGroupRows.splice(stackIndex, 1);
+      nextGroupRows.splice(targetIndex, 0, item);
+      return replaceDiscountGroupRows(current, group.groupKey, nextGroupRows);
+    });
+  }
+
+  function reorderDiscountStack(draggedId: string, targetId: string) {
+    if (!draggedId || draggedId === targetId) return;
+
+    setDiscountDraft((current) => {
+      const group = getDiscountRuleGroups(current).find(
+        (item) =>
+          item.rows.some((row) => row.id === draggedId) &&
+          item.rows.some((row) => row.id === targetId),
+      );
+      if (!group) return current;
+
+      const draggedIndex = group.rows.findIndex((row) => row.id === draggedId);
+      const targetIndex = group.rows.findIndex((row) => row.id === targetId);
+      if (draggedIndex < 0 || targetIndex < 0) return current;
+
+      const nextGroupRows = group.rows.slice();
+      const [draggedItem] = nextGroupRows.splice(draggedIndex, 1);
+      nextGroupRows.splice(targetIndex, 0, draggedItem);
+
+      return replaceDiscountGroupRows(current, group.groupKey, nextGroupRows);
+    });
+  }
+
+  function isDiscountStackDragInSameRule(targetId: string, draggedId = draggingDiscountStackId) {
+    if (!draggedId || draggedId === targetId) {
+      return false;
+    }
+
+    return getDiscountRuleGroups().some(
+      (group) =>
+        group.rows.some((row) => row.id === draggedId) &&
+        group.rows.some((row) => row.id === targetId),
+    );
+  }
+
+  function handleDiscountStackDragStart(event: DragEvent<HTMLButtonElement>, rowId: string) {
+    setDraggingDiscountStackId(rowId);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', rowId);
+  }
+
+  function handleDiscountStackDragOver(event: DragEvent<HTMLDivElement>, targetId: string) {
+    if (!isDiscountStackDragInSameRule(targetId)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDragOverDiscountStackId(targetId);
+  }
+
+  function handleDiscountStackDrop(event: DragEvent<HTMLDivElement>, targetId: string) {
+    event.preventDefault();
+    const draggedId = draggingDiscountStackId || event.dataTransfer.getData('text/plain');
+    if (draggedId && isDiscountStackDragInSameRule(targetId, draggedId)) {
+      reorderDiscountStack(draggedId, targetId);
+    }
+    setDraggingDiscountStackId(null);
+    setDragOverDiscountStackId(null);
+  }
+
+  function clearDiscountStackDragState() {
+    setDraggingDiscountStackId(null);
+    setDragOverDiscountStackId(null);
+  }
+
+  function addStackedDiscountRule() {
+    const firstGroup = getDiscountRuleGroups()[0];
+    if (firstGroup) {
+      addDiscountStack(firstGroup.groupKey);
+    }
+  }
+
+  function removeDiscountDraftRow(rowId: string) {
+    removeDiscountStack(rowId);
+  }
+
+  function moveDiscountDraftRow(rowId: string, direction: -1 | 1) {
+    moveDiscountStack(rowId, direction);
+  }
+
+  function setStackingEnabled(enabled: boolean) {
+    const firstGroup = getDiscountRuleGroups()[0];
+    if (enabled && firstGroup && firstGroup.rows.length === 1) {
+      addDiscountStack(firstGroup.groupKey);
+    }
+    if (!enabled && firstGroup && firstGroup.rows.length > 1) {
+      setDiscountDraft((current) =>
+        normalizeAllDiscountRules([
+          firstGroup.rows[0],
+          ...current.filter((row) => getDraftRuleKey(row) !== firstGroup.groupKey),
+        ]),
+      );
+    }
   }
 
   function getCardBaseUnitCode(cardId: string) {
@@ -1164,6 +1708,9 @@ export default function VarAndPrice({
         discountName: item.discountName,
         discountType: item.discountType,
         amount: item.amount,
+        calculationMethod: item.calculationMethod || 'Single',
+        applySequence: item.applySequence || '1',
+        discountGroup: item.discountGroup || '',
         unitCondition: item.unitCondition || 'any_unit',
         unitOptionId: item.unitOptionId || '',
         minOrderQuantity: item.minOrderQuantity || item.minQuantity || '1',
@@ -1174,6 +1721,7 @@ export default function VarAndPrice({
         promoType: item.promoType || 'Freebie',
         promoRewardUnitCode: item.promoRewardUnitCode || '',
         promoRewardQuantity: item.promoRewardQuantity || '1',
+        promoSourceSurchargeId: item.promoSourceSurchargeId || '',
         promoRewardTargetType: item.promoRewardTargetType || 'same_item',
         promoRewardProductId: item.promoRewardProductId || '',
         promoRewardProductLabel: item.promoRewardProductLabel || '',
@@ -1184,12 +1732,21 @@ export default function VarAndPrice({
         promoRewardEveryQuantity: item.promoRewardEveryQuantity || '',
         promoRewardSearchQuery: '',
       }));
+    const visibleExisting = existing.map((item) => ({
+      ...item,
+      discountGroup: item.discountGroup || `legacy-${item.id}`,
+    }));
     setDiscountDraft(
-      existing.length > 0
-        ? existing
-        : [createEmptyDiscountDraft()],
+      visibleExisting.length > 0
+        ? normalizeAllDiscountRules(visibleExisting)
+        : [],
     );
-    setActiveDiscountTabId(existing[0]?.id ?? '');
+    setDiscountManagedIds(new Set(visibleExisting.map((item) => item.id)));
+    setActiveDiscountTabId(
+      visibleExisting.length > 0
+        ? getDraftRuleKey(visibleExisting[0])
+        : '',
+    );
   }
 
   function saveDiscountModal() {
@@ -1200,8 +1757,23 @@ export default function VarAndPrice({
     const currentCard = cards.find((card) => card.id === discountContext.variationId);
     const fallbackRowId = currentCard?.rowIds[discountContext.code];
     const matchVariation = matchesVariation(discountContext.variationId, fallbackRowId);
-    const validationError = discountDraft.find((item) => {
-      if (!item.discountName.trim() || !item.amount.trim()) {
+    const normalizedDraft = normalizeAllDiscountRules(discountDraft);
+    const normalizedGroups = getDiscountRuleGroups(normalizedDraft);
+    const suggestedNameByGroup = new Map(
+      normalizedGroups.map((group) => {
+        const rule = group.rows[0];
+        const selectedOption = rule
+          ? getDraftUnitOption(discountContext.variationId, rule.unitOptionId)
+          : null;
+        return [
+          group.groupKey,
+          rule ? buildSuggestedDiscountName(rule, group.rows, selectedOption) : '',
+        ] as const;
+      }),
+    );
+    const validationError = normalizedDraft.find((item) => {
+      const suggestedName = suggestedNameByGroup.get(getDraftRuleKey(item)) ?? '';
+      if ((!item.discountName.trim() && !suggestedName) || !item.amount.trim()) {
         return true;
       }
       if (item.unitCondition === 'selected_unit' && !item.unitOptionId) {
@@ -1245,17 +1817,20 @@ export default function VarAndPrice({
       );
       return;
     }
-    const filtered = discounts.filter(
-      (item) => !(matchVariation(item.variationId) && item.priceCode === discountContext.code),
-    );
-    const inserted: DiscountItem[] = discountDraft
-      .filter((item) => item.discountName.trim() && item.amount.trim())
+    const filtered = discounts.filter((item) => {
+      const samePriceContext = matchVariation(item.variationId) && item.priceCode === discountContext.code;
+      if (!samePriceContext) return true;
+      if (discountManagedIds.size === 0) return false;
+      return !discountManagedIds.has(item.id);
+    });
+    const inserted: DiscountItem[] = normalizedDraft
+      .filter((item) => (item.discountName.trim() || suggestedNameByGroup.get(getDraftRuleKey(item))) && item.amount.trim())
       .map((item, index) => ({
         id: item.id,
         discountRecordId: '',
         discountClassId: '',
         variationId: discountContext.variationId,
-        discountName: item.discountName.trim(),
+        discountName: item.discountName.trim() || suggestedNameByGroup.get(getDraftRuleKey(item)) || 'Discount',
         discountType: item.discountType,
         amount: item.amount,
         minQuantity: item.minOrderQuantity || '1',
@@ -1263,9 +1838,9 @@ export default function VarAndPrice({
         branchName: codeConfig.branchName,
         priceType: codeConfig.priceType,
         priceCode: codeConfig.code,
-        calculationMethod: 'Single',
-        applySequence: String(index + 1),
-        discountGroup: `${discountContext.variationId}-${discountContext.code}`,
+        calculationMethod: item.calculationMethod,
+        applySequence: item.applySequence || String(index + 1),
+        discountGroup: item.discountGroup,
         appliesTo: 'UnitPrice',
         stackable: item.stackable,
         description: '',
@@ -1345,6 +1920,10 @@ export default function VarAndPrice({
     setDiscountDraft([]);
     setActiveDiscountTabId('');
     setDiscountModalError('');
+    setDiscountManagedIds(new Set());
+    setPendingRemoveDiscountGroupId(null);
+    setPendingDisablePromoGroupId(null);
+    clearDiscountStackDragState();
   }
 
   return (
@@ -1769,13 +2348,14 @@ export default function VarAndPrice({
                     {PRICE_CODES.map((entry) => {
                       const fallbackRowId = card.rowIds[entry.code];
                       const matchVariation = matchesVariation(card.id, fallbackRowId);
-                      const discountCount = discounts.filter((item) => matchVariation(item.variationId) && item.priceCode === entry.code).length;
-                      const discountWithPromoCount = discounts.filter(
+                      const matchingDiscounts = discounts.filter(
+                        (item) => matchVariation(item.variationId) && item.priceCode === entry.code,
+                      );
+                      const discountCount = countDiscountGroups(matchingDiscounts);
+                      const discountWithPromoCount = countDiscountGroups(matchingDiscounts.filter(
                         (item) =>
-                          matchVariation(item.variationId) &&
-                          item.priceCode === entry.code &&
                           item.hasPromo,
-                      ).length;
+                      ));
                       return (
                         <div key={entry.code} className={styles.priceCell}>
                           <div className={styles.priceTop}>
@@ -1791,12 +2371,12 @@ export default function VarAndPrice({
                               className={styles.smallAction}
                               onClick={() => openDiscountModal(card.id, entry.code, fallbackRowId)}
                             >
-                              Manage Discount ({discountCount} rows)
+                              Manage Discount ({formatDiscountCount(discountCount)})
                             </button>
                           </div>
                           {discountWithPromoCount > 0 ? (
                             <p className={styles.priceHint}>
-                              {discountCount} discounts, {discountWithPromoCount} with promo
+                              {formatDiscountCount(discountCount)}, {discountWithPromoCount} with promo
                             </p>
                           ) : null}
                         </div>
@@ -2009,8 +2589,37 @@ export default function VarAndPrice({
             {(() => {
               const currentCard = cards.find((card) => card.id === discountContext.variationId);
               const orderableOptions = getOrderableUnitOptions(discountContext.variationId);
-              const activeTier =
+              const discountRuleGroups = getDiscountRuleGroups();
+              const selectedDiscountGroup =
+                discountRuleGroups.find(
+                  (group) =>
+                    group.groupKey === activeDiscountTabId ||
+                    group.rows.some((item) => item.id === activeDiscountTabId),
+                ) ?? discountRuleGroups[0] ?? null;
+              const selectedDiscountIndex = selectedDiscountGroup
+                ? discountRuleGroups.findIndex((group) => group.groupKey === selectedDiscountGroup.groupKey)
+                : -1;
+              const pendingRemoveDiscountGroup = pendingRemoveDiscountGroupId
+                ? discountRuleGroups.find((group) => group.groupKey === pendingRemoveDiscountGroupId) ?? null
+                : null;
+              const pendingRemoveDiscountIndex = pendingRemoveDiscountGroup
+                ? discountRuleGroups.findIndex((group) => group.groupKey === pendingRemoveDiscountGroup.groupKey)
+                : -1;
+              const pendingRemoveDiscountName =
+                pendingRemoveDiscountGroup?.rows[0]?.discountName.trim() ||
+                (pendingRemoveDiscountIndex >= 0 ? `Discount ${pendingRemoveDiscountIndex + 1}` : 'selected discount');
+              const pendingDisablePromoGroup = pendingDisablePromoGroupId
+                ? discountRuleGroups.find((group) => group.groupKey === pendingDisablePromoGroupId) ?? null
+                : null;
+              const pendingDisablePromoIndex = pendingDisablePromoGroup
+                ? discountRuleGroups.findIndex((group) => group.groupKey === pendingDisablePromoGroup.groupKey)
+                : -1;
+              const pendingDisablePromoName =
+                pendingDisablePromoGroup?.rows[0]?.discountName.trim() ||
+                (pendingDisablePromoIndex >= 0 ? `Discount ${pendingDisablePromoIndex + 1}` : 'selected discount');
+              const activeTier: DiscountDraftRow | null =
                 discountDraft.find((item) => item.id === activeDiscountTabId) ?? discountDraft[0] ?? null;
+              const stackingEnabled = false;
               return (
                 <>
                   <div className={styles.modalHeader}>
@@ -2028,6 +2637,10 @@ export default function VarAndPrice({
                         setDiscountDraft([]);
                         setActiveDiscountTabId('');
                         setDiscountModalError('');
+                        setDiscountManagedIds(new Set());
+                        setPendingRemoveDiscountGroupId(null);
+                        setPendingDisablePromoGroupId(null);
+                        clearDiscountStackDragState();
                       }}
                       aria-label="Close discount modal"
                     >
@@ -2045,13 +2658,517 @@ export default function VarAndPrice({
                       <strong>Price Class:</strong> {discountContext.code}
                     </span>
                     <span className={styles.infoCard}>
-                      <strong>Rules:</strong> {discountDraft.length}
+                      <strong>Discounts:</strong> {discountRuleGroups.length}
                     </span>
                   </div>
                   {discountModalError ? <p className={styles.modalAlert}>{discountModalError}</p> : null}
 
                   <div className={styles.modalContent}>
                     <div className={styles.ruleTabsHeader}>
+                      <div className={styles.ruleTabs}>
+                        {discountRuleGroups.map((ruleGroup, index) => {
+                          const rule = ruleGroup.rows[0];
+                          const isSelected = selectedDiscountGroup?.groupKey === ruleGroup.groupKey;
+                          return (
+                            <button
+                              key={ruleGroup.groupKey}
+                              type="button"
+                              className={`${styles.ruleTab} ${isSelected ? styles.ruleTabActive : ''}`}
+                              onClick={() => setActiveDiscountTabId(ruleGroup.groupKey)}
+                            >
+                              {rule?.discountName.trim() || `Discount ${index + 1}`}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <button type="button" className={styles.secondaryAction} onClick={addDiscountRule}>
+                        + Add Discount
+                      </button>
+                    </div>
+
+                    <div className={styles.ruleList}>
+                      {selectedDiscountGroup ? [selectedDiscountGroup].map((ruleGroup) => {
+                        const ruleIndex = selectedDiscountIndex;
+                        const rule = ruleGroup.rows[0];
+                        if (!rule) return null;
+                        const selectedOption = getDraftUnitOption(
+                          discountContext.variationId,
+                          rule.unitOptionId,
+                        );
+                        const basePrice = currentCard
+                          ? getComputedUnitPrice(currentCard, discountContext.code, '1')
+                          : 0;
+                        const stackingPreview = buildStackingPreview(ruleGroup.rows, basePrice);
+                        const minBasePreview = computeBaseQuantityPreview(
+                          discountContext.variationId,
+                          rule.unitCondition,
+                          rule.unitOptionId,
+                          rule.minOrderQuantity,
+                        );
+                        const maxBasePreview = computeBaseQuantityPreview(
+                          discountContext.variationId,
+                          rule.unitCondition,
+                          rule.unitOptionId,
+                          rule.maxOrderQuantity,
+                        );
+                        const rewardUnitOption = getRewardUnitOption(rule.id, rule);
+                        const rewardUnitLabel =
+                          getUnitOptionLabel(rewardUnitOption) ||
+                          rule.promoRewardUnitCode ||
+                          'unit';
+                        const discountRulePreview = buildDiscountRulePreview(
+                          rule,
+                          ruleGroup.rows,
+                          selectedOption,
+                        );
+                        const suggestedDiscountName = buildSuggestedDiscountName(
+                          rule,
+                          ruleGroup.rows,
+                          selectedOption,
+                        );
+                        const orderQuantityPreview = buildOrderQuantityPreview(
+                          discountContext.variationId,
+                          rule,
+                          selectedOption,
+                        );
+                        const promoValidationMessage = getPromoValidationMessage(rule, orderableOptions);
+
+                        return (
+                          <div key={ruleGroup.groupKey} className={styles.ruleCard}>
+                            <div className={styles.ruleCardHeader}>
+                              <span className={styles.rowIndex}>{ruleIndex + 1}</span>
+                              <span className={styles.ruleSummary}>
+                                Discount {ruleIndex + 1} - minimum {rule.minOrderQuantity || '1'} {getUnitOptionLabel(selectedOption)}
+                              </span>
+                              <button
+                                type="button"
+                                className={styles.deleteAction}
+                                onClick={() => requestRemoveDiscountRule(ruleGroup.groupKey)}
+                              >
+                                Remove Discount
+                              </button>
+                            </div>
+
+                            <div className={styles.ruleGrid}>
+                              <input
+                                className={styles.input}
+                                placeholder="Discount name"
+                                value={rule.discountName}
+                                onChange={(event) => updateDiscountRule(ruleGroup.groupKey, { discountName: event.target.value })}
+                              />
+                              <select
+                                className={styles.select}
+                                value={rule.unitCondition}
+                                onChange={(event) =>
+                                  updateDiscountRule(ruleGroup.groupKey, {
+                                    unitCondition: event.target.value as UnitCondition,
+                                    unitOptionId: event.target.value === 'selected_unit' ? rule.unitOptionId : '',
+                                  })
+                                }
+                              >
+                                <option value="any_unit">Any unit</option>
+                                <option value="selected_unit">Selected unit only</option>
+                              </select>
+                              {rule.unitCondition === 'selected_unit' ? (
+                                <select
+                                  className={styles.select}
+                                  value={rule.unitOptionId}
+                                  onChange={(event) => updateDiscountRule(ruleGroup.groupKey, { unitOptionId: event.target.value })}
+                                >
+                                  <option value="">Select order unit</option>
+                                  {orderableOptions.map((option) => (
+                                    <option key={option.id} value={option.id}>
+                                      {getUnitOptionLabel(option)}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : null}
+                              <input
+                                className={styles.input}
+                                placeholder="Min Order Qty"
+                                value={rule.minOrderQuantity}
+                                onChange={(event) =>
+                                  updateDiscountRule(ruleGroup.groupKey, {
+                                    minOrderQuantity: event.target.value.replace(/[^\d.]/g, ''),
+                                  })
+                                }
+                              />
+                              <input
+                                className={styles.input}
+                                placeholder="Max Order Qty (optional)"
+                                value={rule.maxOrderQuantity}
+                                onChange={(event) =>
+                                  updateDiscountRule(ruleGroup.groupKey, {
+                                    maxOrderQuantity: event.target.value.replace(/[^\d.]/g, ''),
+                                  })
+                                }
+                              />
+                              <select
+                                className={styles.select}
+                                value={rule.status}
+                                onChange={(event) =>
+                                  updateDiscountRule(ruleGroup.groupKey, {
+                                    status: event.target.value as DiscountItem['status'],
+                                  })
+                                }
+                              >
+                                <option value="Active">Active</option>
+                                <option value="Inactive">Inactive</option>
+                              </select>
+                            </div>
+
+                            <h5 className={styles.modalSectionTitle}>Discount Stack</h5>
+                            <div className={styles.stackList}>
+                              {ruleGroup.rows.map((stackItem, stackIndex) => {
+                                const isDragging = draggingDiscountStackId === stackItem.id;
+                                const isDragOver =
+                                  dragOverDiscountStackId === stackItem.id &&
+                                  draggingDiscountStackId !== stackItem.id;
+
+                                return (
+                                  <div
+                                    key={stackItem.id}
+                                    className={`${styles.stackRow} ${isDragging ? styles.stackRowDragging : ''} ${
+                                      isDragOver ? styles.stackRowDragOver : ''
+                                    }`}
+                                    onDragOver={(event) => handleDiscountStackDragOver(event, stackItem.id)}
+                                    onDrop={(event) => handleDiscountStackDrop(event, stackItem.id)}
+                                  >
+                                    <button
+                                      type="button"
+                                      className={styles.stackDragHandle}
+                                      draggable
+                                      title="Drag to reorder"
+                                      aria-label="Drag to reorder"
+                                      onDragStart={(event) => handleDiscountStackDragStart(event, stackItem.id)}
+                                      onDragEnd={clearDiscountStackDragState}
+                                    >
+                                      <i className="fa-solid fa-grip-vertical" aria-hidden="true"></i>
+                                    </button>
+                                    <span className={styles.stackSequence}>{stackIndex + 1}</span>
+                                    <select
+                                      className={`${styles.select} ${styles.stackTypeSelect}`}
+                                      value={stackItem.discountType}
+                                      onChange={(event) =>
+                                        updateDiscountStack(stackItem.id, {
+                                          discountType: event.target.value as DiscountItem['discountType'],
+                                        })
+                                      }
+                                    >
+                                      <option value="Percent">Percent</option>
+                                      <option value="Amount">Amount</option>
+                                    </select>
+                                    <input
+                                      className={`${styles.input} ${styles.stackValueInput}`}
+                                      placeholder={stackItem.discountType === 'Percent' ? 'Discount %' : 'Amount'}
+                                      value={stackItem.amount}
+                                      onChange={(event) => updateDiscountStack(stackItem.id, { amount: event.target.value })}
+                                    />
+                                    <button
+                                      type="button"
+                                      className={styles.stackDeleteButton}
+                                      title="Delete stack"
+                                      aria-label="Delete stack"
+                                      onClick={() => removeDiscountStack(stackItem.id)}
+                                      disabled={ruleGroup.rows.length === 1}
+                                    >
+                                      <i className="fa-solid fa-trash" aria-hidden="true"></i>
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <button
+                              type="button"
+                              className={styles.secondaryAction}
+                              onClick={() => addDiscountStack(ruleGroup.groupKey)}
+                            >
+                              + Add Discount Stack
+                            </button>
+
+                            <div className={styles.discountBasisPreview}>
+                              <span><strong>Base:</strong> {formatCurrency(basePrice)}</span>
+                              {stackingPreview.steps.map((step, stepIndex) => (
+                                <span key={step.id}>
+                                  <strong>{getDiscountValueLabel(ruleGroup.rows[stepIndex]?.discountType ?? 'Percent', ruleGroup.rows[stepIndex]?.amount ?? '')}</strong>{' '}
+                                  -&gt; {formatCurrency(step.after)}
+                                </span>
+                              ))}
+                              <span><strong>Final:</strong> {formatCurrency(stackingPreview.finalPrice)}</span>
+                              <span><strong>Total Discount:</strong> {formatCurrency(stackingPreview.totalDiscount)}</span>
+                            </div>
+
+                            <div className={styles.encoderPreviewSection}>
+                              <h5 className={styles.modalSectionTitle}>Discount Rule Preview</h5>
+                              <p className={styles.encoderPreviewText}>{discountRulePreview}</p>
+                            </div>
+
+                            <div className={styles.encoderPreviewSection}>
+                              <h5 className={styles.modalSectionTitle}>Suggested Discount Name</h5>
+                              <div className={styles.suggestedNameRow}>
+                                <p className={styles.encoderPreviewText}>
+                                  {suggestedDiscountName || 'Complete the discount stack to generate a suggested name.'}
+                                </p>
+                                <button
+                                  type="button"
+                                  className={styles.secondaryAction}
+                                  onClick={() => updateDiscountRule(ruleGroup.groupKey, { discountName: suggestedDiscountName })}
+                                  disabled={!suggestedDiscountName || Boolean(rule.discountName.trim())}
+                                >
+                                  Use Suggested Name
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className={styles.encoderPreviewSection}>
+                              <h5 className={styles.modalSectionTitle}>Order Quantity Preview</h5>
+                              <p className={styles.encoderPreviewText}>{orderQuantityPreview}</p>
+                            </div>
+
+                            <div className={styles.promoSection}>
+                              <h5 className={styles.modalSectionTitle}>Promo</h5>
+                              <label className={styles.toggleField}>
+                                <span className={styles.fieldLabel}>Enable Promo</span>
+                                <input
+                                  type="checkbox"
+                                  checked={rule.hasPromo}
+                                  onChange={(event) => enableDiscountPromo(ruleGroup.groupKey, event.target.checked)}
+                                />
+                              </label>
+
+                              {rule.hasPromo ? (
+                                <>
+                                  <h5 className={styles.modalSectionTitle}>Promo Configuration</h5>
+                                  <div className={styles.ruleGrid}>
+                                    <select
+                                      className={styles.select}
+                                      value={rule.promoType}
+                                      onChange={(event) =>
+                                        updateDiscountPromo(ruleGroup.groupKey, {
+                                          promoType: event.target.value as DiscountItem['promoType'],
+                                        })
+                                      }
+                                    >
+                                      <option value="Freebie">Freebie</option>
+                                      <option value="BonusQty">BonusQty</option>
+                                    </select>
+                                    <select
+                                      className={styles.select}
+                                      value={rule.promoRewardTargetType}
+                                      onChange={(event) =>
+                                        updateDiscountPromo(ruleGroup.groupKey, {
+                                          promoRewardTargetType: event.target.value as RewardTargetType,
+                                          promoRewardProductId:
+                                            event.target.value === 'same_item' ? '' : rule.promoRewardProductId,
+                                          promoRewardProductLabel:
+                                            event.target.value === 'same_item' ? '' : rule.promoRewardProductLabel,
+                                          promoRewardVariationId:
+                                            event.target.value === 'same_item' ? '' : rule.promoRewardVariationId,
+                                          promoRewardVariationLabel:
+                                            event.target.value === 'same_item' ? '' : rule.promoRewardVariationLabel,
+                                          promoRewardUnitOptionId: '',
+                                          promoRewardUnitCode: '',
+                                        })
+                                      }
+                                    >
+                                      <option value="same_item">Same item</option>
+                                      <option value="different_item">Different item</option>
+                                    </select>
+                                    <input
+                                      className={styles.input}
+                                      placeholder="Reward Quantity"
+                                      value={rule.promoRewardQuantity}
+                                      onChange={(event) =>
+                                        updateDiscountPromo(ruleGroup.groupKey, {
+                                          promoRewardQuantity: event.target.value.replace(/[^\d.]/g, ''),
+                                        })
+                                      }
+                                    />
+                                    <select
+                                      className={styles.select}
+                                      value={rule.promoRewardRepeatMode}
+                                      onChange={(event) =>
+                                        updateDiscountPromo(ruleGroup.groupKey, {
+                                          promoRewardRepeatMode: event.target.value as RewardRepeatMode,
+                                          promoRewardEveryQuantity:
+                                            event.target.value === 'every'
+                                              ? rule.promoRewardEveryQuantity || rule.minOrderQuantity || '1'
+                                              : '',
+                                        })
+                                      }
+                                    >
+                                      <option value="one_time">One time only</option>
+                                      <option value="every">Every quantity</option>
+                                    </select>
+                                    {rule.promoRewardRepeatMode === 'every' ? (
+                                      <input
+                                        className={styles.input}
+                                        placeholder="Every Quantity"
+                                        value={rule.promoRewardEveryQuantity}
+                                        onChange={(event) =>
+                                          updateDiscountPromo(ruleGroup.groupKey, {
+                                            promoRewardEveryQuantity: event.target.value.replace(/[^\d.]/g, ''),
+                                          })
+                                        }
+                                      />
+                                    ) : (
+                                      <div className={styles.readOnlyValue}>
+                                        Reward is given once when condition is met.
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {rule.promoRewardTargetType === 'same_item' ? (
+                                    <div className={styles.ruleGrid}>
+                                      <select
+                                        className={styles.select}
+                                        value={rule.promoRewardUnitOptionId}
+                                        onChange={(event) =>
+                                          updateDiscountPromo(ruleGroup.groupKey, {
+                                            promoRewardUnitOptionId: event.target.value,
+                                            promoRewardUnitCode:
+                                              orderableOptions.find((option) => option.id === event.target.value)?.unitCode ?? '',
+                                          })
+                                        }
+                                      >
+                                        <option value="">Select reward unit</option>
+                                        {orderableOptions.map((option) => (
+                                          <option key={option.id} value={option.id}>
+                                            {getUnitOptionLabel(option)}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <div className={styles.readOnlyValue}>
+                                        {rule.promoRewardQuantity && rule.promoRewardUnitCode
+                                          ? `free ${rule.promoRewardQuantity} ${rule.promoRewardUnitCode}`
+                                          : 'Reward preview'}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div className={styles.ruleGrid}>
+                                        <input
+                                          className={styles.input}
+                                          placeholder="Search Reward Product"
+                                          value={rule.promoRewardSearchQuery}
+                                          onChange={(event) =>
+                                            updateDiscountPromo(ruleGroup.groupKey, {
+                                              promoRewardSearchQuery: event.target.value,
+                                            })
+                                          }
+                                        />
+                                        <div className={styles.readOnlyValue}>
+                                          {rule.promoRewardProductLabel || 'No reward product selected'}
+                                        </div>
+                                      </div>
+                                      {(rewardSearchResults[rule.id]?.length ?? 0) > 0 ? (
+                                        <div className={styles.searchResults}>
+                                          {rewardSearchResults[rule.id].map((result) => (
+                                            <button
+                                              key={result.id}
+                                              type="button"
+                                              className={styles.searchResultItem}
+                                              onClick={() => {
+                                                updateDiscountPromo(ruleGroup.groupKey, {
+                                                  promoRewardProductId: result.id,
+                                                  promoRewardProductLabel: result.productName,
+                                                  promoRewardVariationId: '',
+                                                  promoRewardVariationLabel: '',
+                                                  promoRewardUnitOptionId: '',
+                                                  promoRewardUnitCode: '',
+                                                  promoRewardSearchQuery: result.productName,
+                                                });
+                                                setRewardVariationOptions((current) => ({ ...current, [rule.id]: [] }));
+                                                setRewardUnitOptions((current) => ({ ...current, [rule.id]: [] }));
+                                                void loadRewardVariations(rule.id, result.id);
+                                              }}
+                                            >
+                                              {result.productName} {result.skuCode ? `(${result.skuCode})` : ''}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      ) : null}
+                                      <div className={styles.ruleGrid}>
+                                        <select
+                                          className={styles.select}
+                                          value={rule.promoRewardVariationId}
+                                          onChange={(event) => {
+                                            const selectedVariation = (rewardVariationOptions[rule.id] ?? []).find(
+                                              (option) => option.id === event.target.value,
+                                            );
+                                            updateDiscountPromo(ruleGroup.groupKey, {
+                                              promoRewardVariationId: event.target.value,
+                                              promoRewardVariationLabel: selectedVariation?.label ?? '',
+                                              promoRewardUnitOptionId: '',
+                                              promoRewardUnitCode: '',
+                                            });
+                                            setRewardUnitOptions((current) => ({ ...current, [rule.id]: [] }));
+                                            if (event.target.value) {
+                                              void loadRewardUnitOptions(rule.id, event.target.value);
+                                            }
+                                          }}
+                                        >
+                                          <option value="">Select reward variation</option>
+                                          {(rewardVariationOptions[rule.id] ?? []).map((option) => (
+                                            <option key={option.id} value={option.id}>
+                                              {option.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <select
+                                          className={styles.select}
+                                          value={rule.promoRewardUnitOptionId}
+                                          onChange={(event) =>
+                                            updateDiscountPromo(ruleGroup.groupKey, {
+                                              promoRewardUnitOptionId: event.target.value,
+                                              promoRewardUnitCode:
+                                                (rewardUnitOptions[rule.id] ?? []).find((option) => option.id === event.target.value)?.unitCode ?? '',
+                                            })
+                                          }
+                                        >
+                                          <option value="">Select reward unit</option>
+                                          {(rewardUnitOptions[rule.id] ?? []).map((option) => (
+                                            <option key={option.id} value={option.id}>
+                                              {getUnitOptionLabel(option)}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    </>
+                                  )}
+                                  <div className={styles.readOnlyValue}>
+                                    {buildPromoPreview(
+                                      rule,
+                                      getUnitOptionLabel(selectedOption),
+                                      rewardUnitLabel,
+                                    ) || 'Reward display preview'}
+                                  </div>
+                                  {promoValidationMessage ? (
+                                    <p className={styles.modalAlert}>{promoValidationMessage}</p>
+                                  ) : null}
+                                </>
+                              ) : null}
+                            </div>
+
+                            {minBasePreview || maxBasePreview ? (
+                              <p className={styles.ruleNote}>
+                                Base quantity preview: {minBasePreview || 'no minimum'}
+                                {maxBasePreview ? ` to ${maxBasePreview}` : ''}
+                              </p>
+                            ) : null}
+                          </div>
+                        );
+                      }) : (
+                        <div className={styles.emptyState}>
+                          <div className={styles.emptyStateContent}>
+                            <p className={styles.emptyStateTitle}>No discounts yet.</p>
+                            <p className={styles.emptyStateText}>Add a discount to configure eligibility and stack items.</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className={styles.ruleTabsHeader} style={{ display: 'none' }}>
                       <div className={styles.ruleTabs}>
                         {discountDraft.map((tier, index) => (
                           <button
@@ -2066,20 +3183,18 @@ export default function VarAndPrice({
                           </button>
                         ))}
                       </div>
-                      <button
-                        type="button"
-                        className={styles.secondaryAction}
-                        onClick={() => {
-                          const nextRule = createEmptyDiscountDraft();
-                          setDiscountDraft((current) => [...current, nextRule]);
-                          setActiveDiscountTabId(nextRule.id);
-                        }}
-                      >
-                        Add Discount Rule
-                      </button>
+                      {stackingEnabled ? (
+                        <button
+                          type="button"
+                          className={styles.secondaryAction}
+                          onClick={addStackedDiscountRule}
+                        >
+                          + Add Another Stacked Discount
+                        </button>
+                      ) : null}
                     </div>
 
-                    <div className={styles.ruleList}>
+                    <div className={styles.ruleList} style={{ display: 'none' }}>
                       {activeTier ? (() => {
                         const tier = activeTier;
                         const index = discountDraft.findIndex((item) => item.id === tier.id);
@@ -2102,11 +3217,15 @@ export default function VarAndPrice({
                               discountBasisQuantity,
                             )
                           : 0;
+                        const chainBasePrice = currentCard
+                          ? getComputedUnitPrice(currentCard, discountContext.code, '1')
+                          : 0;
                         const discountAmountPreview = getDiscountAmountPreview(
                           discountBasisPrice,
                           tier.discountType,
                           tier.amount,
                         );
+                        const stackingPreview = buildStackingPreview(discountDraft, chainBasePrice);
                         const rewardUnitOption = getRewardUnitOption(tier.id, tier);
                         const rewardUnitLabel =
                           getUnitOptionLabel(rewardUnitOption) ||
@@ -2141,9 +3260,9 @@ export default function VarAndPrice({
                                 branchName: '' as DiscountItem['branchName'],
                                 priceType: '' as DiscountItem['priceType'],
                                 priceCode: '' as DiscountItem['priceCode'],
-                                calculationMethod: 'Single',
-                                applySequence: String(index + 1),
-                                discountGroup: '',
+                                calculationMethod: tier.calculationMethod,
+                                applySequence: tier.applySequence || String(index + 1),
+                                discountGroup: tier.discountGroup,
                                 appliesTo: 'UnitPrice',
                                 stackable: tier.stackable,
                                 description: '',
@@ -2178,12 +3297,31 @@ export default function VarAndPrice({
                               <button
                                 type="button"
                                 className={styles.deleteAction}
-                                onClick={() => {
-                                  setDiscountDraft((current) => current.filter((item) => item.id !== tier.id));
-                                }}
+                                onClick={() => removeDiscountDraftRow(tier.id)}
+                                disabled={index === 0}
                               >
                                 Remove
                               </button>
+                              {stackingEnabled ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className={styles.secondaryAction}
+                                    onClick={() => moveDiscountDraftRow(tier.id, -1)}
+                                    disabled={index === 0}
+                                  >
+                                    Move Up
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={styles.secondaryAction}
+                                    onClick={() => moveDiscountDraftRow(tier.id, 1)}
+                                    disabled={index === discountDraft.length - 1}
+                                  >
+                                    Move Down
+                                  </button>
+                                </>
+                              ) : null}
                             </div>
 
                             <div className={styles.discountBasisPreview}>
@@ -2198,6 +3336,21 @@ export default function VarAndPrice({
                                   : '-'}
                               </span>
                             </div>
+
+                            {stackingEnabled ? (
+                              <div className={styles.discountBasisPreview}>
+                                <span><strong>Base Price:</strong> {formatCurrency(chainBasePrice)}</span>
+                                {stackingPreview.steps.map((step, stepIndex) => (
+                                  <span key={step.id}>
+                                    <strong>Rule {stepIndex + 1}: {step.label}</strong>{' '}
+                                    {formatCurrency(step.before)} -&gt; {formatCurrency(step.after)}
+                                  </span>
+                                ))}
+                                <span><strong>Final Price:</strong> {formatCurrency(stackingPreview.finalPrice)}</span>
+                                <span><strong>Total Discount:</strong> {formatCurrency(stackingPreview.totalDiscount)}</span>
+                                <span><strong>Effective Discount:</strong> {stackingPreview.effectiveDiscount}%</span>
+                              </div>
+                            ) : null}
 
                             <div className={styles.ruleGrid}>
                               <input
@@ -2324,6 +3477,23 @@ export default function VarAndPrice({
                                 <option value="Inactive">Inactive</option>
                               </select>
                             </div>
+
+                            {index === 0 ? (
+                              <label className={styles.toggleField}>
+                                <span className={styles.fieldLabel}>Stack another discount</span>
+                                <input
+                                  type="checkbox"
+                                  checked={stackingEnabled}
+                                  onChange={(event) => setStackingEnabled(event.target.checked)}
+                                />
+                              </label>
+                            ) : null}
+
+                            {index > 0 ? (
+                              <p className={styles.ruleNote}>
+                                Stacked Discount {index + 1} applies after the previous eligible discount.
+                              </p>
+                            ) : null}
 
                             <div className={styles.promoSection}>
                               <label className={styles.toggleField}>
@@ -2687,6 +3857,127 @@ export default function VarAndPrice({
                       })() : null}
                     </div>
                   </div>
+                  {pendingRemoveDiscountGroup ? (
+                    <div
+                      className={styles.confirmOverlay}
+                      role="presentation"
+                      onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) {
+                          setPendingRemoveDiscountGroupId(null);
+                        }
+                      }}
+                    >
+                      <div
+                        className={styles.confirmDialog}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="remove-discount-title"
+                        aria-describedby="remove-discount-message"
+                      >
+                        <div className={styles.modalHeader}>
+                          <div>
+                            <h4 id="remove-discount-title" className={styles.modalTitle}>
+                              Remove Discount?
+                            </h4>
+                            <p id="remove-discount-message" className={styles.confirmText}>
+                              This will remove the selected discount and all discount stack items inside it.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className={styles.modalClose}
+                            onClick={() => setPendingRemoveDiscountGroupId(null)}
+                            aria-label="Close remove discount confirmation"
+                          >
+                            <i className="fa-solid fa-xmark" aria-hidden="true"></i>
+                          </button>
+                        </div>
+                        <div className={styles.confirmDetail}>
+                          <span>Discount</span>
+                          <strong>{pendingRemoveDiscountName}</strong>
+                        </div>
+                        <p className={styles.confirmText}>
+                          All discount stack items inside this discount will also be removed.
+                        </p>
+                        <div className={styles.actions}>
+                          <button
+                            type="button"
+                            className={styles.cancelButton}
+                            onClick={() => setPendingRemoveDiscountGroupId(null)}
+                            autoFocus
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.deleteAction}
+                            onClick={confirmRemoveDiscountRule}
+                          >
+                            Remove Discount
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                  {pendingDisablePromoGroup ? (
+                    <div
+                      className={styles.confirmOverlay}
+                      role="presentation"
+                      onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) {
+                          setPendingDisablePromoGroupId(null);
+                        }
+                      }}
+                    >
+                      <div
+                        className={styles.confirmDialog}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="disable-promo-title"
+                        aria-describedby="disable-promo-message"
+                      >
+                        <div className={styles.modalHeader}>
+                          <div>
+                            <h4 id="disable-promo-title" className={styles.modalTitle}>
+                              Disable Promo?
+                            </h4>
+                            <p id="disable-promo-message" className={styles.confirmText}>
+                              This discount already has promo configuration. Disabling it may remove the linked reward settings.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className={styles.modalClose}
+                            onClick={() => setPendingDisablePromoGroupId(null)}
+                            aria-label="Close disable promo confirmation"
+                          >
+                            <i className="fa-solid fa-xmark" aria-hidden="true"></i>
+                          </button>
+                        </div>
+                        <div className={styles.confirmDetail}>
+                          <span>Discount</span>
+                          <strong>{pendingDisablePromoName}</strong>
+                        </div>
+                        <div className={styles.actions}>
+                          <button
+                            type="button"
+                            className={styles.cancelButton}
+                            onClick={() => setPendingDisablePromoGroupId(null)}
+                            autoFocus
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.deleteAction}
+                            onClick={confirmDisableDiscountPromo}
+                          >
+                            Disable Promo
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </>
               );
             })()}
@@ -2696,6 +3987,10 @@ export default function VarAndPrice({
                 setDiscountDraft([]);
                 setActiveDiscountTabId('');
                 setDiscountModalError('');
+                setDiscountManagedIds(new Set());
+                setPendingRemoveDiscountGroupId(null);
+                setPendingDisablePromoGroupId(null);
+                clearDiscountStackDragState();
               }}>Cancel</button>
               <button type="button" className={styles.registerButton} onClick={saveDiscountModal}>Save</button>
             </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { groupPermissionsByModule } from '../../services/accounts';
 import styles from './AccountsSummary.module.css';
 
 export type AccountView = 'admins' | 'agents';
@@ -20,9 +21,27 @@ export type AccountSummaryItem = {
   address?: string;
   notes?: string;
   roleLabel?: string;
+  username?: string;
+  roleId?: string;
+  departmentId?: string;
+  parentAdminAccountId?: string;
+  permissionIds?: string[];
+  assignedPermissions?: AccountPermissionSummary[];
+  totalPermissionCount?: number;
+  passwordStatus?: string;
+  passwordChangedAt?: string;
+  passwordResetAt?: string;
   isSystemOwner?: boolean;
   canEdit?: boolean;
   createdAt: string;
+};
+
+export type AccountPermissionSummary = {
+  id: string;
+  moduleCode: string;
+  permissionCode: string;
+  label: string;
+  sortOrder: number;
 };
 
 type AccountsSummaryProps = {
@@ -189,11 +208,35 @@ function getStatusClass(status: string) {
   if (status.toLowerCase() === 'pending setup') {
     return styles.statusPending;
   }
+  if (status.toLowerCase() === 'locked') {
+    return styles.statusPending;
+  }
   return status.toLowerCase() === 'active' ? styles.statusActive : styles.statusInactive;
 }
 
 function ShieldIcon() {
   return <i className="fa-solid fa-shield-halved" aria-hidden="true"></i>;
+}
+
+function formatDateTime(value: string | undefined) {
+  if (!value) return '';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleString('en-PH');
+}
+
+function getAccessSummary(account: AccountSummaryItem) {
+  const assignedPermissions = account.assignedPermissions ?? [];
+  const assignedModuleCount = new Set(
+    assignedPermissions.map((permission) => permission.moduleCode).filter(Boolean),
+  ).size;
+  const assignedPermissionCount = assignedPermissions.length;
+  const totalPermissionCount = account.totalPermissionCount ?? assignedPermissionCount;
+
+  return {
+    assignedModuleCount,
+    assignedPermissionCount,
+    totalPermissionCount,
+  };
 }
 
 export default function AccountsSummary({
@@ -206,6 +249,7 @@ export default function AccountsSummary({
   const [filterBy, setFilterBy] = useState<FilterMode>('alphabetical');
   const [sortOrder, setSortOrder] = useState<SortOrder>('ascending');
   const [currentPage, setCurrentPage] = useState(1);
+  const [accessDetailsAccount, setAccessDetailsAccount] = useState<AccountSummaryItem | null>(null);
 
   const filteredAccounts = useMemo(() => {
     const normalizedSearch = searchValue.trim().toLowerCase();
@@ -261,6 +305,19 @@ export default function AccountsSummary({
   useEffect(() => {
     setCurrentPage((prev) => Math.min(prev, totalPages));
   }, [totalPages]);
+
+  useEffect(() => {
+    if (!accessDetailsAccount) return undefined;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setAccessDetailsAccount(null);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [accessDetailsAccount]);
 
   function handlePageInputChange(value: string) {
     if (value === '') {
@@ -340,7 +397,7 @@ export default function AccountsSummary({
             onClick={() => onCreateAccount?.(activeView)}
           >
             <PlusIcon />
-            <span>Create New Account</span>
+            <span>{activeView === 'admins' ? 'Create Internal Admin' : 'Create New Account'}</span>
           </button>
         </div>
       </div>
@@ -349,11 +406,11 @@ export default function AccountsSummary({
         <div className={styles.tableHeader}>
           <span>Profile</span>
           <span>Name</span>
-          <span>Email</span>
-          <span>Contact</span>
-          <span>Role</span>
+          <span>{activeView === 'admins' ? 'Username' : 'Email'}</span>
+          <span>{activeView === 'admins' ? 'Role / Position' : 'Contact'}</span>
+          <span>{activeView === 'admins' ? 'Department' : 'Role'}</span>
           <span>{activeView === 'admins' ? 'Access' : 'Agent Code'}</span>
-          <span>{activeView === 'admins' ? 'Branch' : 'Company'}</span>
+          <span>{activeView === 'admins' ? 'Password Status' : 'Company'}</span>
           <span>Status</span>
           <span className={styles.actionHeader}>Action</span>
         </div>
@@ -389,11 +446,39 @@ export default function AccountsSummary({
                   ) : null}
                 </span>
               </span>
-              <span>{account.email}</span>
-              <span>{formatContactNumber(account.contact)}</span>
-              <span>{account.role === 'admins' ? account.roleLabel ?? 'Admin' : 'Agent'}</span>
-              <span>{account.role === 'admins' ? account.access : account.handle}</span>
-              <span>{account.branch}</span>
+              <span>{account.role === 'admins' ? account.username || '-' : account.email}</span>
+              <span>{account.role === 'admins' ? account.roleLabel ?? '-' : formatContactNumber(account.contact)}</span>
+              <span>{account.role === 'admins' ? account.branch || '-' : 'Agent'}</span>
+              <span>
+                {account.role === 'admins' ? (
+                  <button
+                    type="button"
+                    className={styles.accessSummaryButton}
+                    onClick={() => setAccessDetailsAccount(account)}
+                    aria-label={`View access details for ${account.name}`}
+                  >
+                    <span>{getAccessSummary(account).assignedModuleCount} Modules</span>
+                    <small>
+                      {getAccessSummary(account).assignedPermissionCount}/
+                      {getAccessSummary(account).totalPermissionCount} Permissions
+                    </small>
+                  </button>
+                ) : (
+                  account.handle
+                )}
+              </span>
+              <span>
+                {account.role === 'admins' ? (
+                  <span className={`${styles.statusBadge} ${account.passwordStatus === 'Default Password' ? styles.statusPending : styles.statusActive}`}>
+                    {account.passwordStatus ?? 'Password Changed'}
+                  </span>
+                ) : (
+                  account.branch
+                )}
+                {account.role === 'admins' && account.passwordChangedAt ? (
+                  <small className={styles.metaText}>{formatDateTime(account.passwordChangedAt)}</small>
+                ) : null}
+              </span>
               <span className={`${styles.statusBadge} ${getStatusClass(account.status)}`}>
                 {account.status}
               </span>
@@ -462,6 +547,79 @@ export default function AccountsSummary({
           </button>
         </div>
       </div>
+
+      {accessDetailsAccount ? (
+        <AccessDetailsModal
+          account={accessDetailsAccount}
+          onClose={() => setAccessDetailsAccount(null)}
+        />
+      ) : null}
     </section>
+  );
+}
+
+type AccessDetailsModalProps = {
+  account: AccountSummaryItem;
+  onClose: () => void;
+};
+
+function AccessDetailsModal({ account, onClose }: AccessDetailsModalProps) {
+  const summary = getAccessSummary(account);
+  const groupedPermissions = groupPermissionsByModule(account.assignedPermissions ?? []);
+
+  return (
+    <div className={styles.modalBackdrop} role="presentation" onMouseDown={onClose}>
+      <section
+        className={styles.accessModal}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="access-details-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className={styles.accessModalHeader}>
+          <div>
+            <h2 id="access-details-title">Access Details</h2>
+            <p>{account.name}</p>
+          </div>
+          <button type="button" className={styles.accessModalClose} onClick={onClose} aria-label="Close access details">
+            <i className="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <div className={styles.accessModalMeta}>
+          <span>{account.roleLabel ?? 'No role'}</span>
+          <strong>{summary.assignedModuleCount} Modules</strong>
+          <strong>
+            {summary.assignedPermissionCount}/{summary.totalPermissionCount} Permissions
+          </strong>
+        </div>
+
+        <div className={styles.accessModalBody}>
+          {groupedPermissions.length === 0 ? (
+            <p className={styles.emptyPermissions}>No permissions assigned.</p>
+          ) : (
+            groupedPermissions.map(([moduleCode, permissions]) => (
+              <section key={moduleCode} className={styles.permissionGroup}>
+                <h3>{moduleCode}</h3>
+                <div className={styles.permissionList}>
+                  {permissions.map((permission) => (
+                    <span key={permission.id} className={styles.permissionItem}>
+                      <i className="fa-solid fa-check" aria-hidden="true"></i>
+                      {permission.label}
+                    </span>
+                  ))}
+                </div>
+              </section>
+            ))
+          )}
+        </div>
+
+        <div className={styles.accessModalActions}>
+          <button type="button" className={styles.primaryButton} onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }

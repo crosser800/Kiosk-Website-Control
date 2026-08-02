@@ -34,9 +34,10 @@
 .label,
 .input,
 .select,
-.checkboxField,
-.validationError,
-.profileButton,
+  .checkboxField,
+  .validationError,
+  .successMessage,
+  .profileButton,
 .createButton,
 .cancelButton {
   font-family: 'Montserrat', sans-serif;
@@ -101,6 +102,10 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
+}
+
+.wideField {
+  grid-column: 1 / -1;
 }
 
 .profilePicker {
@@ -361,6 +366,28 @@
   background-color: var(--surface);
 }
 
+.accessGroup,
+.accessOptionInline {
+  display: flex;
+  gap: 0.55rem;
+}
+
+.accessGroup {
+  flex-direction: column;
+  padding-top: 0.45rem;
+}
+
+.accessGroup strong {
+  color: var(--text);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.accessOptionInline {
+  align-items: center;
+  color: var(--text);
+}
+
 .checkboxField {
   min-height: 2.65rem;
   display: inline-flex;
@@ -385,6 +412,17 @@
   background-color: var(--status-inactive-bg);
   color: var(--status-inactive-text);
   font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.successMessage {
+  margin: 0;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid rgba(15, 159, 110, 0.28);
+  border-radius: 0.5rem;
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+  font-size: 0.82rem;
   font-weight: 800;
 }
 
