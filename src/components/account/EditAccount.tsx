@@ -1,55 +1,49 @@
-import { useEffect, useState } from 'react';
-import type { AccountSummaryItem, AccountView } from './AccountsSummary';
-import { updateAccountItem } from '../../services/accounts';
-import { getBranchTypeOptions, subscribeBranchTypeOptions } from '../../services/branchTypes';
+import { useEffect, useMemo, useState } from 'react';
+import type { AccountSummaryItem } from './AccountsSummary';
+import {
+  groupPermissionsByModule,
+  loadInternalAdminFormOptions,
+  resetInternalAdminPassword,
+  updateAccountItem,
+  type InternalAdminFormOptions,
+} from '../../services/accounts';
 import AgentProfilePanel from './AgentProfilePanel';
 import styles from './AccountModal.module.css';
 
 type EditAccountProps = {
   account: AccountSummaryItem;
-  onSave: (accounts: Promise<AccountSummaryItem[]> | AccountSummaryItem[]) => void;
+  onSave: (accounts: Promise<AccountSummaryItem[]> | AccountSummaryItem[], message?: string) => void;
   onClose: () => void;
 };
 
-type AccountForm = {
+type AdminForm = {
   profileImage: string;
   name: string;
-  role: AccountView;
-  access: string[];
-  handling: string;
-  branch: string;
-  isActive: boolean;
-  email: string;
-  contact: string;
+  username: string;
+  roleId: string;
+  departmentId: string;
+  parentAdminAccountId: string;
+  permissionIds: string[];
+  status: 'Active' | 'Inactive' | 'Locked';
 };
 
-const accessOptions = ['Products', 'Order', 'Sales', 'Accounts', 'Settings'];
-
-function formatContactInput(value: string) {
-  const digitsOnly = value.replace(/\D/g, '').slice(0, 11);
-  const first = digitsOnly.slice(0, 4);
-  const second = digitsOnly.slice(4, 7);
-  const third = digitsOnly.slice(7, 11);
-
-  return [first, second, third].filter(Boolean).join('-');
+function formatDateTime(value: string | undefined) {
+  if (!value) return '-';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? '-' : parsed.toLocaleString('en-PH');
 }
 
-function getInitialForm(account: AccountSummaryItem): AccountForm {
+function getInitialForm(account: AccountSummaryItem): AdminForm {
   return {
     profileImage: account.profileImage ?? '',
     name: account.name,
-    role: account.role,
-    access: account.access ? account.access.split(',').map((item) => item.trim()) : [],
-    handling: account.handle,
-    branch: account.branch,
-    isActive: account.status.toLowerCase() === 'active',
-    email: account.email,
-    contact: formatContactInput(account.contact),
+    username: account.username ?? account.handle,
+    roleId: account.roleId ?? '',
+    departmentId: account.departmentId ?? '',
+    parentAdminAccountId: account.parentAdminAccountId ?? '',
+    permissionIds: account.permissionIds ?? [],
+    status: account.status === 'Inactive' ? 'Inactive' : account.status === 'Locked' ? 'Locked' : 'Active',
   };
-}
-
-function isValidEmail(email: string) {
-  return !email.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
 export default function EditAccount({ account, onSave, onClose }: EditAccountProps) {
@@ -57,125 +51,130 @@ export default function EditAccount({ account, onSave, onClose }: EditAccountPro
     return <AgentProfilePanel account={account} onSave={onSave} onClose={onClose} />;
   }
 
-  return <AdminEditAccount account={account} onSave={onSave} onClose={onClose} />;
+  return <InternalAdminEditAccount account={account} onSave={onSave} onClose={onClose} />;
 }
 
-function AdminEditAccount({ account, onSave, onClose }: EditAccountProps) {
-  const [form, setForm] = useState<AccountForm>(() => getInitialForm(account));
-  const [branchOptions, setBranchOptions] = useState<string[]>(() => getBranchTypeOptions());
-  const [isAccessOpen, setIsAccessOpen] = useState(false);
+function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps) {
+  const [form, setForm] = useState<AdminForm>(() => getInitialForm(account));
+  const [options, setOptions] = useState<InternalAdminFormOptions>({
+    roles: [],
+    departments: [],
+    gateways: [],
+    permissions: [],
+  });
+  const [isLoadingOptions, setIsLoadingOptions] = useState(true);
   const [validationError, setValidationError] = useState('');
-  const accountLabel = form.role === 'admins' ? 'Admin' : 'Agent';
+  const [resetError, setResetError] = useState('');
+  const [resetSuccess, setResetSuccess] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const groupedPermissions = useMemo(() => {
+    return groupPermissionsByModule(options.permissions);
+  }, [options]);
 
-  useEffect(() => subscribeBranchTypeOptions(setBranchOptions), []);
+  useEffect(() => {
+    loadInternalAdminFormOptions()
+      .then(setOptions)
+      .catch((error) => {
+        setValidationError(error instanceof Error ? error.message : 'Unable to load internal admin options.');
+      })
+      .finally(() => setIsLoadingOptions(false));
+  }, []);
 
-  function updateField<Field extends keyof AccountForm>(
-    field: Field,
-    value: AccountForm[Field],
-  ) {
+  function updateField<Field extends keyof AdminForm>(field: Field, value: AdminForm[Field]) {
     setValidationError('');
+    setResetError('');
+    setResetSuccess('');
     setForm((current) => ({ ...current, [field]: value }));
   }
 
-  function toggleAccess(access: string) {
+  function togglePermission(permissionId: string) {
     setValidationError('');
-    setForm((current) => {
-      const hasAccess = current.access.includes(access);
-
-      return {
-        ...current,
-        access: hasAccess
-          ? current.access.filter((item) => item !== access)
-          : [...current.access, access],
-      };
-    });
-  }
-
-  function handleProfileImageChange(file: File | undefined) {
-    setValidationError('');
-
-    if (!file) {
-      return;
-    }
-
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      setForm((current) => ({
-        ...current,
-        profileImage: typeof reader.result === 'string' ? reader.result : '',
-      }));
-    };
-
-    reader.readAsDataURL(file);
+    setForm((current) => ({
+      ...current,
+      permissionIds: current.permissionIds.includes(permissionId)
+        ? current.permissionIds.filter((id) => id !== permissionId)
+        : [...current.permissionIds, permissionId],
+    }));
   }
 
   function validateForm() {
-    const requiredValues =
-      form.role === 'admins'
-        ? [form.name, form.email, form.contact]
-        : [form.name, form.role, form.contact, form.branch, form.handling];
-
-    if (requiredValues.some((value) => !value.trim())) {
-      setValidationError(
-        form.role === 'admins'
-          ? 'Name, email, and contact are required for admin accounts.'
-          : 'Complete all required fields except email address.',
-      );
+    if (!form.name.trim()) {
+      setValidationError('Full Name is required.');
       return false;
     }
-
-    if (!isValidEmail(form.email)) {
-      setValidationError('Enter a valid email address.');
+    if (!form.username.trim()) {
+      setValidationError('Username is required.');
       return false;
     }
-
-    setValidationError('');
+    if (!form.parentAdminAccountId) {
+      setValidationError('Select a parent gateway account.');
+      return false;
+    }
     return true;
   }
 
   async function handleSave() {
-    if (!validateForm()) {
+    if (isSubmitting || !validateForm()) return;
+
+    setIsSubmitting(true);
+    try {
+      const nextAccounts = await updateAccountItem(account.id, {
+        profileImage: form.profileImage || undefined,
+        name: form.name,
+        email: '',
+        contact: '',
+        role: 'admins',
+        handle: form.username,
+        access: form.permissionIds,
+        branch: '',
+        departmentId: form.departmentId || undefined,
+        status: form.status,
+        username: form.username,
+        roleId: form.roleId || undefined,
+        parentAdminAccountId: form.parentAdminAccountId,
+        permissionIds: form.permissionIds,
+      });
+      onSave(nextAccounts, 'Internal admin updated successfully.');
+    } catch (error) {
+      setValidationError(error instanceof Error ? error.message : 'Unable to update this internal admin.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleResetPassword() {
+    if (isResettingPassword) return;
+    if (!resetPassword.trim()) {
+      setResetError('Enter a temporary password before resetting.');
       return;
     }
 
-    onSave(
-      updateAccountItem(account.id, {
-        profileImage: form.profileImage || undefined,
-        name: form.name,
-        email: form.email,
-        contact: form.contact,
-        role: form.role,
-        handle: form.role === 'agents' ? form.handling : '',
-        access: form.role === 'admins' ? form.access.join(', ') : '',
-        branch: form.branch,
-        status: form.isActive ? 'Active' : 'Inactive',
-      }),
-    );
+    if (!window.confirm('Reset this internal admin password?')) return;
+
+    setIsResettingPassword(true);
+    try {
+      const nextAccounts = await resetInternalAdminPassword(account.id, resetPassword);
+      setResetPassword('');
+      setResetSuccess('Password reset successfully.');
+      onSave(nextAccounts, 'Password reset successfully.');
+    } catch (error) {
+      setResetError(error instanceof Error ? error.message : 'Unable to reset this password.');
+    } finally {
+      setIsResettingPassword(false);
+    }
   }
 
   return (
     <div className={styles.overlay} role="presentation">
-      <section
-        className={styles.modal}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="edit-account-title"
-      >
+      <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="edit-account-title">
         <div className={styles.header}>
           <div>
-            <h2 id="edit-account-title" className={styles.title}>
-              Edit Account
-            </h2>
-            <p className={styles.subtitle}>Edit account for {accountLabel}</p>
+            <h2 id="edit-account-title" className={styles.title}>Edit Internal Admin</h2>
+            <p className={styles.subtitle}>Role is a label. Access checkboxes control permissions.</p>
           </div>
-
-          <button
-            type="button"
-            className={styles.closeButton}
-            onClick={onClose}
-            aria-label="Close edit account"
-          >
+          <button type="button" className={styles.closeButton} onClick={onClose} aria-label="Close edit account">
             <i className="fa-solid fa-xmark" aria-hidden="true"></i>
           </button>
         </div>
@@ -185,182 +184,98 @@ function AdminEditAccount({ account, onSave, onClose }: EditAccountProps) {
         <div className={styles.formContainer}>
           <div className={styles.profilePicker}>
             <div className={styles.profilePreview} aria-hidden="true">
-              {form.profileImage ? (
-                <img src={form.profileImage} alt="" className={styles.profileImage} />
-              ) : (
-                <i className="fa-solid fa-user"></i>
-              )}
+              {form.profileImage ? <img src={form.profileImage} alt="" className={styles.profileImage} /> : <i className="fa-solid fa-user"></i>}
             </div>
-
-            <label className={styles.profileButton}>
-              <input
-                type="file"
-                accept="image/*"
-                className={styles.profileInput}
-                onChange={(event) => handleProfileImageChange(event.target.files?.[0])}
-              />
-              <i className="fa-solid fa-camera" aria-hidden="true"></i>
-              <span>Add Profile</span>
-            </label>
-          </div>
-
-          <div className={styles.topGrid}>
-            <label className={styles.field}>
-              <span className={styles.label}>Name</span>
-              <input
-                type="text"
-                value={form.name}
-                onChange={(event) => updateField('name', event.target.value)}
-                className={styles.input}
-                required
-              />
-            </label>
-
-            <label className={styles.field}>
-              <span className={styles.label}>Role</span>
-              <select
-                value={form.role}
-                onChange={(event) => {
-                  updateField('role', event.target.value as AccountView);
-                  setIsAccessOpen(false);
-                }}
-                className={styles.select}
-                required
-              >
-                <option value="admins">Admin</option>
-                <option value="agents">Agent</option>
-              </select>
-            </label>
-
-            <label className={styles.checkboxField}>
-              <input
-                type="checkbox"
-                checked={form.isActive}
-                onChange={(event) => updateField('isActive', event.target.checked)}
-                className={styles.checkbox}
-              />
-              <span>Set Active</span>
-            </label>
           </div>
 
           <div className={styles.formGrid}>
             <label className={styles.field}>
-              <span className={styles.label}>Email Address</span>
-              <input
-                type="email"
-                value={form.email}
-                onChange={(event) => updateField('email', event.target.value)}
-                className={styles.input}
-              />
+              <span className={styles.label}>Profile Image URL</span>
+              <input value={form.profileImage} onChange={(event) => updateField('profileImage', event.target.value)} className={styles.input} />
             </label>
-
-            {form.role === 'admins' ? (
-              <div className={styles.field}>
-                <span className={styles.label}>Access</span>
-                <div className={styles.accessDropdown}>
-                  <button
-                    type="button"
-                    className={styles.accessButton}
-                    onClick={() => setIsAccessOpen((current) => !current)}
-                    aria-expanded={isAccessOpen}
-                    aria-required="true"
-                  >
-                    <span>{form.access.length > 0 ? form.access.join(', ') : 'Select access'}</span>
-                    <i className="fa-solid fa-chevron-down" aria-hidden="true"></i>
-                  </button>
-
-                  {isAccessOpen && (
-                    <div className={styles.accessMenu}>
-                      {accessOptions.map((access) => (
-                        <label key={access} className={styles.accessOption}>
-                          <input
-                            type="checkbox"
-                            checked={form.access.includes(access)}
-                            onChange={() => toggleAccess(access)}
-                            className={styles.checkbox}
-                          />
-                          <span>{access}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <label className={styles.field}>
-                <span className={styles.label}>Agent Code</span>
-                <input
-                  type="text"
-                  value={form.handling}
-                  onChange={(event) => updateField('handling', event.target.value)}
-                  placeholder="Enter agent code"
-                  className={styles.input}
-                  required
-                />
-              </label>
-            )}
-
             <label className={styles.field}>
-              <span className={styles.label}>Contact</span>
-              <input
-                type="tel"
-                inputMode="numeric"
-                value={form.contact}
-                onChange={(event) => updateField('contact', formatContactInput(event.target.value))}
-                placeholder="0000-000-0000"
-                className={styles.input}
-                required
-              />
+              <span className={styles.label}>Full Name</span>
+              <input value={form.name} onChange={(event) => updateField('name', event.target.value)} className={styles.input} />
             </label>
-
-            {form.role === 'admins' ? (
-              <label className={styles.field}>
-                <span className={styles.label}>Department</span>
-                <select
-                  value={form.branch}
-                  onChange={(event) => updateField('branch', event.target.value)}
-                  className={styles.select}
-                >
-                  <option value=""></option>
-                  {branchOptions.map((branch) => (
-                    <option key={branch} value={branch}>
-                      {branch}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <label className={styles.field}>
-                <span className={styles.label}>Company Name</span>
-                <input
-                  type="text"
-                  value={form.branch}
-                  onChange={(event) => updateField('branch', event.target.value)}
-                  placeholder="Enter company name"
-                  className={styles.input}
-                  required
-                />
-              </label>
-            )}
-
+            <label className={styles.field}>
+              <span className={styles.label}>Username</span>
+              <input value={form.username} onChange={(event) => updateField('username', event.target.value.toLowerCase())} className={styles.input} />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>Role / Position</span>
+              <select value={form.roleId} onChange={(event) => updateField('roleId', event.target.value)} className={styles.select} disabled={isLoadingOptions}>
+                <option value="">Select role</option>
+                {options.roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
+              </select>
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>Department</span>
+              <select value={form.departmentId} onChange={(event) => updateField('departmentId', event.target.value)} className={styles.select} disabled={isLoadingOptions}>
+                <option value="">Select department</option>
+                {options.departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+              </select>
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>Parent Gateway Account</span>
+              <select value={form.parentAdminAccountId} onChange={(event) => updateField('parentAdminAccountId', event.target.value)} className={styles.select} disabled={isLoadingOptions}>
+                <option value="">Select gateway</option>
+                {options.gateways.map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.label}</option>)}
+              </select>
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>Status</span>
+              <select value={form.status} onChange={(event) => updateField('status', event.target.value as AdminForm['status'])} className={styles.select}>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="Locked">Locked</option>
+              </select>
+            </label>
             <div className={styles.noticeCard}>
-              <span className={styles.label}>Security</span>
-              <p>
-                Passwords are managed through a separate secure reset flow when configured.
-              </p>
+              <span className={styles.label}>Password Status</span>
+              <p>{account.passwordStatus ?? 'Password Changed'}</p>
+              <p>Changed: {formatDateTime(account.passwordChangedAt)}</p>
+              <p>Last reset: {formatDateTime(account.passwordResetAt)}</p>
+              <input
+                type="password"
+                value={resetPassword}
+                onChange={(event) => {
+                  setResetPassword(event.target.value);
+                  setResetError('');
+                  setResetSuccess('');
+                }}
+                className={styles.input}
+                placeholder="Temporary password"
+              />
+              {resetError ? <p className={styles.validationError}>{resetError}</p> : null}
+              {resetSuccess ? <p className={styles.successMessage}>{resetSuccess}</p> : null}
+              <button type="button" className={styles.cancelButton} onClick={() => void handleResetPassword()} disabled={isResettingPassword}>
+                {isResettingPassword ? 'Resetting...' : 'Reset Password'}
+              </button>
+            </div>
+            <div className={`${styles.noticeCard} ${styles.wideField}`}>
+              <span className={styles.label}>Access</span>
+              {groupedPermissions.map(([moduleCode, permissions]) => (
+                <div key={moduleCode} className={styles.accessGroup}>
+                  <strong>{moduleCode}</strong>
+                  {permissions.map((permission) => (
+                    <label key={permission.id} className={styles.accessOptionInline}>
+                      <input type="checkbox" checked={form.permissionIds.includes(permission.id)} onChange={() => togglePermission(permission.id)} className={styles.checkbox} />
+                      <span>{permission.label}</span>
+                    </label>
+                  ))}
+                </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {validationError && <p className={styles.validationError}>{validationError}</p>}
+        {validationError ? <p className={styles.validationError}>{validationError}</p> : null}
 
         <div className={styles.actions}>
-          <button type="button" className={styles.createButton} onClick={() => void handleSave()}>
-            Save Changes
+          <button type="button" className={styles.createButton} onClick={() => void handleSave()} disabled={isLoadingOptions || isSubmitting}>
+            {isSubmitting ? 'Saving changes...' : 'Save Changes'}
           </button>
-          <button type="button" className={styles.cancelButton} onClick={onClose}>
-            Cancel
-          </button>
+          <button type="button" className={styles.cancelButton} onClick={onClose}>Cancel</button>
         </div>
       </section>
     </div>

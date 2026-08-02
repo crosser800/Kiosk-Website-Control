@@ -100,6 +100,10 @@ type DiscountRow = {
   price_type: string | null;
   price_code: string | null;
   priority: number | null;
+  apply_sequence: number | null;
+  calculation_method: string | null;
+  discount_group: string | null;
+  applies_to: string | null;
   stackable: boolean | null;
   starts_at: string | null;
   ends_at: string | null;
@@ -190,7 +194,8 @@ export async function loadOrderCatalog(): Promise<OrderCatalogProduct[]> {
       .order('sort_order', { ascending: true }),
     supabase
       .from('product_discounts')
-      .select('id, product_id, discount_name, discount_type, discount_percent, amount, status, min_quantity, max_quantity, branch_name, price_type, price_code, priority, stackable, starts_at, ends_at')
+      .select('id, product_id, discount_name, discount_type, discount_percent, amount, status, min_quantity, max_quantity, branch_name, price_type, price_code, priority, apply_sequence, calculation_method, discount_group, applies_to, stackable, starts_at, ends_at')
+      .order('apply_sequence', { ascending: true })
       .order('priority', { ascending: true }),
     supabase
       .from('product_discount_classes')
@@ -478,6 +483,10 @@ function mapDiscountRule(row: DiscountRow, classes: DiscountClassRow[]): Discoun
     priceType: row.price_type,
     priceCode: row.price_code,
     priority: toSafeNumber(row.priority, 0),
+    applySequence: toSafeNumber(row.apply_sequence, toSafeNumber(row.priority, 0)),
+    calculationMethod: row.calculation_method,
+    discountGroup: row.discount_group,
+    appliesTo: row.applies_to,
     stackable: Boolean(row.stackable),
     startsAt: row.starts_at,
     endsAt: row.ends_at,

@@ -604,6 +604,51 @@
   box-shadow: var(--card-shadow);
 }
 
+.confirmOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5200;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(10, 12, 18, 0.64);
+}
+
+.confirmDialog {
+  width: min(100%, 28rem);
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--card-border) 72%, #facc15);
+  border-radius: 0.95rem;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+}
+
+.confirmDetail {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 26%, var(--card-border));
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--yellow) 10%, white);
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+}
+
+.confirmDetail span {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.confirmDetail strong {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
 .modalHeader {
   display: flex;
   align-items: flex-start;
@@ -871,6 +916,32 @@
   color: var(--text);
 }
 
+.encoderPreviewSection {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 20%, var(--card-border));
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--yellow) 7%, white);
+}
+
+.encoderPreviewText {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.45;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.suggestedNameRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .ruleSummary {
   flex: 1;
   min-width: 14rem;
@@ -884,6 +955,110 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.65rem;
+}
+
+.stackList {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.stackRow {
+  display: grid;
+  grid-template-columns: 2.25rem 2rem minmax(8rem, 0.75fr) minmax(5.5rem, 1fr) 2.25rem;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--surface) 88%, white);
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    opacity 0.16s ease,
+    transform 0.16s ease;
+}
+
+.stackRowDragging {
+  opacity: 0.55;
+  border-color: #eab308;
+  box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.18);
+  transform: scale(0.995);
+}
+
+.stackRowDragOver {
+  border-color: #facc15;
+  box-shadow: inset 0 0 0 2px rgba(250, 204, 21, 0.45);
+}
+
+.stackDragHandle,
+.stackDeleteButton {
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  font-size: 0.78rem;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.stackDragHandle {
+  border: 1px solid color-mix(in srgb, var(--card-border) 85%, #facc15);
+  background: color-mix(in srgb, var(--yellow) 12%, white);
+  color: var(--text-muted);
+  cursor: grab;
+}
+
+.stackDragHandle:hover {
+  border-color: #eab308;
+  color: var(--text);
+}
+
+.stackDragHandle:active {
+  cursor: grabbing;
+}
+
+.stackSequence {
+  width: 1.75rem;
+  height: 1.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #facc15;
+  color: #1f2937;
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.stackTypeSelect,
+.stackValueInput {
+  min-height: 2.15rem;
+  padding-top: 0.45rem;
+  padding-bottom: 0.45rem;
+}
+
+.stackDeleteButton {
+  border: 1px solid rgba(220, 38, 38, 0.18);
+  background: color-mix(in srgb, #fee2e2 78%, white);
+  color: #b91c1c;
+  cursor: pointer;
+}
+
+.stackDeleteButton:hover:not(:disabled) {
+  border-color: rgba(220, 38, 38, 0.38);
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.stackDeleteButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .promoSection {
@@ -1096,6 +1271,10 @@
   .discountBasisPreview {
     grid-template-columns: 1fr;
   }
+
+  .stackRow {
+    grid-template-columns: 2.25rem 2rem minmax(7rem, 1fr) minmax(5rem, 1fr) 2.25rem;
+  }
 }
 
 @media (max-width: 700px) {
@@ -1195,6 +1374,7 @@
   .packagingSetupMain,
   .unitOptionList,
   .ruleList,
+  .stackList,
   .ruleTabsHeader,
   .ruleCard,
   .promoSection {
@@ -1234,6 +1414,50 @@
     padding: 0.5rem 0.58rem;
     border-radius: 0.5rem;
     font-size: 0.65rem;
+  }
+
+  .stackRow {
+    grid-template-columns: 2rem 1.8rem 1fr 2rem;
+    grid-template-areas:
+      "handle sequence type delete"
+      "handle sequence value delete";
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem;
+    border-radius: 0.55rem;
+  }
+
+  .stackDragHandle {
+    grid-area: handle;
+  }
+
+  .stackSequence {
+    grid-area: sequence;
+  }
+
+  .stackTypeSelect {
+    grid-area: type;
+  }
+
+  .stackValueInput {
+    grid-area: value;
+  }
+
+  .stackDeleteButton {
+    grid-area: delete;
+  }
+
+  .stackDragHandle,
+  .stackDeleteButton {
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 0.45rem;
+  }
+
+  .stackSequence {
+    width: 1.55rem;
+    height: 1.55rem;
+    font-size: 0.66rem;
   }
 
   .parserMessage {

@@ -1,4 +1,12 @@
 import { supabase } from '../lib/supabase';
+import {
+  clearInternalSessionToken,
+  loadGatewayAuthContext,
+  logoutInternalAdmin,
+  validateStoredInternalSession,
+  type InternalAdminProfile,
+  type InternalPermission,
+} from './internalAdminAuth';
 
 type AdminAccountRow = {
   id: string;
@@ -15,9 +23,24 @@ type AdminRoleLinkRow = {
 export type AuthAccessState =
   | { kind: 'none' }
   | {
+      kind: 'internal_login_required';
+      email: string | null;
+    }
+  | {
+      kind: 'internal_password_change';
+      email: string | null;
+      internalSession: {
+        account: InternalAdminProfile;
+      };
+    }
+  | {
       kind: 'admin';
       email: string | null;
       role: 'admin' | 'super_admin';
+      internalSession?: {
+        account: InternalAdminProfile;
+        permissions: InternalPermission[];
+      };
     }
   | { kind: 'agent_password_change'; agentId: string }
   | { kind: 'error'; message: string };
@@ -80,7 +103,12 @@ export async function signInAdmin(email: string, password: string) {
 
   const accessState = await resolveAuthenticatedAccess();
 
-  if (accessState.kind === 'admin' || accessState.kind === 'agent_password_change') {
+  if (
+    accessState.kind === 'admin' ||
+    accessState.kind === 'agent_password_change' ||
+    accessState.kind === 'internal_login_required' ||
+    accessState.kind === 'internal_password_change'
+  ) {
     return accessState;
   }
 
@@ -143,6 +171,48 @@ export async function resolveAuthenticatedAccess(): Promise<AuthAccessState> {
         status: admin.status,
       });
       return { kind: 'error', message: 'This admin account is inactive.' };
+    }
+
+    const gatewayContext = await loadGatewayAuthContext().catch((error) => {
+      console.error('Gateway auth context failed to load', error);
+      return null;
+    });
+
+    if (!gatewayContext?.ok) {
+      return { kind: 'error', message: 'Unable to verify gateway access. Please try again.' };
+    }
+
+    const requiresInternalLogin = gatewayContext.requiresInternalLogin;
+
+    if (requiresInternalLogin) {
+      const internalSession = await validateStoredInternalSession();
+
+      if (!internalSession) {
+        return {
+          kind: 'internal_login_required',
+          email: userData.user.email ?? null,
+        };
+      }
+
+      if (internalSession.mustChangePassword) {
+        return {
+          kind: 'internal_password_change',
+          email: userData.user.email ?? null,
+          internalSession: {
+            account: internalSession.account,
+          },
+        };
+      }
+
+      return {
+        kind: 'admin',
+        email: userData.user.email ?? null,
+        role: 'admin',
+        internalSession: {
+          account: internalSession.account,
+          permissions: internalSession.permissions,
+        },
+      };
     }
 
     if (isSystemOwner) {
@@ -255,5 +325,15 @@ export async function completeRequiredPasswordChange(newPassword: string) {
 }
 
 export async function signOutAdmin() {
+  clearInternalSessionToken();
+  await supabase.auth.signOut();
+}
+
+export async function signOutInternalAdminOnly() {
+  await logoutInternalAdmin();
+}
+
+export async function signOutOperationsGateway() {
+  await logoutInternalAdmin({ revokeGateway: true, reason: 'operations_gateway_logout' }).catch(() => undefined);
   await supabase.auth.signOut();
 }

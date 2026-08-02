@@ -3,6 +3,8 @@ import logo from '../assets/2B LOGO.png';
 import AdminOtpVerificationStep, { adminVerificationCodeLength } from '../components/login/AdminOtpVerificationStep';
 import CreateAdminPasswordStep from '../components/login/CreateAdminPasswordStep';
 import EmailLoginStep from '../components/login/EmailLoginStep';
+import InternalAdminLoginStep from '../components/login/InternalAdminLoginStep';
+import InternalPasswordChangeStep from '../components/login/InternalPasswordChangeStep';
 import PasswordLoginStep from '../components/login/PasswordLoginStep';
 import {
   completeAdminActivation,
@@ -14,10 +16,16 @@ import {
   verifyAdminActivationOtp,
 } from '../services/adminActivation';
 import { signInAdmin } from '../services/auth';
+import {
+  changeInternalAdminPassword,
+  loginInternalAdmin,
+} from '../services/internalAdminAuth';
 import styles from './Login.module.css';
 
 type LoginProps = {
   onLogin: () => void | Promise<void>;
+  mode?: 'main' | 'internal' | 'internalPasswordChange';
+  onGatewayLogout?: () => void | Promise<void>;
 };
 
 type LoginStep = 'email' | 'password' | 'activation' | 'createPassword';
@@ -76,7 +84,7 @@ function LoginSuccessTransition() {
   );
 }
 
-export default function Login({ onLogin }: LoginProps) {
+export default function Login({ onLogin, mode = 'main', onGatewayLogout }: LoginProps) {
   const [step, setStep] = useState<LoginStep>('email');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -89,6 +97,7 @@ export default function Login({ onLogin }: LoginProps) {
   const [isSuccessTransitionVisible, setIsSuccessTransitionVisible] = useState(false);
   const [hasSentOtp, setHasSentOtp] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [internalUsername, setInternalUsername] = useState('');
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -248,6 +257,55 @@ export default function Login({ onLogin }: LoginProps) {
     }
   }
 
+  async function handleInternalLogin() {
+    if (!internalUsername.trim() || !password.trim()) {
+      setError('Enter your username and password.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      await loginInternalAdmin(internalUsername, password);
+      await onLogin();
+    } catch {
+      setError('Invalid username or password.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleInternalPasswordChange() {
+    if (!newPassword || !confirmPassword) {
+      setError('Both password fields are required.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError('Passwords must match.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError('');
+    setInfo('');
+
+    try {
+      await changeInternalAdminPassword(newPassword, confirmPassword);
+      setPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setInfo('Password changed. Log in again with your new password.');
+      await window.setTimeout(() => undefined, 0);
+      await onLogin();
+    } catch (changeError) {
+      setError(changeError instanceof Error ? changeError.message : 'Unable to change password.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <div className={styles.loginScreen}>
       <div className={styles.loginCard}>
@@ -267,7 +325,46 @@ export default function Login({ onLogin }: LoginProps) {
 
         <div className={styles.formPanel}>
           <div key={`${step}-${step === 'password' && isSubmitting ? 'loading' : 'ready'}`} className={styles.stepScene}>
-            {step === 'email' ? (
+            {mode === 'internal' ? (
+              <InternalAdminLoginStep
+                username={internalUsername}
+                password={password}
+                error={error}
+                info={info}
+                isSubmitting={isSubmitting}
+                onUsernameChange={(nextUsername) => {
+                  setInternalUsername(nextUsername);
+                  setError('');
+                }}
+                onPasswordChange={(nextPassword) => {
+                  setPassword(nextPassword);
+                  setError('');
+                }}
+                onSubmit={() => void handleInternalLogin()}
+                onGatewayLogout={() => void onGatewayLogout?.()}
+              />
+            ) : null}
+
+            {mode === 'internalPasswordChange' ? (
+              <InternalPasswordChangeStep
+                password={newPassword}
+                confirmPassword={confirmPassword}
+                error={error}
+                info={info}
+                isSubmitting={isSubmitting}
+                onPasswordChange={(nextPassword) => {
+                  setNewPassword(nextPassword);
+                  setError('');
+                }}
+                onConfirmPasswordChange={(nextPassword) => {
+                  setConfirmPassword(nextPassword);
+                  setError('');
+                }}
+                onSubmit={() => void handleInternalPasswordChange()}
+              />
+            ) : null}
+
+            {mode === 'main' && step === 'email' ? (
               <EmailLoginStep
                 email={email}
                 error={error}
@@ -280,7 +377,7 @@ export default function Login({ onLogin }: LoginProps) {
               />
             ) : null}
 
-            {step === 'password' ? (
+            {mode === 'main' && step === 'password' ? (
               isSubmitting ? (
                 <PasswordLoginLoading />
               ) : (
@@ -299,7 +396,7 @@ export default function Login({ onLogin }: LoginProps) {
               )
             ) : null}
 
-            {step === 'activation' ? (
+            {mode === 'main' && step === 'activation' ? (
               <AdminOtpVerificationStep
                 email={email}
                 token={otpToken}
@@ -319,7 +416,7 @@ export default function Login({ onLogin }: LoginProps) {
               />
             ) : null}
 
-            {step === 'createPassword' ? (
+            {mode === 'main' && step === 'createPassword' ? (
               <CreateAdminPasswordStep
                 password={newPassword}
                 confirmPassword={confirmPassword}

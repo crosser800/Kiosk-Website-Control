@@ -1,66 +1,54 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { AccountSummaryItem, AccountView } from './AccountsSummary';
-import { addAccountItem } from '../../services/accounts';
 import {
-  loadAdminDepartments,
-  type AdminDepartment,
-} from '../../services/adminDepartments';
+  addAccountItem,
+  groupPermissionsByModule,
+  loadInternalAdminFormOptions,
+  type InternalAdminFormOptions,
+} from '../../services/accounts';
 import type { OrderPriceCode } from '../../services/orderPricing';
 import styles from './AccountModal.module.css';
 
 type CreateAccountProps = {
   accountType: AccountView;
-  onCreate: (accounts: Promise<AccountSummaryItem[]> | AccountSummaryItem[]) => void;
+  onCreate: (accounts: Promise<AccountSummaryItem[]> | AccountSummaryItem[], message?: string) => void;
   onClose: () => void;
 };
 
 type AccountForm = {
-  profileImage: string;
-  profileImageFile: File | null;
   name: string;
-  role: AccountView;
-  access: string[];
-  handling: string;
-  branch: string;
-  departmentId: string;
-  departmentName: string;
-  isActive: boolean;
-  status: 'Active' | 'Inactive' | 'Blocked';
   email: string;
   contact: string;
+  branch: string;
   address: string;
   notes: string;
+  status: 'Active' | 'Inactive' | 'Blocked' | 'Locked';
+  username: string;
+  roleId: string;
+  departmentId: string;
+  parentAdminAccountId: string;
+  permissionIds: string[];
+  temporaryPassword: string;
   priceAccess: OrderPriceCode[];
 };
 
 const priceOptions: OrderPriceCode[] = ['R1', 'R2', 'W1', 'W2', 'SP', 'CP'];
 
-function formatContactInput(value: string) {
-  const digitsOnly = value.replace(/\D/g, '').slice(0, 11);
-  const first = digitsOnly.slice(0, 4);
-  const second = digitsOnly.slice(4, 7);
-  const third = digitsOnly.slice(7, 11);
-
-  return [first, second, third].filter(Boolean).join('-');
-}
-
-function getInitialForm(accountType: AccountView): AccountForm {
+function getInitialForm(): AccountForm {
   return {
-    profileImage: '',
-    profileImageFile: null,
     name: '',
-    role: accountType,
-    access: [],
-    handling: '',
-    branch: '',
-    departmentId: '',
-    departmentName: '',
-    isActive: true,
-    status: 'Active',
     email: '',
     contact: '',
+    branch: '',
     address: '',
     notes: '',
+    status: 'Active',
+    username: '',
+    roleId: '',
+    departmentId: '',
+    parentAdminAccountId: '',
+    permissionIds: [],
+    temporaryPassword: '',
     priceAccess: [],
   };
 }
@@ -69,162 +57,63 @@ function isValidEmail(email: string) {
   return !email.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
+function formatContactInput(value: string) {
+  const digitsOnly = value.replace(/\D/g, '').slice(0, 11);
+  return [digitsOnly.slice(0, 4), digitsOnly.slice(4, 7), digitsOnly.slice(7, 11)]
+    .filter(Boolean)
+    .join('-');
+}
+
 export default function CreateAccount({ accountType, onCreate, onClose }: CreateAccountProps) {
-  const [form, setForm] = useState<AccountForm>(() => getInitialForm(accountType));
-  const previousProfilePreviewRef = useRef('');
-  const [departments, setDepartments] = useState<AdminDepartment[]>([]);
-  const [isLoadingDepartments, setIsLoadingDepartments] = useState(accountType === 'admins');
-  const [departmentLoadError, setDepartmentLoadError] = useState('');
+  const [form, setForm] = useState<AccountForm>(getInitialForm);
+  const [options, setOptions] = useState<InternalAdminFormOptions>({
+    roles: [],
+    departments: [],
+    gateways: [],
+    permissions: [],
+  });
+  const [isLoadingOptions, setIsLoadingOptions] = useState(accountType === 'admins');
   const [validationError, setValidationError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const nameInputRef = useRef<HTMLInputElement>(null);
-  const emailInputRef = useRef<HTMLInputElement>(null);
-  const contactInputRef = useRef<HTMLInputElement>(null);
-  const departmentSelectRef = useRef<HTMLSelectElement>(null);
-  const accountLabel = form.role === 'admins' ? 'Admin' : 'Agent';
-
-  useEffect(
-    () => () => {
-      if (previousProfilePreviewRef.current) {
-        URL.revokeObjectURL(previousProfilePreviewRef.current);
-      }
-    },
-    [],
-  );
-
-  function fetchDepartments() {
-    setIsLoadingDepartments(true);
-    setDepartmentLoadError('');
-
-    return loadAdminDepartments()
-      .then((nextDepartments) => {
-        setDepartments(nextDepartments);
-        setForm((current) => {
-          const selectedDepartment = nextDepartments.find(
-            (department) => department.id === current.departmentId,
-          );
-
-          if (selectedDepartment) {
-            return {
-              ...current,
-              departmentId: selectedDepartment.id,
-              departmentName: selectedDepartment.name,
-              branch: selectedDepartment.name,
-            };
-          }
-
-          const staleDepartmentText =
-            current.departmentId || current.departmentName || current.branch;
-
-          if (!staleDepartmentText) {
-            return current;
-          }
-
-          const matchingDepartments = nextDepartments.filter(
-            (department) =>
-              department.name.localeCompare(staleDepartmentText, undefined, {
-                sensitivity: 'accent',
-              }) === 0,
-          );
-
-          if (matchingDepartments.length === 1) {
-            const [matchedDepartment] = matchingDepartments;
-            return {
-              ...current,
-              departmentId: matchedDepartment.id,
-              departmentName: matchedDepartment.name,
-              branch: matchedDepartment.name,
-            };
-          }
-
-          return { ...current, departmentId: '', departmentName: '', branch: '' };
-        });
-      })
-      .catch((error) => {
-        console.error('Admin departments failed to load', error);
-        setDepartmentLoadError(
-          error instanceof Error ? error.message : 'Unable to load admin departments.',
-        );
-      })
-      .finally(() => setIsLoadingDepartments(false));
-  }
+  const groupedPermissions = useMemo(() => {
+    return groupPermissionsByModule(options.permissions);
+  }, [options]);
 
   useEffect(() => {
-    if (form.role !== 'admins') {
-      return;
-    }
+    if (accountType !== 'admins') return;
 
-    void fetchDepartments();
-  }, [form.role]);
+    loadInternalAdminFormOptions()
+      .then((nextOptions) => {
+        setOptions(nextOptions);
+        setForm((current) => ({
+          ...current,
+          roleId: current.roleId || nextOptions.roles[0]?.id || '',
+          departmentId: current.departmentId || nextOptions.departments[0]?.id || '',
+          parentAdminAccountId:
+            current.parentAdminAccountId ||
+            nextOptions.gateways.find((gateway) => gateway.label.toLowerCase().includes('operations'))?.id ||
+            nextOptions.gateways[0]?.id ||
+            '',
+        }));
+      })
+      .catch((error) => {
+        setValidationError(error instanceof Error ? error.message : 'Unable to load internal admin options.');
+      })
+      .finally(() => setIsLoadingOptions(false));
+  }, [accountType]);
 
-  function updateField<Field extends keyof AccountForm>(
-    field: Field,
-    value: AccountForm[Field],
-  ) {
+  function updateField<Field extends keyof AccountForm>(field: Field, value: AccountForm[Field]) {
     setValidationError('');
     setForm((current) => ({ ...current, [field]: value }));
   }
 
-  function validateForm() {
-    if (!form.name.trim()) {
-      setValidationError(
-        form.role === 'admins'
-          ? 'Name and email are required for admin accounts.'
-          : 'Name, email address, and status are required for agent accounts.',
-      );
-      nameInputRef.current?.focus();
-      return false;
-    }
-
-    if (!form.email.trim()) {
-      setValidationError(
-        form.role === 'admins'
-          ? 'Name and email are required for admin accounts.'
-          : 'Name, email address, and status are required for agent accounts.',
-      );
-      emailInputRef.current?.focus();
-      return false;
-    }
-
-    if (form.role === 'admins') {
-      if (form.departmentId && isLoadingDepartments) {
-        setValidationError('Wait for departments to finish loading.');
-        departmentSelectRef.current?.focus();
-        return false;
-      }
-
-      if (form.departmentId && departmentLoadError) {
-        setValidationError('Departments could not be loaded. Retry before creating this account.');
-        departmentSelectRef.current?.focus();
-        return false;
-      }
-
-      if (form.departmentId && !departments.some((department) => department.id === form.departmentId)) {
-        setValidationError('Please select a valid department.');
-        departmentSelectRef.current?.focus();
-        return false;
-      }
-    }
-
-    if (!isValidEmail(form.email)) {
-      setValidationError('Enter a valid email address.');
-      emailInputRef.current?.focus();
-      return false;
-    }
-
-    setValidationError('');
-    return true;
-  }
-
-  function handleDepartmentChange(departmentId: string) {
-    const selectedDepartment = departments.find((department) => department.id === departmentId);
-
+  function togglePermission(permissionId: string) {
     setValidationError('');
     setForm((current) => ({
       ...current,
-      departmentId,
-      departmentName: selectedDepartment?.name ?? '',
-      branch: selectedDepartment?.name ?? '',
+      permissionIds: current.permissionIds.includes(permissionId)
+        ? current.permissionIds.filter((id) => id !== permissionId)
+        : [...current.permissionIds, permissionId],
     }));
   }
 
@@ -238,68 +127,74 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
     }));
   }
 
-  function handleProfileImageChange(file: File | null) {
-    setValidationError('');
-
-    if (previousProfilePreviewRef.current) {
-      URL.revokeObjectURL(previousProfilePreviewRef.current);
-      previousProfilePreviewRef.current = '';
+  function validateForm() {
+    if (!form.name.trim()) {
+      setValidationError('Full Name is required.');
+      return false;
     }
 
-    if (!file) {
-      setForm((current) => ({
-        ...current,
-        profileImage: '',
-        profileImageFile: null,
-      }));
-      return;
+    if (accountType === 'agents') {
+      if (!form.email.trim()) {
+        setValidationError('Email address is required for agent accounts.');
+        return false;
+      }
+      if (!isValidEmail(form.email)) {
+        setValidationError('Enter a valid email address.');
+        return false;
+      }
+      return true;
     }
 
-    const previewUrl = URL.createObjectURL(file);
-    previousProfilePreviewRef.current = previewUrl;
-    setForm((current) => ({
-      ...current,
-      profileImage: previewUrl,
-      profileImageFile: file,
-    }));
+    if (!form.username.trim()) {
+      setValidationError('Username is required.');
+      return false;
+    }
+    if (!form.parentAdminAccountId) {
+      setValidationError('Select a parent gateway account.');
+      return false;
+    }
+    if (!form.temporaryPassword.trim()) {
+      setValidationError('Temporary Password is required.');
+      return false;
+    }
+
+    return true;
   }
 
   async function handleCreate() {
-    if (isSubmitting || !validateForm()) {
-      return;
-    }
+    if (isSubmitting || !validateForm()) return;
 
     setIsSubmitting(true);
-
     try {
-      const selectedDepartment = departments.find(
-        (department) => department.id === form.departmentId,
-      );
       const nextAccounts = await addAccountItem({
-        profileImage: form.profileImage || undefined,
-        profileImageFile: form.role === 'agents' ? form.profileImageFile ?? undefined : undefined,
         name: form.name,
-        email: form.email,
+        email: accountType === 'agents' ? form.email : '',
         contact: form.contact,
-        role: form.role,
+        role: accountType,
         handle: '',
         access: '',
-        branch: form.role === 'admins' ? selectedDepartment?.name ?? '' : form.branch,
-        departmentId: form.role === 'admins' ? selectedDepartment?.id : undefined,
-        status: form.role === 'agents' ? form.status : form.isActive ? 'Active' : 'Inactive',
-        address: form.role === 'agents' ? form.address : undefined,
-        notes: form.role === 'agents' ? form.notes : undefined,
-        priceAccess: form.role === 'agents' ? form.priceAccess : undefined,
+        branch: form.branch,
+        departmentId: accountType === 'admins' ? form.departmentId : undefined,
+        status: form.status,
+        address: accountType === 'agents' ? form.address : undefined,
+        notes: accountType === 'agents' ? form.notes : undefined,
+        priceAccess: accountType === 'agents' ? form.priceAccess : undefined,
+        username: accountType === 'admins' ? form.username : undefined,
+        roleId: accountType === 'admins' ? form.roleId : undefined,
+        parentAdminAccountId: accountType === 'admins' ? form.parentAdminAccountId : undefined,
+        permissionIds: accountType === 'admins' ? form.permissionIds : undefined,
+        temporaryPassword: accountType === 'admins' ? form.temporaryPassword : undefined,
       });
-      onCreate(nextAccounts);
+      setForm(getInitialForm());
+      onCreate(
+        nextAccounts,
+        accountType === 'admins' ? 'Internal admin created successfully.' : 'Account created successfully.',
+      );
       if ('warning' in nextAccounts && nextAccounts.warning) {
         window.setTimeout(() => window.alert(nextAccounts.warning), 0);
       }
     } catch (error) {
-      console.error('Create account failed', error);
-      setValidationError(
-        error instanceof Error ? error.message : 'Unable to create this account.',
-      );
+      setValidationError(error instanceof Error ? error.message : 'Unable to create this account.');
     } finally {
       setIsSubmitting(false);
     }
@@ -307,26 +202,17 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
 
   return (
     <div className={styles.overlay} role="presentation">
-      <section
-        className={styles.modal}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="create-account-title"
-      >
+      <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="create-account-title">
         <div className={styles.header}>
           <div>
             <h2 id="create-account-title" className={styles.title}>
-              Create New Account
+              {accountType === 'admins' ? 'Create Internal Admin' : 'Create New Account'}
             </h2>
-            <p className={styles.subtitle}>Create account for {accountLabel}</p>
+            <p className={styles.subtitle}>
+              Create account for {accountType === 'admins' ? 'Internal Admin' : 'Agent'}
+            </p>
           </div>
-
-          <button
-            type="button"
-            className={styles.closeButton}
-            onClick={onClose}
-            aria-label="Close create account"
-          >
+          <button type="button" className={styles.closeButton} onClick={onClose} aria-label="Close create account">
             <i className="fa-solid fa-xmark" aria-hidden="true"></i>
           </button>
         </div>
@@ -334,217 +220,125 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
         <div className={styles.divider}></div>
 
         <div className={styles.formContainer}>
-          {form.role === 'agents' ? (
-            <div className={styles.profilePicker}>
-              <div className={styles.profilePreview} aria-hidden="true">
-                {form.profileImage ? (
-                  <img
-                    src={form.profileImage}
-                    alt=""
-                    className={styles.profileImage}
-                  />
-                ) : (
-                  <i className="fa-solid fa-user" aria-hidden="true"></i>
-                )}
-              </div>
-              <label className={styles.profileButton}>
-                <i className="fa-solid fa-camera" aria-hidden="true"></i>
-                <span>Add Profile</span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className={styles.profileInput}
-                  onChange={(event) => {
-                    handleProfileImageChange(event.target.files?.[0] ?? null);
-                    event.target.value = '';
-                  }}
-                />
-              </label>
-            </div>
-          ) : null}
-
           <div className={styles.topGrid}>
             <label className={styles.field}>
-              <span className={styles.label}>Name</span>
-              <input
-                type="text"
-                ref={nameInputRef}
-                value={form.name}
-                onChange={(event) => updateField('name', event.target.value)}
-                className={styles.input}
-                required
-              />
+              <span className={styles.label}>Full Name</span>
+              <input value={form.name} onChange={(event) => updateField('name', event.target.value)} className={styles.input} />
             </label>
-
-            {form.role === 'agents' ? (
-              <label className={styles.field}>
-                <span className={styles.label}>Status</span>
-                <select
-                  value={form.status}
-                  onChange={(event) => updateField('status', event.target.value as AccountForm['status'])}
-                  className={styles.select}
-                >
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                  <option value="Blocked">Blocked</option>
-                </select>
-              </label>
-            ) : (
-              <label className={styles.checkboxField}>
-                <input
-                  type="checkbox"
-                  checked={form.isActive}
-                  onChange={(event) => updateField('isActive', event.target.checked)}
-                  className={styles.checkbox}
-                />
-                <span>Set Active</span>
-              </label>
-            )}
+            <label className={styles.field}>
+              <span className={styles.label}>Status</span>
+              <select
+                value={form.status}
+                onChange={(event) => updateField('status', event.target.value as AccountForm['status'])}
+                className={styles.select}
+              >
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                {accountType === 'admins' ? <option value="Locked">Locked</option> : null}
+                {accountType === 'agents' ? <option value="Blocked">Blocked</option> : null}
+              </select>
+            </label>
           </div>
 
           <div className={styles.formGrid}>
-            <label className={styles.field}>
-              <span className={styles.label}>Email Address</span>
-              <input
-                type="email"
-                ref={emailInputRef}
-                value={form.email}
-                onChange={(event) => updateField('email', event.target.value)}
-                className={styles.input}
-              />
-            </label>
-
-            <label className={styles.field}>
-              <span className={styles.label}>Contact</span>
-              <input
-                type="tel"
-                inputMode="numeric"
-                ref={contactInputRef}
-                value={form.contact}
-                onChange={(event) => updateField('contact', formatContactInput(event.target.value))}
-                placeholder="0000-000-0000"
-                className={styles.input}
-              />
-            </label>
-
-            {form.role === 'admins' ? (
-              <label className={styles.field}>
-                <span className={styles.label}>Department</span>
-                <select
-                  ref={departmentSelectRef}
-                  value={form.departmentId}
-                  onChange={(event) => handleDepartmentChange(event.target.value)}
-                  className={styles.select}
-                  disabled={isLoadingDepartments}
-                >
-                  <option value="">
-                    {isLoadingDepartments ? 'Loading departments...' : 'Select department'}
-                  </option>
-                  {departments.map((department) => (
-                    <option key={department.id} value={department.id}>
-                      {department.name}
-                    </option>
-                  ))}
-                </select>
-                {departmentLoadError ? (
-                  <small className={styles.inlineError}>
-                    Departments could not be loaded.
-                    <button type="button" onClick={() => void fetchDepartments()}>
-                      Retry
-                    </button>
-                  </small>
-                ) : null}
-              </label>
-            ) : (
-              <label className={styles.field}>
-                <span className={styles.label}>Company Name</span>
-                <input
-                  type="text"
-                  value={form.branch}
-                  onChange={(event) => updateField('branch', event.target.value)}
-                  placeholder="Enter company name"
-                  className={styles.input}
-              />
-            </label>
-            )}
-
-            {form.role === 'agents' ? (
+            {accountType === 'admins' ? (
               <>
                 <label className={styles.field}>
-                  <span className={styles.label}>Address</span>
+                  <span className={styles.label}>Username</span>
                   <input
-                    type="text"
-                    value={form.address}
-                    onChange={(event) => updateField('address', event.target.value)}
-                    placeholder="Enter address"
+                    value={form.username}
+                    onChange={(event) => updateField('username', event.target.value.toLowerCase())}
                     className={styles.input}
                   />
                 </label>
-
+                <label className={styles.field}>
+                  <span className={styles.label}>Role / Position</span>
+                  <select value={form.roleId} onChange={(event) => updateField('roleId', event.target.value)} className={styles.select} disabled={isLoadingOptions}>
+                    <option value="">Select role</option>
+                    {options.roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
+                  </select>
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>Department</span>
+                  <select value={form.departmentId} onChange={(event) => updateField('departmentId', event.target.value)} className={styles.select} disabled={isLoadingOptions}>
+                    <option value="">Select department</option>
+                    {options.departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+                  </select>
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>Parent Gateway Account</span>
+                  <select value={form.parentAdminAccountId} onChange={(event) => updateField('parentAdminAccountId', event.target.value)} className={styles.select} disabled={isLoadingOptions}>
+                    <option value="">Select gateway</option>
+                    {options.gateways.map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.label}</option>)}
+                  </select>
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>Temporary Password</span>
+                  <input type="password" value={form.temporaryPassword} onChange={(event) => updateField('temporaryPassword', event.target.value)} className={styles.input} />
+                </label>
+                <div className={styles.noticeCard}>
+                  <span className={styles.label}>Password Backend</span>
+                  <p>Creation will stay blocked until a secure RPC or Edge Function is available for password hashing.</p>
+                </div>
+                <div className={`${styles.noticeCard} ${styles.wideField}`}>
+                  <span className={styles.label}>Access</span>
+                  {groupedPermissions.map(([moduleCode, permissions]) => (
+                    <div key={moduleCode} className={styles.accessGroup}>
+                      <strong>{moduleCode}</strong>
+                      {permissions.map((permission) => (
+                        <label key={permission.id} className={styles.accessOptionInline}>
+                          <input type="checkbox" checked={form.permissionIds.includes(permission.id)} onChange={() => togglePermission(permission.id)} className={styles.checkbox} />
+                          <span>{permission.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <label className={styles.field}>
+                  <span className={styles.label}>Email Address</span>
+                  <input type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} className={styles.input} />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>Contact</span>
+                  <input value={form.contact} onChange={(event) => updateField('contact', formatContactInput(event.target.value))} className={styles.input} />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>Company Name</span>
+                  <input value={form.branch} onChange={(event) => updateField('branch', event.target.value)} className={styles.input} />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>Address</span>
+                  <input value={form.address} onChange={(event) => updateField('address', event.target.value)} className={styles.input} />
+                </label>
                 <label className={styles.field}>
                   <span className={styles.label}>Notes</span>
-                  <textarea
-                    value={form.notes}
-                    onChange={(event) => updateField('notes', event.target.value)}
-                    placeholder="Optional notes"
-                    className={styles.textarea}
-                  />
+                  <textarea value={form.notes} onChange={(event) => updateField('notes', event.target.value)} className={styles.textarea} />
                 </label>
-
                 <div className={styles.noticeCard}>
                   <span className={styles.label}>Initial Price Access</span>
                   <div className={styles.priceCircleGroup}>
                     {priceOptions.map((priceCode) => (
-                      <button
-                        key={priceCode}
-                        type="button"
-                        className={`${styles.priceCircle} ${
-                          form.priceAccess.includes(priceCode) ? styles.priceCircleActive : ''
-                        }`}
-                        onClick={() => togglePriceAccess(priceCode)}
-                        aria-pressed={form.priceAccess.includes(priceCode)}
-                      >
+                      <button key={priceCode} type="button" className={`${styles.priceCircle} ${form.priceAccess.includes(priceCode) ? styles.priceCircleActive : ''}`} onClick={() => togglePriceAccess(priceCode)}>
                         {priceCode}
                       </button>
                     ))}
                   </div>
-                  <p>
-                    {form.priceAccess.length === 0
-                      ? 'No price access enabled.'
-                      : `${form.priceAccess.length} price ${
-                          form.priceAccess.length === 1 ? 'class' : 'classes'
-                        } enabled.`}
-                  </p>
                 </div>
               </>
-            ) : null}
-
-            {form.role === 'admins' ? (
-              <div className={styles.noticeCard}>
-                <span className={styles.label}>Authentication Setup</span>
-                <p>
-                  This account will be created as an Admin. The user will verify
-                  their email and create a password during first-time login.
-                </p>
-              </div>
-            ) : null}
+            )}
           </div>
         </div>
 
-        {validationError && <p className={styles.validationError}>{validationError}</p>}
+        {validationError ? <p className={styles.validationError}>{validationError}</p> : null}
 
         <div className={styles.actions}>
-          <button
-            type="button"
-            className={styles.createButton}
-            onClick={() => void handleCreate()}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? 'Creating account...' : 'Create Account'}
+          <button type="button" className={styles.createButton} onClick={() => void handleCreate()} disabled={isSubmitting || isLoadingOptions}>
+            {isSubmitting ? 'Creating account...' : accountType === 'admins' ? 'Create Internal Admin' : 'Create Account'}
           </button>
-          <button type="button" className={styles.cancelButton} onClick={onClose}>
-            Cancel
-          </button>
+          <button type="button" className={styles.cancelButton} onClick={onClose}>Cancel</button>
         </div>
       </section>
     </div>

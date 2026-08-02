@@ -31,6 +31,7 @@ type UseSupabaseSettingsSectionOptions<
   validate?: (form: TForm, items: TRecord[], editingId: string | null) => string | null;
   beforeSave?: (context: SaveContext<TForm>) => Promise<void>;
   preparePayload?: (context: SaveContext<TForm> & { items: TRecord[] }) => Promise<PreparedPayload | void>;
+  getSaveErrorMessage?: (error: unknown) => string;
   orderBy?: OrderBy[];
   statusColumn?: string;
   sortOrderColumn?: string | null;
@@ -50,6 +51,7 @@ export default function useSupabaseSettingsSection<
   validate,
   beforeSave,
   preparePayload,
+  getSaveErrorMessage,
   orderBy = [],
   statusColumn = 'status',
   sortOrderColumn = 'sort_order',
@@ -69,6 +71,7 @@ export default function useSupabaseSettingsSection<
   const validateRef = useRef(validate);
   const beforeSaveRef = useRef(beforeSave);
   const preparePayloadRef = useRef(preparePayload);
+  const getSaveErrorMessageRef = useRef(getSaveErrorMessage);
   const orderByRef = useRef(orderBy);
   const sortOrderColumnRef = useRef(sortOrderColumn);
 
@@ -99,6 +102,10 @@ export default function useSupabaseSettingsSection<
   useEffect(() => {
     preparePayloadRef.current = preparePayload;
   }, [preparePayload]);
+
+  useEffect(() => {
+    getSaveErrorMessageRef.current = getSaveErrorMessage;
+  }, [getSaveErrorMessage]);
 
   useEffect(() => {
     orderByRef.current = orderBy;
@@ -220,7 +227,10 @@ export default function useSupabaseSettingsSection<
       if (preparedPayload?.onError) {
         await preparedPayload.onError();
       }
-      setSaveError(error instanceof Error ? error.message : 'Failed to save changes.');
+      setSaveError(
+        getSaveErrorMessageRef.current?.(error) ??
+          (error instanceof Error ? error.message : 'Failed to save changes.'),
+      );
       setIsSaving(false);
       return false;
     }

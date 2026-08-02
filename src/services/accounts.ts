@@ -1,7 +1,11 @@
 import { supabase } from '../lib/supabase';
-import type { AccountSummaryItem, AccountView } from '../components/account/AccountsSummary';
+import type {
+  AccountPermissionSummary,
+  AccountSummaryItem,
+  AccountView,
+} from '../components/account/AccountsSummary';
+import { getStoredInternalSessionToken } from './internalAdminAuth';
 import type { OrderPriceCode } from './orderPricing';
-import { formatRoleLabel } from './currentAdminProfile';
 import {
   convertImageToWebp,
   getAgentProfilePath,
@@ -10,7 +14,7 @@ import {
   PROFILE_IMAGE_QUALITY,
 } from '../utils/profileImages';
 
-type AccountStatus = 'Active' | 'Inactive' | 'Blocked';
+type AccountStatus = 'Active' | 'Inactive' | 'Blocked' | 'Locked';
 
 export type AccountInput = {
   profileImage?: string;
@@ -28,9 +32,43 @@ export type AccountInput = {
   address?: string;
   notes?: string;
   priceAccess?: OrderPriceCode[];
+  username?: string;
+  roleId?: string;
+  parentAdminAccountId?: string;
+  permissionIds?: string[];
+  temporaryPassword?: string;
 };
 
 type AccountCreateResult = AccountSummaryItem[] & { warning?: string };
+
+export type AdminRoleOption = {
+  id: string;
+  name: string;
+  code: string;
+};
+
+export type AdminGatewayOption = {
+  id: string;
+  label: string;
+  email: string;
+  position: string;
+};
+
+export type AdminPermissionOption = {
+  id: string;
+  moduleCode: string;
+  permissionCode: string;
+  label: string;
+  description: string;
+  sortOrder: number;
+};
+
+export type InternalAdminFormOptions = {
+  roles: AdminRoleOption[];
+  departments: { id: string; name: string }[];
+  gateways: AdminGatewayOption[];
+  permissions: AdminPermissionOption[];
+};
 
 type AgentAccountRow = {
   id: string;
@@ -48,49 +86,148 @@ type AgentAccountRow = {
   updated_at: string;
 };
 
-type AdminAccountRow = {
+type InternalAdminAccountRow = {
   id: string;
-  auth_user_id: string | null;
+  parent_admin_account_id: string | null;
+  role_id: string | null;
   department_id: string | null;
-  admin_code: string | null;
+  username: string | null;
   full_name: string | null;
-  email: string | null;
   profile_image_url: string | null;
-  position: string | null;
-  department: string | null;
-  contact_number: string | null;
-  address: string | null;
-  bio: string | null;
-  role: string | null;
   status: string | null;
-  notes: string | null;
-  is_system_owner: boolean | null;
-  last_login_at: string | null;
+  must_change_password: boolean | null;
+  password_changed_at: string | null;
+  password_reset_at: string | null;
   created_at: string | null;
-  updated_at: string | null;
 };
 
-type AdminRoleLinkRow = {
-  admin_account_id: string | null;
-  admin_roles: { role_name: string | null } | { role_name: string | null }[] | null;
+type AdminRoleRow = {
+  id: string | null;
+  role_name: string | null;
+  role_code: string | null;
 };
 
-type AdminDepartmentNameRow = {
+type AdminDepartmentRow = {
   id: string | null;
   name: string | null;
 };
 
+type AdminGatewayRow = {
+  id: string | null;
+  full_name: string | null;
+  email: string | null;
+  position: string | null;
+  admin_code: string | null;
+};
+
+type AdminPermissionRow = {
+  id: string | null;
+  module_code: string | null;
+  permission_code: string | null;
+  permission_name?: string | null;
+  description?: string | null;
+  sort_order?: number | null;
+};
+
+type InternalAdminPermissionRow = {
+  internal_admin_account_id: string | null;
+  permission_id: string | null;
+};
+
 const defaultAccounts: AccountSummaryItem[] = [];
+const MODULE_ORDER = [
+  'dashboard',
+  'products',
+  'orders',
+  'sales',
+  'accounts',
+  'admin_users',
+  'settings',
+];
+
+const MODULE_CODE_ALIASES = new Map<string, string>([
+  ['dashboard', 'dashboard'],
+  ['products', 'products'],
+  ['orders', 'orders'],
+  ['order', 'orders'],
+  ['sales', 'sales'],
+  ['accounts', 'accounts'],
+  ['account', 'accounts'],
+  ['admin_users', 'admin_users'],
+  ['settings', 'settings'],
+]);
+
+function normalizeModuleCode(moduleCode: string) {
+  return moduleCode.trim().toLowerCase();
+}
+
+function getModuleSortKey(moduleCode: string) {
+  const normalized = normalizeModuleCode(moduleCode);
+  const canonical = MODULE_CODE_ALIASES.get(normalized) ?? normalized;
+  const knownIndex = MODULE_ORDER.indexOf(canonical);
+
+  return {
+    knownIndex: knownIndex === -1 ? Number.MAX_SAFE_INTEGER : knownIndex,
+    fallback: normalized,
+  };
+}
+
+export function comparePermissionModules(leftModuleCode: string, rightModuleCode: string) {
+  const left = getModuleSortKey(leftModuleCode);
+  const right = getModuleSortKey(rightModuleCode);
+
+  if (left.knownIndex !== right.knownIndex) {
+    return left.knownIndex - right.knownIndex;
+  }
+
+  return left.fallback.localeCompare(right.fallback);
+}
+
+export function comparePermissionItems(
+  left: Pick<AdminPermissionOption, 'sortOrder' | 'label'>,
+  right: Pick<AdminPermissionOption, 'sortOrder' | 'label'>,
+) {
+  if (left.sortOrder !== right.sortOrder) {
+    return left.sortOrder - right.sortOrder;
+  }
+
+  return left.label.localeCompare(right.label);
+}
+
+export function groupPermissionsByModule<Permission extends { moduleCode: string; sortOrder: number; label: string }>(
+  permissions: Permission[],
+) {
+  const groups = new Map<string, Permission[]>();
+  permissions.forEach((permission) => {
+    groups.set(permission.moduleCode, [...(groups.get(permission.moduleCode) ?? []), permission]);
+  });
+
+  return Array.from(groups.entries())
+    .sort(([leftModule], [rightModule]) => comparePermissionModules(leftModule, rightModule))
+    .map(([moduleCode, modulePermissions]) => [
+      moduleCode,
+      modulePermissions.slice().sort(comparePermissionItems),
+    ] as const);
+}
 
 function normalizeStatus(status: unknown): AccountStatus {
   const normalized = String(status ?? '').toLowerCase();
-  if (normalized === 'inactive') {
-    return 'Inactive';
-  }
-  if (normalized === 'blocked') {
-    return 'Blocked';
-  }
+  if (normalized === 'inactive') return 'Inactive';
+  if (normalized === 'locked') return 'Locked';
+  if (normalized === 'blocked') return 'Blocked';
   return 'Active';
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+function normalizeUsername(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function validateUsername(value: string) {
+  return /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/.test(value);
 }
 
 function mapAgentRowToAccount(row: AgentAccountRow): AccountSummaryItem {
@@ -102,10 +239,7 @@ function mapAgentRowToAccount(row: AgentAccountRow): AccountSummaryItem {
     role: 'agents',
     handle: String(row.agent_code ?? '').trim(),
     access: '',
-    branch:
-      String(row.company_name ?? '').trim() ||
-      String(row.address ?? '').trim() ||
-      '-',
+    branch: String(row.company_name ?? '').trim() || String(row.address ?? '').trim() || '-',
     status: normalizeStatus(row.status),
     profileImage: String(row.profile_image_url ?? '').trim() || undefined,
     authUserId: row.auth_user_id ? String(row.auth_user_id) : '',
@@ -115,183 +249,204 @@ function mapAgentRowToAccount(row: AgentAccountRow): AccountSummaryItem {
   };
 }
 
-function normalizeAccessText(access: string | string[] | undefined) {
-  if (Array.isArray(access)) {
-    return access.map((item) => item.trim()).filter(Boolean).join(', ');
-  }
-
-  return String(access ?? '').trim();
-}
-
-function isUuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    value,
-  );
-}
-
-function mapAdminCreationError(message: string) {
-  const safeMessages = [
-    'An administrator with this email already exists.',
-    'Your account is not authorized to create administrators.',
-    'The selected department does not exist.',
-    'The default Admin role is not configured.',
-    'Full name is required.',
-    'A valid email address is required.',
-  ];
-  const normalized = message.toLowerCase();
-  const matchedMessage = safeMessages.find((safeMessage) =>
-    normalized.includes(safeMessage.toLowerCase()),
-  );
-
-  if (matchedMessage) {
-    return matchedMessage;
-  }
-
-  if (import.meta.env.DEV) {
-    console.error('pre_register_admin failed', { message });
-  }
-
-  return 'The administrator account could not be created.';
-}
-
-function mapAdminRowToAccount(
-  row: AdminAccountRow,
-  linkedRoleLabel: string,
+function mapInternalAdminRowToAccount(
+  row: InternalAdminAccountRow,
+  roleLabel: string,
   departmentName: string,
+  permissionLabels: string[],
+  permissionIds: string[],
+  assignedPermissions: AccountPermissionSummary[],
+  totalPermissionCount: number,
 ): AccountSummaryItem {
-  const roleLabel = linkedRoleLabel || formatRoleLabel(row.role) || 'Admin';
-  const isSystemOwner = Boolean(row.is_system_owner);
-  const status = normalizeStatus(row.status);
-  const hasAuthUser = Boolean(String(row.auth_user_id ?? '').trim());
+  const mustChangePassword = Boolean(row.must_change_password);
 
   return {
     id: String(row.id),
-    name:
-      String(row.full_name ?? '').trim() ||
-      String(row.email ?? '').trim() ||
-      'Admin User',
-    email: String(row.email ?? '').trim(),
-    contact: String(row.contact_number ?? '').trim(),
+    name: String(row.full_name ?? '').trim() || String(row.username ?? '').trim() || 'Internal Admin',
+    email: '',
+    contact: '',
     role: 'admins',
-    handle: String(row.admin_code ?? '').trim(),
-    access: roleLabel,
-    branch:
-      departmentName ||
-      String(row.department ?? '').trim() ||
-      String(row.position ?? '').trim() ||
-      '—',
-    status: status === 'Active' && !hasAuthUser ? 'Pending Setup' : status,
+    handle: String(row.username ?? '').trim(),
+    access: permissionLabels.length > 0 ? permissionLabels.join(', ') : 'No access',
+    branch: departmentName || '-',
+    status: normalizeStatus(row.status),
     profileImage: String(row.profile_image_url ?? '').trim() || undefined,
-    authUserId: row.auth_user_id ? String(row.auth_user_id) : '',
-    address: String(row.address ?? '').trim(),
-    notes: String(row.notes ?? '').trim(),
-    roleLabel,
-    isSystemOwner,
-    canEdit: !isSystemOwner,
+    roleLabel: roleLabel || '-',
+    username: String(row.username ?? '').trim(),
+    roleId: String(row.role_id ?? '').trim(),
+    departmentId: String(row.department_id ?? '').trim(),
+    parentAdminAccountId: String(row.parent_admin_account_id ?? '').trim(),
+    permissionIds,
+    assignedPermissions,
+    totalPermissionCount,
+    passwordStatus: mustChangePassword ? 'Default Password' : 'Password Changed',
+    passwordChangedAt: String(row.password_changed_at ?? '').trim(),
+    passwordResetAt: String(row.password_reset_at ?? '').trim(),
+    canEdit: true,
     createdAt: String(row.created_at ?? new Date().toISOString()),
   };
 }
 
-async function fetchAdminRoleLabels(adminIds: string[]) {
-  if (adminIds.length === 0) {
-    return new Map<string, string>();
-  }
+async function fetchDepartmentNames(departmentIds: string[]) {
+  const uniqueIds = Array.from(new Set(departmentIds.filter(isUuid)));
+  const names = new Map<string, string>();
+  if (uniqueIds.length === 0) return names;
 
-  const { data, error } = await supabase
-    .from('admin_account_roles')
-    .select('admin_account_id, admin_roles(role_name)')
-    .in('admin_account_id', adminIds);
-
+  const { data, error } = await supabase.from('admin_departments').select('id, name').in('id', uniqueIds);
   if (error) {
-    console.error('Admin role labels failed to load', error);
-    return new Map<string, string>();
+    console.error('Admin departments failed to resolve', error);
+    return names;
   }
 
-  const labels = new Map<string, string>();
-  ((data ?? []) as AdminRoleLinkRow[]).forEach((row) => {
-    const adminId = String(row.admin_account_id ?? '');
-    const roleRef = Array.isArray(row.admin_roles) ? row.admin_roles[0] : row.admin_roles;
-    const roleLabel = formatRoleLabel(roleRef?.role_name);
-    if (adminId && roleLabel && !labels.has(adminId)) {
-      labels.set(adminId, roleLabel);
-    }
+  ((data ?? []) as AdminDepartmentRow[]).forEach((row) => {
+    const id = String(row.id ?? '').trim();
+    const name = String(row.name ?? '').trim();
+    if (id && name) names.set(id, name);
   });
 
-  return labels;
+  return names;
 }
 
-async function fetchAdminAccounts() {
+async function fetchRoleNames(roleIds: string[]) {
+  const uniqueIds = Array.from(new Set(roleIds.filter(isUuid)));
+  const names = new Map<string, string>();
+  if (uniqueIds.length === 0) return names;
+
+  const { data, error } = await supabase.from('admin_roles').select('id, role_name').in('id', uniqueIds);
+  if (error) {
+    console.error('Admin role labels failed to load', error);
+    return names;
+  }
+
+  ((data ?? []) as AdminRoleRow[]).forEach((row) => {
+    const id = String(row.id ?? '').trim();
+    const name = String(row.role_name ?? '').trim();
+    if (id && name) names.set(id, name);
+  });
+
+  return names;
+}
+
+export async function loadAdminPermissions(): Promise<AdminPermissionOption[]> {
   const { data, error } = await supabase
-    .from('admin_accounts')
+    .from('admin_permissions')
+    .select('id, module_code, permission_code, permission_name, description, sort_order')
+    .order('sort_order', { ascending: true })
+    .order('permission_name', { ascending: true });
+
+  if (error) {
+    throw new Error(`Unable to load admin permissions: ${error.message}`);
+  }
+
+  return ((data ?? []) as AdminPermissionRow[])
+    .map((row) => {
+      const id = String(row.id ?? '').trim();
+      const moduleCode = String(row.module_code ?? '').trim();
+      const permissionCode = String(row.permission_code ?? '').trim();
+      const label = String(row.permission_name ?? row.permission_code ?? '').trim();
+
+      return {
+        id,
+        moduleCode,
+        permissionCode,
+        label: label || permissionCode || id,
+        description: String(row.description ?? '').trim(),
+        sortOrder: Number(row.sort_order ?? 0),
+      };
+    })
+    .filter((permission) => permission.id && permission.moduleCode);
+}
+
+async function fetchInternalAdminPermissionLabels(internalAdminIds: string[]) {
+  const uniqueIds = Array.from(new Set(internalAdminIds.filter(isUuid)));
+  const result = new Map<
+    string,
+    { ids: string[]; labels: string[]; assignedPermissions: AccountPermissionSummary[] }
+  >();
+  if (uniqueIds.length === 0) return result;
+
+  const [linkResult, permissions] = await Promise.all([
+    supabase
+      .from('internal_admin_permissions')
+      .select('internal_admin_account_id, permission_id')
+      .in('internal_admin_account_id', uniqueIds),
+    loadAdminPermissions(),
+  ]);
+
+  if (linkResult.error) {
+    console.error('Internal admin permissions failed to load', linkResult.error);
+    return result;
+  }
+
+  const permissionMap = new Map(permissions.map((permission) => [permission.id, permission]));
+  ((linkResult.data ?? []) as InternalAdminPermissionRow[]).forEach((row) => {
+    const internalAdminId = String(row.internal_admin_account_id ?? '').trim();
+    const permissionId = String(row.permission_id ?? '').trim();
+    if (!internalAdminId || !permissionId) return;
+
+    const current = result.get(internalAdminId) ?? { ids: [], labels: [], assignedPermissions: [] };
+    const permission = permissionMap.get(permissionId);
+    current.ids.push(permissionId);
+    current.labels.push(permission?.label ?? permissionId);
+    if (permission) {
+      current.assignedPermissions.push({
+        id: permission.id,
+        moduleCode: permission.moduleCode,
+        permissionCode: permission.permissionCode,
+        label: permission.label,
+        sortOrder: permission.sortOrder,
+      });
+    }
+    result.set(internalAdminId, current);
+  });
+
+  return result;
+}
+
+async function fetchInternalAdminAccounts() {
+  const { data, error } = await supabase
+    .from('internal_admin_accounts')
     .select(
       [
         'id',
-        'auth_user_id',
+        'parent_admin_account_id',
+        'role_id',
         'department_id',
-        'admin_code',
+        'username',
         'full_name',
-        'email',
         'profile_image_url',
-        'position',
-        'department',
-        'contact_number',
-        'address',
-        'bio',
-        'role',
         'status',
-        'notes',
-        'is_system_owner',
-        'last_login_at',
+        'must_change_password',
+        'password_changed_at',
+        'password_reset_at',
         'created_at',
-        'updated_at',
       ].join(', '),
     )
     .order('created_at', { ascending: false });
 
   if (error) {
-    throw new Error(`Unable to load admin accounts: ${error.message}`);
+    throw new Error(`Unable to load internal admin accounts: ${error.message}`);
   }
 
-  const rows = (data ?? []) as unknown as AdminAccountRow[];
-  const roleLabels = await fetchAdminRoleLabels(rows.map((row) => String(row.id)));
-  const departmentNames = await fetchDepartmentNames(
-    rows.map((row) => String(row.department_id ?? '').trim()).filter(Boolean),
-  );
+  const rows = (data ?? []) as unknown as InternalAdminAccountRow[];
+  const [roles, departments, permissions, allPermissions] = await Promise.all([
+    fetchRoleNames(rows.map((row) => String(row.role_id ?? '').trim())),
+    fetchDepartmentNames(rows.map((row) => String(row.department_id ?? '').trim())),
+    fetchInternalAdminPermissionLabels(rows.map((row) => String(row.id))),
+    loadAdminPermissions(),
+  ]);
+
   return rows.map((row) =>
-    mapAdminRowToAccount(
+    mapInternalAdminRowToAccount(
       row,
-      roleLabels.get(String(row.id)) ?? '',
-      departmentNames.get(String(row.department_id ?? '').trim()) ?? '',
+      roles.get(String(row.role_id ?? '').trim()) ?? '',
+      departments.get(String(row.department_id ?? '').trim()) ?? '',
+      permissions.get(String(row.id))?.labels ?? [],
+      permissions.get(String(row.id))?.ids ?? [],
+      permissions.get(String(row.id))?.assignedPermissions ?? [],
+      allPermissions.length,
     ),
   );
-}
-
-async function fetchDepartmentNames(departmentIds: string[]) {
-  const uniqueIds = Array.from(new Set(departmentIds.filter(isUuid)));
-  if (uniqueIds.length === 0) {
-    return new Map<string, string>();
-  }
-
-  const { data, error } = await supabase
-    .from('admin_departments')
-    .select('id, name')
-    .in('id', uniqueIds);
-
-  if (error) {
-    console.error('Admin departments failed to resolve', error);
-    return new Map<string, string>();
-  }
-
-  const names = new Map<string, string>();
-  ((data ?? []) as AdminDepartmentNameRow[]).forEach((row) => {
-    const id = String(row.id ?? '').trim();
-    const name = String(row.name ?? '').trim();
-    if (id && name) {
-      names.set(id, name);
-    }
-  });
-
-  return names;
 }
 
 async function fetchAgentAccounts() {
@@ -309,36 +464,162 @@ async function fetchAgentAccounts() {
   return (data ?? []).map((row) => mapAgentRowToAccount(row as AgentAccountRow));
 }
 
+export async function loadInternalAdminFormOptions(): Promise<InternalAdminFormOptions> {
+  const [rolesRes, departmentsRes, gatewaysRes, permissions] = await Promise.all([
+    supabase
+      .from('admin_roles')
+      .select('id, role_name, role_code')
+      .eq('status', 'Active')
+      .order('sort_order', { ascending: true })
+      .order('role_name', { ascending: true }),
+    supabase
+      .from('admin_departments')
+      .select('id, name')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true }),
+    supabase
+      .from('admin_accounts')
+      .select('id, full_name, email, position, admin_code')
+      .eq('status', 'Active')
+      .order('full_name', { ascending: true }),
+    loadAdminPermissions(),
+  ]);
+
+  const error = rolesRes.error ?? departmentsRes.error ?? gatewaysRes.error;
+  if (error) {
+    throw new Error(`Unable to load internal admin form options: ${error.message}`);
+  }
+
+  const roles = ((rolesRes.data ?? []) as AdminRoleRow[])
+    .map((row) => ({
+      id: String(row.id ?? '').trim(),
+      name: String(row.role_name ?? '').trim(),
+      code: String(row.role_code ?? '').trim(),
+    }))
+    .filter((role) => role.id && role.name);
+
+  const departments = ((departmentsRes.data ?? []) as AdminDepartmentRow[])
+    .map((row) => ({ id: String(row.id ?? '').trim(), name: String(row.name ?? '').trim() }))
+    .filter((department) => department.id && department.name);
+
+  const gateways = ((gatewaysRes.data ?? []) as AdminGatewayRow[])
+    .map((row) => {
+      const fullName = String(row.full_name ?? '').trim();
+      const email = String(row.email ?? '').trim();
+      const adminCode = String(row.admin_code ?? '').trim();
+      const position = String(row.position ?? '').trim();
+      return {
+        id: String(row.id ?? '').trim(),
+        label: fullName || email || adminCode || 'Gateway Admin',
+        email,
+        position,
+      };
+    })
+    .filter((gateway) => gateway.id);
+
+  return { roles, departments, gateways, permissions };
+}
+
 export function getAccountItems() {
   return defaultAccounts;
 }
 
 export async function loadAccountItems() {
   const [admins, agents] = await Promise.all([
-    fetchAdminAccounts(),
+    fetchInternalAdminAccounts(),
     fetchAgentAccounts(),
   ]);
   return [...admins, ...agents];
 }
 
+async function assertUniqueInternalAdminUsername(
+  username: string,
+  parentAdminAccountId: string,
+  editingId?: string,
+) {
+  let query = supabase
+    .from('internal_admin_accounts')
+    .select('id')
+    .eq('username', username)
+    .eq('parent_admin_account_id', parentAdminAccountId)
+    .limit(1);
+
+  if (editingId) {
+    query = query.neq('id', editingId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`Unable to validate username: ${error.message}`);
+  if ((data ?? []).length > 0) {
+    throw new Error('Username already exists under the selected parent gateway account.');
+  }
+}
+
+async function saveInternalAdminPermissions(internalAdminId: string, permissionIds: string[]) {
+  const { error: deleteError } = await supabase
+    .from('internal_admin_permissions')
+    .delete()
+    .eq('internal_admin_account_id', internalAdminId);
+
+  if (deleteError) {
+    throw new Error(`Unable to update permissions: ${deleteError.message}`);
+  }
+
+  const uniquePermissionIds = Array.from(new Set(permissionIds.filter(isUuid)));
+  if (uniquePermissionIds.length === 0) return;
+
+  const { error: insertError } = await supabase.from('internal_admin_permissions').insert(
+    uniquePermissionIds.map((permissionId) => ({
+      internal_admin_account_id: internalAdminId,
+      permission_id: permissionId,
+    })),
+  );
+
+  if (insertError) {
+    throw new Error(`Unable to save permissions: ${insertError.message}`);
+  }
+}
+
+function validateInternalAdminInput(account: AccountInput, isCreate: boolean) {
+  const username = normalizeUsername(account.username ?? '');
+  const parentAdminAccountId = account.parentAdminAccountId?.trim() ?? '';
+
+  if (!account.name.trim()) throw new Error('Full Name is required.');
+  if (!username) throw new Error('Username is required.');
+  if (!validateUsername(username)) {
+    throw new Error('Username may contain lowercase letters, numbers, dots, underscores, or hyphens only.');
+  }
+  if (isCreate && (!parentAdminAccountId || !isUuid(parentAdminAccountId))) {
+    throw new Error('Select a valid parent gateway account.');
+  }
+  if (account.roleId && !isUuid(account.roleId)) throw new Error('Select a valid role.');
+  if (account.departmentId && !isUuid(account.departmentId)) throw new Error('Select a valid department.');
+  if (isCreate && !account.temporaryPassword?.trim()) throw new Error('Temporary Password is required.');
+
+  return username;
+}
+
 export async function addAccountItem(account: AccountInput) {
   if (account.role === 'admins') {
-    const departmentId = account.departmentId?.trim() ?? '';
-
-    if (departmentId && !isUuid(departmentId)) {
-      throw new Error('The selected department does not exist.');
-    }
-
-    const { error } = await supabase.rpc('pre_register_admin', {
+    validateInternalAdminInput(account, true);
+    const { data, error } = await supabase.rpc('create_internal_admin', {
+      p_session_token: getStoredInternalSessionToken(),
+      p_profile_image_url: account.profileImage?.trim() || null,
       p_full_name: account.name.trim(),
-      p_email: account.email.trim().toLowerCase(),
-      p_contact_number: account.contact.trim() || null,
-      p_department_id: departmentId || null,
-      p_status: account.status === 'Inactive' ? 'Inactive' : 'Active',
+      p_username: account.username?.trim() ?? '',
+      p_role_id: account.roleId?.trim() || null,
+      p_department_id: account.departmentId?.trim() || null,
+      p_temporary_password: account.temporaryPassword ?? '',
+      p_status: account.status,
+      p_permission_ids: account.permissionIds ?? [],
     });
 
-    if (error) {
-      throw new Error(mapAdminCreationError(error.message));
+    if (error) throw new Error(error.message);
+
+    const result = (data ?? {}) as Record<string, unknown>;
+    if (result.ok !== true) {
+      throw new Error(String(result.error ?? 'Unable to create this internal admin.'));
     }
 
     return loadAccountItems();
@@ -359,9 +640,7 @@ export async function addAccountItem(account: AccountInput) {
     .select('id')
     .single();
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 
   const agentId = String(data?.id ?? '');
   let profileWarning = '';
@@ -381,13 +660,9 @@ export async function addAccountItem(account: AccountInput) {
           upsert: true,
         });
 
-      if (uploadError) {
-        throw uploadError;
-      }
+      if (uploadError) throw uploadError;
 
-      const { data: publicUrlData } = supabase.storage
-        .from(PROFILE_IMAGE_BUCKET)
-        .getPublicUrl(profilePath);
+      const { data: publicUrlData } = supabase.storage.from(PROFILE_IMAGE_BUCKET).getPublicUrl(profilePath);
       const profileImageUrl = publicUrlData.publicUrl;
 
       if (profileImageUrl) {
@@ -396,9 +671,7 @@ export async function addAccountItem(account: AccountInput) {
           .update({ profile_image_url: profileImageUrl })
           .eq('id', agentId);
 
-        if (profileUpdateError) {
-          throw profileUpdateError;
-        }
+        if (profileUpdateError) throw profileUpdateError;
       }
     } catch (profileError) {
       console.error('Agent profile image upload failed', profileError);
@@ -416,57 +689,46 @@ export async function addAccountItem(account: AccountInput) {
     );
 
     if (priceError) {
-      throw new Error(
-        `Agent was created, but price access could not be saved: ${priceError.message}`,
-      );
+      throw new Error(`Agent was created, but price access could not be saved: ${priceError.message}`);
     }
   }
 
   const accounts = (await loadAccountItems()) as AccountCreateResult;
-  if (profileWarning) {
-    accounts.warning = profileWarning;
-  }
+  if (profileWarning) accounts.warning = profileWarning;
 
   return accounts;
 }
 
 export async function updateAccountItem(accountId: string, account: AccountInput) {
   if (account.role === 'admins') {
-    const { data: currentAdmin, error: currentError } = await supabase
-      .from('admin_accounts')
-      .select('id, is_system_owner')
+    const username = validateInternalAdminInput(account, false);
+    const { data: currentAccount, error: currentAccountError } = await supabase
+      .from('internal_admin_accounts')
+      .select('parent_admin_account_id')
       .eq('id', accountId)
-      .maybeSingle<{ id: string; is_system_owner: boolean | null }>();
+      .maybeSingle<{ parent_admin_account_id: string | null }>();
 
-    if (currentError) {
-      throw new Error(currentError.message);
-    }
+    if (currentAccountError) throw new Error(currentAccountError.message);
+    const parentAdminAccountId = String(currentAccount?.parent_admin_account_id ?? '').trim();
+    if (!parentAdminAccountId) throw new Error('Internal admin parent gateway was not found.');
 
-    if (!currentAdmin) {
-      throw new Error('Admin account was not found.');
-    }
-
-    if (currentAdmin.is_system_owner) {
-      throw new Error('Protected system owner accounts cannot be edited here.');
-    }
+    await assertUniqueInternalAdminUsername(username, parentAdminAccountId, accountId);
 
     const { error } = await supabase
-      .from('admin_accounts')
+      .from('internal_admin_accounts')
       .update({
-        full_name: account.name.trim(),
-        email: account.email.trim() || null,
-        contact_number: account.contact.trim() || null,
-        department: account.branch.trim() || null,
-        position: normalizeAccessText(account.access) || null,
         profile_image_url: account.profileImage?.trim() || null,
+        full_name: account.name.trim(),
+        username,
+        role_id: account.roleId?.trim() || null,
+        department_id: account.departmentId?.trim() || null,
         status: account.status,
       })
       .eq('id', accountId);
 
-    if (error) {
-      throw new Error(error.message);
-    }
+    if (error) throw new Error(error.message);
 
+    await saveInternalAdminPermissions(accountId, account.permissionIds ?? []);
     return loadAccountItems();
   }
 
@@ -485,8 +747,22 @@ export async function updateAccountItem(accountId: string, account: AccountInput
     })
     .eq('id', accountId);
 
-  if (error) {
-    throw new Error(error.message);
+  if (error) throw new Error(error.message);
+  return loadAccountItems();
+}
+
+export async function resetInternalAdminPassword(internalAdminId: string, temporaryPassword: string) {
+  const { data, error } = await supabase.rpc('reset_internal_admin_password', {
+    p_session_token: getStoredInternalSessionToken(),
+    p_internal_admin_id: internalAdminId,
+    p_temporary_password: temporaryPassword,
+  });
+
+  if (error) throw new Error(error.message);
+
+  const result = (data ?? {}) as Record<string, unknown>;
+  if (result.ok !== true) {
+    throw new Error(String(result.error ?? 'Unable to reset this internal admin password.'));
   }
 
   return loadAccountItems();
@@ -501,9 +777,7 @@ export function subscribeAccountItems(
   const syncAccounts = async () => {
     try {
       const accounts = await loadAccountItems();
-      if (!disposed) {
-        callback(accounts);
-      }
+      if (!disposed) callback(accounts);
     } catch (error) {
       console.error('Failed to load account items', error);
       if (!disposed) {
@@ -523,36 +797,24 @@ export function subscribeAccountItems(
 
   const agentChannel = supabase
     .channel('agent-accounts-changes')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'agent_accounts' },
-      () => {
-        void syncAccounts();
-      },
-    )
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'agent_accounts' }, () => {
+      void syncAccounts();
+    })
     .subscribe();
 
-  const adminChannel = supabase
-    .channel('admin-accounts-changes')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'admin_accounts' },
-      () => {
-        void syncAccounts();
-      },
-    )
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'admin_account_roles' },
-      () => {
-        void syncAccounts();
-      },
-    )
+  const internalAdminChannel = supabase
+    .channel('internal-admin-accounts-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'internal_admin_accounts' }, () => {
+      void syncAccounts();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'internal_admin_permissions' }, () => {
+      void syncAccounts();
+    })
     .subscribe();
 
   return () => {
     disposed = true;
     void supabase.removeChannel(agentChannel);
-    void supabase.removeChannel(adminChannel);
+    void supabase.removeChannel(internalAdminChannel);
   };
 }
