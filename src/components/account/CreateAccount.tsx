@@ -3,6 +3,7 @@ import type { AccountSummaryItem, AccountView } from './AccountsSummary';
 import {
   addAccountItem,
   groupPermissionsByModule,
+  INTERNAL_TEMPORARY_PASSWORD_MIN_LENGTH,
   loadInternalAdminFormOptions,
   type InternalAdminFormOptions,
 } from '../../services/accounts';
@@ -154,7 +155,11 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
       return false;
     }
     if (!form.temporaryPassword.trim()) {
-      setValidationError('Temporary Password is required.');
+      setValidationError('Temporary password is required.');
+      return false;
+    }
+    if (form.temporaryPassword.length < INTERNAL_TEMPORARY_PASSWORD_MIN_LENGTH) {
+      setValidationError('Temporary password must be at least 8 characters.');
       return false;
     }
 
@@ -188,11 +193,10 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
       setForm(getInitialForm());
       onCreate(
         nextAccounts,
-        accountType === 'admins' ? 'Internal admin created successfully.' : 'Account created successfully.',
+        `${accountType === 'admins' ? 'Internal admin created successfully.' : 'Account created successfully.'}${
+          'warning' in nextAccounts && nextAccounts.warning ? ` ${nextAccounts.warning}` : ''
+        }`,
       );
-      if ('warning' in nextAccounts && nextAccounts.warning) {
-        window.setTimeout(() => window.alert(nextAccounts.warning), 0);
-      }
     } catch (error) {
       setValidationError(error instanceof Error ? error.message : 'Unable to create this account.');
     } finally {
@@ -275,6 +279,7 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
                 <label className={styles.field}>
                   <span className={styles.label}>Temporary Password</span>
                   <input type="password" value={form.temporaryPassword} onChange={(event) => updateField('temporaryPassword', event.target.value)} className={styles.input} />
+                  <span className={styles.fieldHelper}>Temporary password must be at least 8 characters.</span>
                 </label>
                 <div className={styles.noticeCard}>
                   <span className={styles.label}>Password Backend</span>

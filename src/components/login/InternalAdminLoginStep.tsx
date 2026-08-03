@@ -7,11 +7,11 @@ type InternalAdminLoginStepProps = {
   password: string;
   error: string;
   info: string;
+  usernameError: string;
   isSubmitting: boolean;
   onUsernameChange: (username: string) => void;
   onPasswordChange: (password: string) => void;
   onSubmit: () => void;
-  onGatewayLogout: () => void;
 };
 
 export default function InternalAdminLoginStep({
@@ -19,11 +19,11 @@ export default function InternalAdminLoginStep({
   password,
   error,
   info,
+  usernameError,
   isSubmitting,
   onUsernameChange,
   onPasswordChange,
   onSubmit,
-  onGatewayLogout,
 }: InternalAdminLoginStepProps) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -32,11 +32,6 @@ export default function InternalAdminLoginStep({
 
   return (
     <>
-      <div className={styles.formHeader}>
-        <h2>Internal Admin Login</h2>
-        <p>Enter your employee username and password to continue.</p>
-      </div>
-
       <form onSubmit={handleSubmit} className={styles.form}>
         <label htmlFor="internal-username">Username</label>
         <input
@@ -47,7 +42,17 @@ export default function InternalAdminLoginStep({
           placeholder="2bphadmin"
           autoComplete="username"
           autoFocus
+          aria-describedby={usernameError ? 'internal-username-helper' : undefined}
+          aria-invalid={Boolean(usernameError)}
         />
+        {usernameError ? (
+          <p
+            id="internal-username-helper"
+            className={`${styles.fieldHelper} ${styles.fieldHelperError}`}
+          >
+            {usernameError}
+          </p>
+        ) : null}
 
         <PasswordField
           id="internal-password"
@@ -63,10 +68,6 @@ export default function InternalAdminLoginStep({
 
         <button type="submit" disabled={isSubmitting} className={styles.submitButton}>
           {isSubmitting ? 'Signing in...' : 'Login'}
-        </button>
-
-        <button type="button" disabled={isSubmitting} className={styles.secondaryAction} onClick={onGatewayLogout}>
-          Log Out Operations Account
         </button>
       </form>
     </>

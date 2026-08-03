@@ -26,6 +26,7 @@ type LoginProps = {
   onLogin: () => void | Promise<void>;
   mode?: 'main' | 'internal' | 'internalPasswordChange';
   onGatewayLogout?: () => void | Promise<void>;
+  onBackToInternalLogin?: () => void | Promise<void>;
 };
 
 type LoginStep = 'email' | 'password' | 'activation' | 'createPassword';
@@ -33,6 +34,7 @@ type LoginStep = 'email' | 'password' | 'activation' | 'createPassword';
 const unavailableMessage = 'Your administrator account does not exist.';
 const inactiveMessage = 'Your administrator account is inactive. Please contact the system administrator.';
 const successTransitionDurationMs = 2800;
+const internalUsernamePattern = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 
 function wait(duration: number) {
   return new Promise((resolve) => {
@@ -84,7 +86,12 @@ function LoginSuccessTransition() {
   );
 }
 
-export default function Login({ onLogin, mode = 'main', onGatewayLogout }: LoginProps) {
+export default function Login({
+  onLogin,
+  mode = 'main',
+  onGatewayLogout,
+  onBackToInternalLogin,
+}: LoginProps) {
   const [step, setStep] = useState<LoginStep>('email');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -98,6 +105,7 @@ export default function Login({ onLogin, mode = 'main', onGatewayLogout }: Login
   const [hasSentOtp, setHasSentOtp] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [internalUsername, setInternalUsername] = useState('');
+  const [internalUsernameError, setInternalUsernameError] = useState('');
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -258,16 +266,32 @@ export default function Login({ onLogin, mode = 'main', onGatewayLogout }: Login
   }
 
   async function handleInternalLogin() {
-    if (!internalUsername.trim() || !password.trim()) {
-      setError('Enter your username and password.');
+    const normalizedUsername = internalUsername.trim().toLowerCase();
+
+    if (!normalizedUsername) {
+      setInternalUsernameError('Username is required.');
+      setError('');
+      return;
+    }
+
+    if (!internalUsernamePattern.test(normalizedUsername)) {
+      setInternalUsernameError('Use lowercase letters, numbers, dots, underscores, or hyphens only.');
+      setError('');
+      return;
+    }
+
+    if (!password.trim()) {
+      setError('Enter your password.');
       return;
     }
 
     setIsSubmitting(true);
     setError('');
+    setInternalUsernameError('');
 
     try {
-      await loginInternalAdmin(internalUsername, password);
+      setInternalUsername(normalizedUsername);
+      await loginInternalAdmin(normalizedUsername, password);
       await onLogin();
     } catch {
       setError('Invalid username or password.');
@@ -306,24 +330,93 @@ export default function Login({ onLogin, mode = 'main', onGatewayLogout }: Login
     }
   }
 
+  function handleBackToInternalLogin() {
+    if (isSubmitting || !onBackToInternalLogin) return;
+
+    setError('');
+    setInfo('');
+
+    void onBackToInternalLogin();
+  }
+
+  const isInternalLogin = mode === 'internal';
+  const isInternalPasswordChange = mode === 'internalPasswordChange';
+  const isInternalAuth = isInternalLogin || isInternalPasswordChange;
+
   return (
-    <div className={styles.loginScreen}>
-      <div className={styles.loginCard}>
-        <div className={styles.brandPanel}>
-          <div className={styles.brand}>
-            <img src={logo} alt="BESTBUILT logo" />
-            <div className={styles.brandCopy}>
-              <p className={styles.eyebrow}>2B admin workspace</p>
-              <p>Kiosk Website Control</p>
+    <div className={`${styles.loginScreen} ${isInternalAuth ? styles.internalLoginScreen : ''}`}>
+      {isInternalAuth ? (
+        <div className={styles.internalDecor} aria-hidden="true">
+          <span className={`${styles.decorOrb} ${styles.decorOrbLarge}`}></span>
+          <span className={`${styles.decorOrb} ${styles.decorOrbRight}`}></span>
+          <span className={`${styles.decorOrb} ${styles.decorOrbBottom}`}></span>
+          <span className={styles.decorCurve}></span>
+          <span className={styles.decorLines}></span>
+          <span className={`${styles.decorBubble} ${styles.decorBubbleOne}`}></span>
+          <span className={`${styles.decorBubble} ${styles.decorBubbleTwo}`}></span>
+          <span className={`${styles.decorBubble} ${styles.decorBubbleThree}`}></span>
+          <span className={styles.decorDotGrid}></span>
+        </div>
+      ) : null}
+
+      {mode === 'internal' && onGatewayLogout ? (
+        <button
+          type="button"
+          className={styles.operationsLogoutControl}
+          onClick={() => void onGatewayLogout()}
+          disabled={isSubmitting}
+          aria-label="Log out Operations Account"
+          title="Log out Operations Account"
+        >
+          <span>Log Out Operations Account</span>
+          <i className="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i>
+        </button>
+      ) : null}
+
+      {isInternalPasswordChange && onBackToInternalLogin ? (
+        <button
+          type="button"
+          className={styles.internalBackControl}
+          onClick={() => void handleBackToInternalLogin()}
+          disabled={isSubmitting}
+          aria-label="Back to Internal Login"
+          title="Back to Internal Login"
+        >
+          <i className="fa-solid fa-arrow-left" aria-hidden="true"></i>
+          <span>Back to Internal Login</span>
+        </button>
+      ) : null}
+
+      <div
+        className={`${styles.loginCard} ${isInternalAuth ? styles.internalLoginCard : ''} ${
+          isInternalPasswordChange ? styles.internalPasswordCard : ''
+        }`}
+      >
+        {!isInternalAuth ? (
+          <div className={styles.brandPanel}>
+            <div className={styles.brand}>
+              <img src={logo} alt="BESTBUILT logo" />
+              <div className={styles.brandCopy}>
+                <p className={styles.eyebrow}>2B admin workspace</p>
+                <p>Kiosk Website Control</p>
+              </div>
+            </div>
+
+            <div className={styles.brandArt} aria-hidden="true">
+              <div className={styles.brandWave}></div>
             </div>
           </div>
+        ) : null}
 
-          <div className={styles.brandArt} aria-hidden="true">
-            <div className={styles.brandWave}></div>
-          </div>
-        </div>
+        <div className={`${styles.formPanel} ${isInternalAuth ? styles.internalFormPanel : ''}`}>
+          {isInternalLogin ? (
+            <div className={styles.internalCardHeader}>
+              <img src={logo} alt="BESTBUILT logo" />
+              <h1>Login</h1>
+              <p>Enter your internal account credentials to continue.</p>
+            </div>
+          ) : null}
 
-        <div className={styles.formPanel}>
           <div key={`${step}-${step === 'password' && isSubmitting ? 'loading' : 'ready'}`} className={styles.stepScene}>
             {mode === 'internal' ? (
               <InternalAdminLoginStep
@@ -331,9 +424,11 @@ export default function Login({ onLogin, mode = 'main', onGatewayLogout }: Login
                 password={password}
                 error={error}
                 info={info}
+                usernameError={internalUsernameError}
                 isSubmitting={isSubmitting}
                 onUsernameChange={(nextUsername) => {
                   setInternalUsername(nextUsername);
+                  setInternalUsernameError('');
                   setError('');
                 }}
                 onPasswordChange={(nextPassword) => {
@@ -341,7 +436,6 @@ export default function Login({ onLogin, mode = 'main', onGatewayLogout }: Login
                   setError('');
                 }}
                 onSubmit={() => void handleInternalLogin()}
-                onGatewayLogout={() => void onGatewayLogout?.()}
               />
             ) : null}
 

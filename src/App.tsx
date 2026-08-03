@@ -43,10 +43,22 @@ export default function App() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] =
     useState(false);
+  const [isGatewayLogoutConfirmOpen, setIsGatewayLogoutConfirmOpen] =
+    useState(false);
+  const [isInternalBackConfirmOpen, setIsInternalBackConfirmOpen] =
+    useState(false);
   const [isAccountProfileOpen, setIsAccountProfileOpen] =
     useState(false);
   const [isLoggingOut, setIsLoggingOut] =
     useState(false);
+  const [isGatewayLoggingOut, setIsGatewayLoggingOut] =
+    useState(false);
+  const [isInternalBackLoggingOut, setIsInternalBackLoggingOut] =
+    useState(false);
+  const [gatewayLogoutPassword, setGatewayLogoutPassword] =
+    useState('');
+  const [gatewayLogoutPasswordError, setGatewayLogoutPasswordError] =
+    useState('');
   const [productView, setProductView] =
     useState<ProductView>('summary');
 
@@ -69,6 +81,12 @@ export default function App() {
   const productViewRef = useRef(productView);
   const authAccessStateRef = useRef(authAccessState);
   const isInitializingAuthRef = useRef(isInitializingAuth);
+  const gatewayLogoutConfirmButtonRef =
+    useRef<HTMLButtonElement | null>(null);
+  const gatewayLogoutPasswordInputRef =
+    useRef<HTMLInputElement | null>(null);
+  const internalBackConfirmButtonRef =
+    useRef<HTMLButtonElement | null>(null);
 
   const currentAdminProfile = useCurrentAdminProfile(
     authAccessState.kind === 'admin' && !authAccessState.internalSession,
@@ -138,6 +156,36 @@ export default function App() {
       );
     };
   }, []);
+
+  useEffect(() => {
+    if (!isGatewayLogoutConfirmOpen) return;
+
+    gatewayLogoutPasswordInputRef.current?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !isGatewayLoggingOut) {
+        setIsGatewayLogoutConfirmOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isGatewayLogoutConfirmOpen, isGatewayLoggingOut]);
+
+  useEffect(() => {
+    if (!isInternalBackConfirmOpen) return;
+
+    internalBackConfirmButtonRef.current?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !isInternalBackLoggingOut) {
+        setIsInternalBackConfirmOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isInternalBackConfirmOpen, isInternalBackLoggingOut]);
 
   const toggleTheme = () => {
     setIsDark((current) => {
@@ -358,6 +406,117 @@ export default function App() {
     setIsLogoutConfirmOpen(true);
   };
 
+  const handleGatewayLogoutRequest = () => {
+    setGatewayLogoutPassword('');
+    setGatewayLogoutPasswordError('');
+    setIsGatewayLogoutConfirmOpen(true);
+  };
+
+  const handleBackToInternalLoginRequest = () => {
+    setIsInternalBackConfirmOpen(true);
+  };
+
+  const handleCancelGatewayLogout = () => {
+    if (isGatewayLoggingOut) {
+      return;
+    }
+
+    setIsGatewayLogoutConfirmOpen(false);
+    setGatewayLogoutPassword('');
+    setGatewayLogoutPasswordError('');
+  };
+
+  const handleConfirmGatewayLogout = async () => {
+    if (isGatewayLoggingOut) {
+      return;
+    }
+
+    if (!gatewayLogoutPassword) {
+      setGatewayLogoutPasswordError('Enter the Operations Account password.');
+      return;
+    }
+
+    const email =
+      authAccessStateRef.current.kind === 'internal_login_required' ||
+      authAccessStateRef.current.kind === 'internal_password_change' ||
+      authAccessStateRef.current.kind === 'admin'
+        ? authAccessStateRef.current.email
+        : null;
+
+    if (!email) {
+      setGatewayLogoutPasswordError('Unable to verify this Operations Account.');
+      return;
+    }
+
+    setIsGatewayLoggingOut(true);
+    setGatewayLogoutPasswordError('');
+
+    try {
+      const { error: passwordError } = await supabase.auth.signInWithPassword({
+        email,
+        password: gatewayLogoutPassword,
+      });
+
+      if (passwordError) {
+        setGatewayLogoutPasswordError('Invalid Operations Account password.');
+        return;
+      }
+
+      await signOutOperationsGateway();
+      setAuthAccessState({ kind: 'none' });
+      setActive('Dashboard');
+      setProductView('summary');
+      setIsCollapsed(false);
+      setIsGatewayLogoutConfirmOpen(false);
+      setGatewayLogoutPassword('');
+    } finally {
+      setIsGatewayLoggingOut(false);
+    }
+  };
+
+  const handleBackToInternalLogin = async () => {
+    const email =
+      authAccessStateRef.current.kind === 'internal_password_change'
+        ? authAccessStateRef.current.email
+        : null;
+
+    try {
+      await signOutInternalAdminOnly();
+    } catch (error) {
+      console.error('Internal password-change back logout failed', error);
+    } finally {
+      setAuthAccessState({
+        kind: 'internal_login_required',
+        email,
+      });
+      setActive('Dashboard');
+      setProductView('summary');
+    }
+  };
+
+  const handleCancelBackToInternalLogin = () => {
+    if (isInternalBackLoggingOut) {
+      return;
+    }
+
+    setIsInternalBackConfirmOpen(false);
+  };
+
+  const handleConfirmBackToInternalLogin = async () => {
+    if (isInternalBackLoggingOut) {
+      return;
+    }
+
+    setIsInternalBackLoggingOut(true);
+
+    try {
+      await handleBackToInternalLogin();
+      setIsInternalBackConfirmOpen(false);
+    } finally {
+      setIsInternalBackLoggingOut(false);
+    }
+  };
+
   const handleCancelLogout = () => {
     if (isLoggingOut) {
       return;
@@ -456,6 +615,155 @@ export default function App() {
     }
   };
 
+  const renderGatewayLogoutConfirm = () =>
+    isGatewayLogoutConfirmOpen ? (
+      <div
+        className="auth-confirm-overlay"
+        role="presentation"
+      >
+        <section
+          className="auth-confirm-modal logout-confirm-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="gateway-logout-confirm-title"
+          aria-describedby="gateway-logout-confirm-message"
+        >
+          <p className="auth-confirm-eyebrow logout-confirm-eyebrow">
+            Operations
+          </p>
+          <h2
+            id="gateway-logout-confirm-title"
+            className="auth-confirm-title"
+          >
+            Log Out Operations Account?
+          </h2>
+          <p
+            id="gateway-logout-confirm-message"
+            className="auth-confirm-text"
+          >
+            You will be signed out of the Operations
+            Account and returned to the main login screen.
+          </p>
+          <form
+            className="auth-confirm-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleConfirmGatewayLogout();
+            }}
+          >
+            <label
+              className="auth-confirm-label"
+              htmlFor="gateway-logout-password"
+            >
+              Operations Account Password
+            </label>
+            <input
+              id="gateway-logout-password"
+              ref={gatewayLogoutPasswordInputRef}
+              className="auth-confirm-input"
+              type="password"
+              value={gatewayLogoutPassword}
+              onChange={(event) => {
+                setGatewayLogoutPassword(event.target.value);
+                setGatewayLogoutPasswordError('');
+              }}
+              autoComplete="current-password"
+              disabled={isGatewayLoggingOut}
+              aria-invalid={gatewayLogoutPasswordError ? 'true' : 'false'}
+              aria-describedby={
+                gatewayLogoutPasswordError
+                  ? 'gateway-logout-password-error'
+                  : undefined
+              }
+            />
+            {gatewayLogoutPasswordError ? (
+              <p
+                id="gateway-logout-password-error"
+                className="auth-confirm-error"
+              >
+                {gatewayLogoutPasswordError}
+              </p>
+            ) : null}
+            <div className="auth-confirm-actions">
+              <button
+                type="button"
+                className="auth-confirm-cancel"
+                onClick={handleCancelGatewayLogout}
+                disabled={isGatewayLoggingOut}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="auth-confirm-proceed"
+                disabled={isGatewayLoggingOut}
+                ref={gatewayLogoutConfirmButtonRef}
+              >
+                {isGatewayLoggingOut
+                  ? 'Logging Out...'
+                  : 'Log Out'}
+              </button>
+            </div>
+          </form>
+        </section>
+      </div>
+    ) : null;
+
+  const renderInternalBackConfirm = () =>
+    isInternalBackConfirmOpen ? (
+      <div
+        className="auth-confirm-overlay"
+        role="presentation"
+      >
+        <section
+          className="auth-confirm-modal logout-confirm-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="internal-back-confirm-title"
+          aria-describedby="internal-back-confirm-message"
+        >
+          <p className="auth-confirm-eyebrow logout-confirm-eyebrow">
+            Password Change
+          </p>
+          <h2
+            id="internal-back-confirm-title"
+            className="auth-confirm-title"
+          >
+            Discard Password Change?
+          </h2>
+          <p
+            id="internal-back-confirm-message"
+            className="auth-confirm-text"
+          >
+            This will sign out of the Operations Account
+            and return to Internal Login. Your new password
+            will not be saved.
+          </p>
+          <div className="auth-confirm-actions">
+            <button
+              type="button"
+              className="auth-confirm-cancel"
+              onClick={handleCancelBackToInternalLogin}
+              disabled={isInternalBackLoggingOut}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="auth-confirm-proceed"
+              onClick={() => void handleConfirmBackToInternalLogin()}
+              disabled={isInternalBackLoggingOut}
+              ref={internalBackConfirmButtonRef}
+            >
+              {isInternalBackLoggingOut
+                ? 'Continuing...'
+                : 'Continue'}
+            </button>
+          </div>
+        </section>
+      </div>
+    ) : null;
+
   if (isInitializingAuth) {
     return null;
   }
@@ -463,20 +771,28 @@ export default function App() {
   if (!isAuthenticated) {
     if (authAccessState.kind === 'internal_login_required') {
       return (
-        <Login
-          mode="internal"
-          onLogin={handleLogin}
-          onGatewayLogout={async () => {
-            if (!window.confirm('Log out the Operations gateway account?')) return;
-            await signOutOperationsGateway();
-            setAuthAccessState({ kind: 'none' });
-          }}
-        />
+        <>
+          <Login
+            mode="internal"
+            onLogin={handleLogin}
+            onGatewayLogout={handleGatewayLogoutRequest}
+          />
+          {renderGatewayLogoutConfirm()}
+        </>
       );
     }
 
     if (authAccessState.kind === 'internal_password_change') {
-      return <Login mode="internalPasswordChange" onLogin={handleLogin} />;
+      return (
+        <>
+          <Login
+            mode="internalPasswordChange"
+            onLogin={handleLogin}
+            onBackToInternalLogin={handleBackToInternalLoginRequest}
+          />
+          {renderInternalBackConfirm()}
+        </>
+      );
     }
 
     return <Login onLogin={handleLogin} />;
@@ -584,6 +900,8 @@ export default function App() {
           </section>
         </div>
       ) : null}
+
+      {renderGatewayLogoutConfirm()}
 
       {isAccountProfileOpen ? (
         <AccountProfilePanel

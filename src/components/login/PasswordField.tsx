@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import styles from '../../pages/Login.module.css';
 
 type PasswordFieldProps = {
@@ -7,6 +8,8 @@ type PasswordFieldProps = {
   value: string;
   placeholder: string;
   autoComplete?: string;
+  helperText?: ReactNode;
+  helperTone?: 'muted' | 'error' | 'success';
   onChange: (value: string) => void;
 };
 
@@ -16,9 +19,12 @@ export default function PasswordField({
   value,
   placeholder,
   autoComplete,
+  helperText,
+  helperTone = 'muted',
   onChange,
 }: PasswordFieldProps) {
   const [isVisible, setIsVisible] = useState(false);
+  const helperId = helperText ? `${id}-helper` : undefined;
 
   return (
     <>
@@ -31,6 +37,7 @@ export default function PasswordField({
           onChange={(event) => onChange(event.target.value)}
           placeholder={placeholder}
           autoComplete={autoComplete}
+          aria-describedby={helperId}
         />
         <button
           type="button"
@@ -45,6 +52,20 @@ export default function PasswordField({
           ></i>
         </button>
       </div>
+      {helperText ? (
+        <p
+          id={helperId}
+          className={`${styles.fieldHelper} ${
+            helperTone === 'error'
+              ? styles.fieldHelperError
+              : helperTone === 'success'
+                ? styles.fieldHelperSuccess
+                : ''
+          }`}
+        >
+          {helperText}
+        </p>
+      ) : null}
     </>
   );
 }

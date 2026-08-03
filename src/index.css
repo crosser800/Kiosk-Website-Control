@@ -52,6 +52,10 @@ body {
   overflow: hidden;
 }
 
+html {
+  font-size: 87.5%;
+}
+
 body {
   font-family: "Montserrat", sans-serif;
   background-color: var(--background);

@@ -135,6 +135,7 @@ type InternalAdminPermissionRow = {
 };
 
 const defaultAccounts: AccountSummaryItem[] = [];
+export const INTERNAL_TEMPORARY_PASSWORD_MIN_LENGTH = 8;
 const MODULE_ORDER = [
   'dashboard',
   'products',
@@ -595,7 +596,13 @@ function validateInternalAdminInput(account: AccountInput, isCreate: boolean) {
   }
   if (account.roleId && !isUuid(account.roleId)) throw new Error('Select a valid role.');
   if (account.departmentId && !isUuid(account.departmentId)) throw new Error('Select a valid department.');
-  if (isCreate && !account.temporaryPassword?.trim()) throw new Error('Temporary Password is required.');
+  if (isCreate && !account.temporaryPassword?.trim()) throw new Error('Temporary password is required.');
+  if (
+    isCreate &&
+    (account.temporaryPassword?.length ?? 0) < INTERNAL_TEMPORARY_PASSWORD_MIN_LENGTH
+  ) {
+    throw new Error('Temporary password must be at least 8 characters.');
+  }
 
   return username;
 }
@@ -752,6 +759,14 @@ export async function updateAccountItem(accountId: string, account: AccountInput
 }
 
 export async function resetInternalAdminPassword(internalAdminId: string, temporaryPassword: string) {
+  if (!temporaryPassword.trim()) {
+    throw new Error('Temporary password is required.');
+  }
+
+  if (temporaryPassword.length < INTERNAL_TEMPORARY_PASSWORD_MIN_LENGTH) {
+    throw new Error('Temporary password must be at least 8 characters.');
+  }
+
   const { data, error } = await supabase.rpc('reset_internal_admin_password', {
     p_session_token: getStoredInternalSessionToken(),
     p_internal_admin_id: internalAdminId,

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { AccountSummaryItem } from './AccountsSummary';
 import {
   groupPermissionsByModule,
+  INTERNAL_TEMPORARY_PASSWORD_MIN_LENGTH,
   loadInternalAdminFormOptions,
   resetInternalAdminPassword,
   updateAccountItem,
@@ -69,6 +70,7 @@ function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps
   const [resetPassword, setResetPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const groupedPermissions = useMemo(() => {
     return groupPermissionsByModule(options.permissions);
   }, [options]);
@@ -144,20 +146,29 @@ function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps
     }
   }
 
-  async function handleResetPassword() {
+  function handleResetPasswordRequest() {
     if (isResettingPassword) return;
     if (!resetPassword.trim()) {
-      setResetError('Enter a temporary password before resetting.');
+      setResetError('Temporary password is required.');
+      return;
+    }
+    if (resetPassword.length < INTERNAL_TEMPORARY_PASSWORD_MIN_LENGTH) {
+      setResetError('Temporary password must be at least 8 characters.');
       return;
     }
 
-    if (!window.confirm('Reset this internal admin password?')) return;
+    setIsResetConfirmOpen(true);
+  }
+
+  async function handleConfirmResetPassword() {
+    if (isResettingPassword) return;
 
     setIsResettingPassword(true);
     try {
       const nextAccounts = await resetInternalAdminPassword(account.id, resetPassword);
       setResetPassword('');
       setResetSuccess('Password reset successfully.');
+      setIsResetConfirmOpen(false);
       onSave(nextAccounts, 'Password reset successfully.');
     } catch (error) {
       setResetError(error instanceof Error ? error.message : 'Unable to reset this password.');
@@ -246,9 +257,10 @@ function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps
                 className={styles.input}
                 placeholder="Temporary password"
               />
+              <span className={styles.fieldHelper}>Temporary password must be at least 8 characters.</span>
               {resetError ? <p className={styles.validationError}>{resetError}</p> : null}
               {resetSuccess ? <p className={styles.successMessage}>{resetSuccess}</p> : null}
-              <button type="button" className={styles.cancelButton} onClick={() => void handleResetPassword()} disabled={isResettingPassword}>
+              <button type="button" className={styles.cancelButton} onClick={handleResetPasswordRequest} disabled={isResettingPassword}>
                 {isResettingPassword ? 'Resetting...' : 'Reset Password'}
               </button>
             </div>
@@ -277,6 +289,41 @@ function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps
           </button>
           <button type="button" className={styles.cancelButton} onClick={onClose}>Cancel</button>
         </div>
+
+        {isResetConfirmOpen ? (
+          <div className={styles.confirmOverlay} role="presentation">
+            <section
+              className={styles.confirmModal}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="reset-internal-password-title"
+              aria-describedby="reset-internal-password-message"
+            >
+              <h3 id="reset-internal-password-title">Reset Internal Admin Password?</h3>
+              <p id="reset-internal-password-message">
+                This will set a temporary password and require this internal admin to change it on the next login.
+              </p>
+              <div className={styles.confirmActions}>
+                <button
+                  type="button"
+                  className={styles.cancelButton}
+                  onClick={() => setIsResetConfirmOpen(false)}
+                  disabled={isResettingPassword}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className={styles.createButton}
+                  onClick={() => void handleConfirmResetPassword()}
+                  disabled={isResettingPassword}
+                >
+                  {isResettingPassword ? 'Resetting...' : 'Reset Password'}
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
       </section>
     </div>
   );

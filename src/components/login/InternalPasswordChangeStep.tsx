@@ -1,4 +1,6 @@
 import type { FormEvent } from 'react';
+import { useState } from 'react';
+import logo from '../../assets/2B LOGO.png';
 import PasswordField from './PasswordField';
 import { validateAdminPassword } from '../../services/adminActivation';
 import styles from '../../pages/Login.module.css';
@@ -19,7 +21,7 @@ const requirementLabels = {
   uppercase: 'One uppercase letter',
   lowercase: 'One lowercase letter',
   number: 'One number',
-  notDefault: 'Not the default password',
+  notDefault: 'Must not be "password"',
 };
 
 export default function InternalPasswordChangeStep({
@@ -32,18 +34,22 @@ export default function InternalPasswordChangeStep({
   onConfirmPasswordChange,
   onSubmit,
 }: InternalPasswordChangeStepProps) {
+  const [hasTouchedConfirmPassword, setHasTouchedConfirmPassword] = useState(false);
   const validation = validateAdminPassword(password);
   const passwordsMatch = Boolean(password) && password === confirmPassword;
+  const canShowMatchStatus = hasTouchedConfirmPassword || Boolean(confirmPassword);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setHasTouchedConfirmPassword(true);
     onSubmit();
   }
 
   return (
     <>
-      <div className={styles.formHeader}>
-        <h2>Change temporary password</h2>
+      <div className={`${styles.formHeader} ${styles.passwordChangeHeader}`}>
+        <img src={logo} alt="BESTBUILT logo" className={styles.passwordChangeLogo} />
+        <h2>Change Password</h2>
         <p>Create a new password, then log in again with your username.</p>
       </div>
 
@@ -56,14 +62,6 @@ export default function InternalPasswordChangeStep({
           placeholder="Create a new password"
           autoComplete="new-password"
         />
-        <PasswordField
-          id="internal-confirm-password"
-          label="Retype New Password"
-          value={confirmPassword}
-          onChange={onConfirmPasswordChange}
-          placeholder="Retype your new password"
-          autoComplete="new-password"
-        />
 
         <div className={styles.passwordRules}>
           {(Object.keys(requirementLabels) as Array<keyof typeof requirementLabels>).map((key) => (
@@ -72,11 +70,27 @@ export default function InternalPasswordChangeStep({
               {requirementLabels[key]}
             </span>
           ))}
-          <span className={passwordsMatch ? styles.ruleMet : styles.rule}>
-            <i className={`fa-solid ${passwordsMatch ? 'fa-check' : 'fa-circle'}`} aria-hidden="true"></i>
-            Passwords match
-          </span>
         </div>
+
+        <PasswordField
+          id="internal-confirm-password"
+          label="Confirm New Password"
+          value={confirmPassword}
+          onChange={(nextPassword) => {
+            setHasTouchedConfirmPassword(true);
+            onConfirmPasswordChange(nextPassword);
+          }}
+          placeholder="Retype your new password"
+          autoComplete="new-password"
+          helperText={
+            canShowMatchStatus ? (
+              <span className={passwordsMatch ? styles.matchPassed : styles.matchFailed}>
+                {passwordsMatch ? 'Passwords match.' : 'Passwords do not match.'}
+              </span>
+            ) : undefined
+          }
+          helperTone={canShowMatchStatus ? (passwordsMatch ? 'success' : 'error') : 'muted'}
+        />
 
         {error ? <p className={styles.error}>{error}</p> : null}
         {info ? <p className={styles.info}>{info}</p> : null}
