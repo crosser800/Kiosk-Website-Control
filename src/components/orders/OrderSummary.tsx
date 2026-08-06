@@ -1031,6 +1031,17 @@ export default function OrderSummary({
         ))}
       </div>
 
+      <label className={styles.mobileStatusFilter}>
+        <span>Order status</span>
+        <select
+          value={activeStatusTab}
+          onChange={(event) => setActiveStatusTab(event.target.value as OrderStatusTab)}
+          aria-label="Filter orders by status"
+        >
+          {ORDER_STATUS_TABS.map((tab) => <option key={tab} value={tab}>{tab}</option>)}
+        </select>
+      </label>
+
       <div className={styles.table}>
         <div className={styles.tableHeader}>
           <span>Order No.</span>
@@ -1097,6 +1108,69 @@ export default function OrderSummary({
                 <i className="fa-solid fa-pen-to-square" aria-hidden="true"></i>
               </button>
             </div>
+          ))
+        )}
+      </div>
+
+      <div className={styles.mobileOrderCards}>
+        {isLoading ? (
+          Array.from({ length: ROWS_PER_PAGE }).map((_, index) => (
+            <article key={`mobile-order-skeleton-${index}`} className={styles.mobileOrderCard}>
+              <Skeleton className={styles.mobileSkeletonStatus} height="1.6rem" width="5.5rem" />
+              <Skeleton height="1.1rem" width="7rem" />
+              <Skeleton height="0.8rem" width="5rem" />
+              <div className={styles.mobileCardSkeletonGrid}>
+                <Skeleton height="0.8rem" />
+                <Skeleton height="0.8rem" />
+              </div>
+            </article>
+          ))
+        ) : pagedOrders.length === 0 ? (
+          <div className={styles.mobileEmptyState}>{emptyText}</div>
+        ) : (
+          pagedOrders.map((order) => (
+            <article key={`mobile-${order.id}`} className={styles.mobileOrderCard}>
+              <span
+                className={`${styles.statusBadge} ${styles.mobileCardStatus} ${
+                  getStatusTone(order.rawStatus) === 'success'
+                    ? styles.statusBadgeSuccess
+                    : getStatusTone(order.rawStatus) === 'danger'
+                      ? styles.statusBadgeDanger
+                      : getStatusTone(order.rawStatus) === 'warning'
+                        ? styles.statusBadgeWarning
+                        : styles.statusBadgeNeutral
+                }`}
+              >
+                {order.poStatus}
+              </span>
+
+              <div className={styles.mobileCardGrid}>
+                <div className={styles.mobileCardPrimary}>
+                  <h3>{order.orderNo}</h3>
+                  <p className={styles.mobilePoNumber}><span>P.O.</span> {order.poNo}</p>
+                  <dl className={styles.mobileIdentityList}>
+                    <div><dt>Agent</dt><dd>{order.agent}</dd></div>
+                    <div><dt>Client</dt><dd>{order.clientName}</dd></div>
+                    <div><dt>Branch</dt><dd>{order.branch}</dd></div>
+                  </dl>
+                </div>
+
+                <div className={styles.mobileCardSchedule}>
+                  <div><span>Date</span><strong>{order.date}</strong></div>
+                  <div><span>Time</span><strong>{order.time}</strong></div>
+                  <div><span>Terms</span><strong>{order.terms}</strong></div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className={`${styles.actionButton} ${styles.mobileCardAction}`}
+                aria-label={`View order ${order.orderNo}`}
+                onClick={() => void handleOpenOrder(order)}
+              >
+                <i className="fa-solid fa-pen-to-square" aria-hidden="true"></i>
+              </button>
+            </article>
           ))
         )}
       </div>

@@ -1,4 +1,5 @@
 import styles from './DailySales.module.css';
+import { formatCompactMobileCurrency, formatCurrency } from '../../utils/formatCompactCurrency';
 
 type DailySalesProps = {
   amount?: number;
@@ -6,14 +7,6 @@ type DailySalesProps = {
   onClick?: () => void;
   disabled?: boolean;
 };
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
 
 export default function DailySales({
   amount = 0,
@@ -46,10 +39,14 @@ export default function DailySales({
               className={`fa-solid ${trendIcon}`}
               aria-hidden="true"
             ></i>{' '}
-            {formatCurrency(yesterday)} yesterday
+            <span className={styles.desktopCurrency}>{formatCurrency(yesterday)}</span>
+            <span className={styles.mobileCurrency}>{formatCompactMobileCurrency(yesterday)}</span> yesterday
           </p>
           <p className={styles.label}>Daily Sales</p>
-          <h2 className={styles.count}>{formatCurrency(amount)}</h2>
+          <h2 className={styles.count}>
+            <span className={styles.desktopCurrency}>{formatCurrency(amount)}</span>
+            <span className={styles.mobileCurrency}>{formatCompactMobileCurrency(amount)}</span>
+          </h2>
         </div>
         <div className={styles.iconBadge}>
           <i className="fa-solid fa-sun"></i>

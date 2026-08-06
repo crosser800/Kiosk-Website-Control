@@ -1,4 +1,5 @@
 import styles from './MonthlySales.module.css';
+import { formatCompactMobileCurrency, formatCurrency } from '../../utils/formatCompactCurrency';
 
 type MonthlySalesProps = {
   amount?: number;
@@ -6,14 +7,6 @@ type MonthlySalesProps = {
   onClick?: () => void;
   disabled?: boolean;
 };
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
 
 export default function MonthlySales({
   amount = 0,
@@ -46,10 +39,14 @@ export default function MonthlySales({
               className={`fa-solid ${trendIcon}`}
               aria-hidden="true"
             ></i>{' '}
-            {formatCurrency(lastMonth)} last month
+            <span className={styles.desktopCurrency}>{formatCurrency(lastMonth)}</span>
+            <span className={styles.mobileCurrency}>{formatCompactMobileCurrency(lastMonth)}</span> last month
           </p>
           <p className={styles.label}>Monthly Sales</p>
-          <h2 className={styles.count}>{formatCurrency(amount)}</h2>
+          <h2 className={styles.count}>
+            <span className={styles.desktopCurrency}>{formatCurrency(amount)}</span>
+            <span className={styles.mobileCurrency}>{formatCompactMobileCurrency(amount)}</span>
+          </h2>
         </div>
         <div className={styles.iconBadge}>
           <i className="fa-solid fa-calendar-days"></i>

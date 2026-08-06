@@ -224,11 +224,32 @@
 }
 
 .viewButton {
-  width: 2.5rem;
+  width: 100%;
+  min-width: 2.5rem;
   height: 2.5rem;
-  padding: 0;
-  align-self: flex-end;
+  padding: 0 1rem;
+  align-self: stretch;
   margin-top: auto;
+  text-align: center;
+}
+
+.viewButtonIcon {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  .viewButton {
+    width: 2.5rem;
+    padding: 0;
+  }
+
+  .viewButtonIcon {
+    display: inline-block;
+  }
+
+  .viewButtonText {
+    display: none;
+  }
 }
 
 .secondaryButton {

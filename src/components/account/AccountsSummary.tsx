@@ -497,6 +497,85 @@ export default function AccountsSummary({
         )}
       </div>
 
+      <div className={styles.mobileAccountCards}>
+        {pagedAccounts.length === 0 ? (
+          <div className={styles.mobileEmptyState}>
+            No {accountViewLabels[activeView].toLowerCase()} added yet.
+          </div>
+        ) : (
+          pagedAccounts.map((account) => (
+            <article key={`mobile-${account.id}`} className={styles.mobileAccountCard}>
+              <div className={styles.mobileAccountGrid}>
+                <div className={styles.mobileAccountIdentity}>
+                  <div className={styles.mobileProfileRow}>
+                    {account.profileImage ? (
+                      <img src={account.profileImage} alt="" className={styles.mobileProfileImage} />
+                    ) : (
+                      <span className={styles.mobileProfileBlank} aria-hidden="true">
+                        <i className="fa-solid fa-user"></i>
+                      </span>
+                    )}
+                    <div>
+                      <h3>{account.name}</h3>
+                      <p>{account.role === 'admins' ? account.username || '-' : account.email}</p>
+                      <span className={`${styles.statusBadge} ${styles.mobileAccountStatus} ${getStatusClass(account.status)}`}>
+                        {account.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  <dl className={styles.mobileIdentityDetails}>
+                    <div>
+                      <dt>Role</dt>
+                      <dd>{account.role === 'admins' ? account.roleLabel ?? '-' : 'Agent'}</dd>
+                    </div>
+                    <div>
+                      <dt>Department</dt>
+                      <dd>{account.branch || '-'}</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                <div className={styles.mobileAccountControls}>
+                  <div className={styles.mobileAccountDetail}>
+                    <span>Access</span>
+                    {account.role === 'admins' ? (
+                      <button
+                        type="button"
+                        className={styles.accessSummaryButton}
+                        onClick={() => setAccessDetailsAccount(account)}
+                        aria-label={`View access details for ${account.name}`}
+                      >
+                        <span>{getAccessSummary(account).assignedModuleCount} Modules</span>
+                        <small>{getAccessSummary(account).assignedPermissionCount}/{getAccessSummary(account).totalPermissionCount} Permissions</small>
+                      </button>
+                    ) : (
+                      <strong>{account.handle || '-'}</strong>
+                    )}
+                  </div>
+
+                  <div className={styles.mobileAccountDetail}>
+                    <span>Password Status</span>
+                    <strong>{account.passwordStatus ?? '-'}</strong>
+                  </div>
+
+                  <button
+                    type="button"
+                    className={`${styles.actionButton} ${styles.mobileAccountAction}`}
+                    aria-label={`Edit ${account.name}`}
+                    disabled={account.canEdit === false}
+                    onClick={() => onEditAccount?.(account)}
+                    title={account.canEdit === false ? 'Protected system account' : `Edit ${account.name}`}
+                  >
+                    <EditIcon />
+                  </button>
+                </div>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+
       <div className={styles.footer}>
         <span className={styles.footerText}>
           Showing {pageStart}-{pageEnd} from {totalDataCount.toLocaleString()} data

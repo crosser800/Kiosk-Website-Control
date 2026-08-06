@@ -274,7 +274,7 @@ export default function AgentSummary() {
         </div>
       </div>
 
-      <table className={styles.table}>
+      <table className={`${styles.table} ${styles.desktopTable}`}>
         <thead>
           <tr>
             <th className={styles.th}>Name</th>
@@ -320,6 +320,58 @@ export default function AgentSummary() {
               ))}
         </tbody>
       </table>
+
+      <div className={styles.mobileCards}>
+        {isLoading
+          ? Array.from({ length: 3 }).map((_, index) => (
+              <article key={`agent-card-skeleton-${index}`} className={styles.agentCard}>
+                <div className={`${styles.skeletonBlock} ${styles.skeletonBadge}`}></div>
+                <div className={styles.cardGrid}>
+                  <div className={styles.cardIdentity}>
+                    <div className={`${styles.skeletonBlock} ${styles.skeletonLineLong}`}></div>
+                    <div className={`${styles.skeletonBlock} ${styles.skeletonLine}`}></div>
+                    <div className={`${styles.skeletonBlock} ${styles.skeletonLine}`}></div>
+                  </div>
+                  <div className={styles.cardMetrics}>
+                    <div className={`${styles.skeletonBlock} ${styles.skeletonLineShort}`}></div>
+                    <div className={`${styles.skeletonBlock} ${styles.skeletonLineShort}`}></div>
+                    <div className={`${styles.skeletonBlock} ${styles.skeletonLine}`}></div>
+                  </div>
+                </div>
+              </article>
+            ))
+          : visibleAgents.map((agent) => (
+              <article key={`agent-card-${agent.id}`} className={styles.agentCard}>
+                <div className={styles.cardStatus}>
+                  {agent.name === '-' ? (
+                    <span className={styles.emptyBadge}>-</span>
+                  ) : (
+                    <span className={`${styles.badge} ${agent.status === 'Active' ? styles.active : styles.inactive}`}>
+                      {agent.status}
+                    </span>
+                  )}
+                </div>
+                <div className={styles.cardGrid}>
+                  <div className={styles.cardIdentity}>
+                    <h3>{agent.name}</h3>
+                    <div className={styles.cardDetail}>
+                      <span>Location</span>
+                      <strong>{agent.location}</strong>
+                    </div>
+                    <div className={styles.cardDetail}>
+                      <span>Price Access</span>
+                      <strong>{agent.productSet}</strong>
+                    </div>
+                  </div>
+                  <div className={styles.cardMetrics}>
+                    <div><span>Clients</span><strong>{formatNumber(agent.clients)}</strong></div>
+                    <div><span>Undelivered</span><strong>{formatNumber(agent.undelivered)}</strong></div>
+                    <div><span>Sales (PHP)</span><strong>{formatCurrency(agent.sales)}</strong></div>
+                  </div>
+                </div>
+              </article>
+            ))}
+      </div>
 
       <div className={styles.footer}>
         <span className={styles.viewAll}>view all</span>

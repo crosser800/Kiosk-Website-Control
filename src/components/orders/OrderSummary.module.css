@@ -311,6 +311,11 @@
   transform: translateY(-1px);
 }
 
+.mobileStatusFilter,
+.mobileOrderCards {
+  display: none;
+}
+
 .filterTab:hover {
   border-color: rgba(250, 204, 21, 0.24);
   background: linear-gradient(135deg, rgba(250, 204, 21, 0.12), rgba(250, 204, 21, 0.04));
@@ -1167,6 +1172,199 @@
     padding: 1rem;
   }
 
+  .filterTabs,
+  .table {
+    display: none;
+  }
+
+  .mobileStatusFilter {
+    position: relative;
+    display: block;
+  }
+
+  .mobileStatusFilter > span {
+    display: none;
+  }
+
+  .mobileStatusFilter::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 1.05rem;
+    width: 0.48rem;
+    height: 0.48rem;
+    border-right: 2px solid var(--text-muted);
+    border-bottom: 2px solid var(--text-muted);
+    pointer-events: none;
+    transform: translateY(-68%) rotate(45deg);
+  }
+
+  .mobileStatusFilter select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    min-height: 2.55rem;
+    padding: 0.5rem 2.75rem 0.5rem 1rem;
+    border: 1px solid var(--yellow);
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      var(--card-bg) 0%,
+      color-mix(in srgb, var(--card-bg) 88%, var(--yellow)) 100%
+    );
+    color: var(--text);
+    font: 600 0.78rem 'Montserrat', sans-serif;
+    cursor: pointer;
+    outline: none;
+    box-shadow: 0 8px 20px rgba(245, 197, 24, 0.08);
+  }
+
+  .mobileStatusFilter select:focus-visible {
+    box-shadow: 0 0 0 3px rgba(245, 197, 24, 0.22);
+  }
+
+  .mobileStatusFilter select option {
+    background: #ffffff;
+    color: #111111;
+  }
+
+  :global(:root.dark) .mobileStatusFilter select {
+    color-scheme: dark;
+    background: linear-gradient(90deg, #202020 0%, #292616 100%);
+    color: #ffffff;
+  }
+
+  :global(:root.dark) .mobileStatusFilter select option {
+    background: #202020;
+    color: #ffffff;
+  }
+
+  .mobileOrderCards {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .mobileOrderCard {
+    position: relative;
+    min-width: 0;
+    padding: 0.9rem;
+    border: 1px solid var(--card-border);
+    border-radius: 0.9rem;
+    background: color-mix(in srgb, var(--card-bg) 94%, var(--surface));
+    box-shadow: 0 7px 20px rgba(17, 24, 39, 0.07);
+  }
+
+  .mobileCardStatus {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    min-width: 0;
+    max-width: 45%;
+    padding: 0.28rem 0.55rem;
+    font-size: 0.62rem;
+  }
+
+  .mobileCardGrid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.8rem;
+    padding-top: 0.15rem;
+  }
+
+  .mobileCardPrimary {
+    min-width: 0;
+    padding-top: 0.1rem;
+  }
+
+  .mobileCardPrimary h3 {
+    max-width: 55%;
+    margin: 0;
+    color: var(--text);
+    font: 800 0.95rem/1.25 'Montserrat', sans-serif;
+    overflow-wrap: anywhere;
+  }
+
+  .mobilePoNumber {
+    margin: 0.2rem 0 0.7rem;
+    color: var(--text);
+    font: 700 0.68rem/1.3 'Montserrat', sans-serif;
+  }
+
+  .mobilePoNumber span,
+  .mobileIdentityList dt,
+  .mobileCardSchedule span {
+    color: var(--text-muted);
+    font: 600 0.56rem/1.2 'Montserrat', sans-serif;
+    letter-spacing: 0.02rem;
+    text-transform: uppercase;
+  }
+
+  .mobileIdentityList {
+    display: grid;
+    gap: 0.45rem;
+    margin: 0;
+  }
+
+  .mobileIdentityList div,
+  .mobileCardSchedule > div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .mobileIdentityList dd {
+    margin: 0;
+    color: var(--text);
+    font: 700 0.7rem/1.25 'Montserrat', sans-serif;
+    overflow-wrap: anywhere;
+  }
+
+  .mobileCardSchedule {
+    display: flex;
+    min-width: 6.2rem;
+    flex-direction: column;
+    gap: 0.55rem;
+    margin-top: 2.35rem;
+    padding-left: 0.7rem;
+    padding-bottom: 2.3rem;
+    border-left: 1px solid var(--card-border);
+    text-align: right;
+  }
+
+  .mobileCardSchedule > div {
+    align-items: flex-end;
+  }
+
+  .mobileCardSchedule strong {
+    color: var(--text);
+    font: 700 0.68rem/1.3 'Montserrat', sans-serif;
+  }
+
+  .mobileCardAction {
+    position: absolute;
+    right: 0.75rem;
+    bottom: 0.75rem;
+  }
+
+  .mobileCardSkeletonGrid {
+    display: grid;
+    grid-template-columns: 1fr 0.7fr;
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+
+  .mobileSkeletonStatus {
+    margin: 0 0 0.75rem auto;
+  }
+
+  .mobileEmptyState {
+    display: grid;
+    min-height: 7rem;
+    place-items: center;
+    color: var(--text-muted);
+    font: 600 0.75rem 'Montserrat', sans-serif;
+  }
+
   .header {
     flex-direction: column;
   }
@@ -1190,13 +1388,11 @@
     justify-content: flex-start;
   }
 
-  .table,
   .modal {
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
 
-  .table::-webkit-scrollbar,
   .modal::-webkit-scrollbar {
     display: none;
   }

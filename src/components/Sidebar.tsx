@@ -81,7 +81,7 @@ export default function Sidebar({
   };
 
   return (
-    <div className={`${styles.sidebar} ${isCollapsed ? styles.collapsed : ''}`}>
+    <aside id="app-sidebar" className={`${styles.sidebar} ${isCollapsed ? styles.collapsed : ''}`}>
       <div className={styles.header}>
         {isCollapsed && canToggle ? (
           <button
@@ -101,11 +101,14 @@ export default function Sidebar({
               <img src={logo} alt="logo" />
             </div>
             <button
+              type="button"
               className={styles.toggleBtn}
               onClick={() => onToggle(true)}
               aria-label="Close sidebar"
+              title="Close sidebar"
             >
-              <i className="fa-solid fa-bars"></i>
+              <i className={`fa-solid fa-bars ${styles.desktopToggleIcon}`} aria-hidden="true"></i>
+              <i className={`fa-solid fa-arrow-left ${styles.mobileToggleIcon}`} aria-hidden="true"></i>
             </button>
           </>
         )}
@@ -207,6 +210,6 @@ export default function Sidebar({
           </button>
         </div>
       </div>
-    </div>
+    </aside>
   );
 }

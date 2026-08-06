@@ -192,6 +192,23 @@
   color: #f9fafb;
 }
 
+:global(:root.dark) .customRange input {
+  color-scheme: dark;
+  border-color: color-mix(in srgb, var(--yellow) 24%, var(--card-border));
+  background:
+    radial-gradient(circle at top right, rgba(245, 197, 24, 0.1), transparent 38%),
+    linear-gradient(180deg, #202020 0%, #171717 100%);
+  color: #f9fafb;
+  box-shadow:
+    0 0 0 1px rgba(245, 197, 24, 0.05),
+    0 10px 28px rgba(245, 197, 24, 0.08);
+}
+
+:global(:root.dark) .customRange input::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.78;
+}
+
 .icon {
   width: 1rem;
   height: 1rem;
@@ -605,8 +622,22 @@
   }
 
   .filterTabs {
-    flex-wrap: wrap;
-    border-radius: 1rem;
+    width: 100%;
+    max-width: 100%;
+    flex-wrap: nowrap;
+    gap: 0;
+    padding: 0.2rem;
+    border-radius: 999px;
+  }
+
+  .filterTab {
+    flex: 1 1 50%;
+    min-width: 0;
+    min-height: 1.9rem;
+    padding: 0.35rem 0.55rem;
+    font-size: 0.62rem;
+    line-height: 1.1;
+    white-space: nowrap;
   }
 
   .selectControl {

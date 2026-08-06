@@ -526,7 +526,8 @@ export default function ProductCategoryWorkspace() {
                       aria-label={`View products in ${category.title}`}
                       title={`View products in ${category.title}`}
                     >
-                      <i className="fa-solid fa-eye" aria-hidden="true"></i>
+                      <i className={`fa-solid fa-eye ${styles.viewButtonIcon}`} aria-hidden="true"></i>
+                      <span className={styles.viewButtonText}>View Products</span>
                     </button>
                   </div>
                 </article>

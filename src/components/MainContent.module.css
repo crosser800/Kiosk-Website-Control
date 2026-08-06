@@ -22,14 +22,11 @@
   .mainContent,
   .mainContent.collapsed {
     min-width: 0;
-    margin-left: var(--sidebar-tablet-width);
-    transition: none;
+    margin-left: 0;
   }
 }
 
 @media (max-width: 600px) {
   .mainContent,
-  .mainContent.collapsed {
-    margin-left: var(--sidebar-mobile-width);
-  }
+  .mainContent.collapsed { margin-left: 0; }
 }

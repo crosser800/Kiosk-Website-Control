@@ -40,7 +40,9 @@ function logAppLifecycle(message: string, details: Record<string, unknown> = {})
 export default function App() {
   const [active, setActive] = useState('Dashboard');
   const [isDark, setIsDark] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() =>
+    window.matchMedia('(max-width: 1024px)').matches,
+  );
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] =
     useState(false);
   const [isGatewayLogoutConfirmOpen, setIsGatewayLogoutConfirmOpen] =
@@ -145,6 +147,9 @@ export default function App() {
       event: MediaQueryListEvent,
     ) => {
       setIsCompactNavigation(event.matches);
+      if (event.matches) {
+        setIsCollapsed(true);
+      }
     };
 
     mediaQuery.addEventListener('change', handleChange);
@@ -156,6 +161,42 @@ export default function App() {
       );
     };
   }, []);
+
+  useEffect(() => {
+    if (!isCompactNavigation || isCollapsed) {
+      return;
+    }
+
+    window.history.pushState(
+      { ...window.history.state, kioskSidebarOpen: true },
+      '',
+    );
+
+    const handlePopState = () => {
+      setIsCollapsed(true);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isCollapsed, isCompactNavigation]);
+
+  const handleSidebarToggle = () => {
+    if (isCompactNavigation && !isCollapsed) {
+      window.history.back();
+      return;
+    }
+
+    setIsCollapsed((current) => !current);
+  };
+
+  const handleSidebarCollapsedChange = (collapsed: boolean) => {
+    if (collapsed && isCompactNavigation && !isCollapsed) {
+      window.history.back();
+      return;
+    }
+
+    setIsCollapsed(collapsed);
+  };
 
   useEffect(() => {
     if (!isGatewayLogoutConfirmOpen) return;
@@ -814,11 +855,9 @@ export default function App() {
       <Sidebar
         active={active}
         onNavigate={handleNavigate}
-        isCollapsed={
-          isCollapsed || isCompactNavigation
-        }
+        isCollapsed={isCollapsed}
         canToggle={!isCompactNavigation}
-        onToggle={setIsCollapsed}
+        onToggle={handleSidebarCollapsedChange}
         onLogout={handleLogoutRequest}
         onAccount={() => setIsAccountProfileOpen(true)}
         accountName={sidebarAccountName}
@@ -831,16 +870,13 @@ export default function App() {
         active={headerTitle}
         isDark={isDark}
         onToggle={toggleTheme}
-        isCollapsed={
-          isCollapsed || isCompactNavigation
-        }
+        isCollapsed={isCollapsed}
+        onToggleSidebar={handleSidebarToggle}
       />
 
       <MainContent
         contentKey={`${active}-${productView}`}
-        isCollapsed={
-          isCollapsed || isCompactNavigation
-        }
+        isCollapsed={isCollapsed}
       >
         {renderPage()}
       </MainContent>
