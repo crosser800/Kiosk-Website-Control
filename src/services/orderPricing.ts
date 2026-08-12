@@ -26,6 +26,13 @@ export type OrderCatalogUnitOption = {
   status: string;
   sortOrder: number;
   notes: string;
+  weightValue: number | null;
+  weightUnit: string;
+  lengthValue: number | null;
+  widthValue: number | null;
+  heightValue: number | null;
+  dimensionUnit: string;
+  shippingNotes: string;
 };
 
 export type ApplicablePromotion = {

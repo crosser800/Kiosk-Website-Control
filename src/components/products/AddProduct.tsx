@@ -444,7 +444,7 @@ export default function AddProduct({
         const { data: unitOptionRows } = await supabase
           .from('product_variation_unit_options')
           .select(
-            'id, variation_id, unit_code, unit_label, base_unit_code, quantity_in_base_unit, price_override, packaging_text, min_order_quantity, order_increment, is_default, is_orderable, status, sort_order, notes',
+            'id, variation_id, unit_code, unit_label, base_unit_code, quantity_in_base_unit, price_override, packaging_text, min_order_quantity, order_increment, is_default, is_orderable, status, sort_order, notes, weight_value, weight_unit, length_value, width_value, height_value, dimension_unit, shipping_notes',
           )
           .in('variation_id', variationIds)
           .order('sort_order', { ascending: true });
@@ -484,6 +484,17 @@ export default function AddProduct({
               isOrderable: String(row.status ?? 'Active') !== 'Inactive',
               sortOrder: String(row.sort_order ?? '0'),
               notes: String(row.notes ?? ''),
+              weightValue: row.weight_value === null || row.weight_value === undefined ? '' : String(row.weight_value),
+              weightUnit: ['mg', 'g', 'kg', 'lb'].includes(String(row.weight_unit ?? ''))
+                ? (String(row.weight_unit) as VariationUnitOptionItem['weightUnit'])
+                : 'kg',
+              lengthValue: row.length_value === null || row.length_value === undefined ? '' : String(row.length_value),
+              widthValue: row.width_value === null || row.width_value === undefined ? '' : String(row.width_value),
+              heightValue: row.height_value === null || row.height_value === undefined ? '' : String(row.height_value),
+              dimensionUnit: ['mm', 'cm', 'm', 'in'].includes(String(row.dimension_unit ?? ''))
+                ? (String(row.dimension_unit) as VariationUnitOptionItem['dimensionUnit'])
+                : 'cm',
+              shippingNotes: String(row.shipping_notes ?? ''),
             } satisfies VariationUnitOptionItem;
           })
           .filter(Boolean) as VariationUnitOptionItem[];
@@ -822,6 +833,18 @@ export default function AddProduct({
   }
 
   const parseNumber = (value: string) => Number(value.replace(/,/g, '')) || 0;
+  const parseNullableNonNegativeNumber = (value: string) => {
+    const trimmed = String(value ?? '').trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Number(trimmed.replace(/,/g, ''));
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  };
+  const normalizeWeightUnit = (value: string): VariationUnitOptionItem['weightUnit'] =>
+    ['mg', 'g', 'kg', 'lb'].includes(value) ? (value as VariationUnitOptionItem['weightUnit']) : 'kg';
+  const normalizeDimensionUnit = (value: string): VariationUnitOptionItem['dimensionUnit'] =>
+    ['mm', 'cm', 'm', 'in'].includes(value) ? (value as VariationUnitOptionItem['dimensionUnit']) : 'cm';
 
   async function ensureProductRecord() {
     let productId = draftProductId ?? editProductId ?? null;
@@ -1221,6 +1244,13 @@ export default function AddProduct({
             sortOrder: item.sortOrder || String(index),
             isDefault: item.isDefault && !hasDefaultAlready,
             isOrderable: item.status !== 'Inactive',
+            weightValue: item.weightValue || '',
+            weightUnit: normalizeWeightUnit(item.weightUnit),
+            lengthValue: item.lengthValue || '',
+            widthValue: item.widthValue || '',
+            heightValue: item.heightValue || '',
+            dimensionUnit: normalizeDimensionUnit(item.dimensionUnit),
+            shippingNotes: item.shippingNotes || '',
           });
           return result;
         },
@@ -1252,6 +1282,13 @@ export default function AddProduct({
           status: item.status,
           sort_order: Number(item.sortOrder || String(index)) || index,
           notes: item.notes || null,
+          weight_value: parseNullableNonNegativeNumber(item.weightValue),
+          weight_unit: normalizeWeightUnit(item.weightUnit),
+          length_value: parseNullableNonNegativeNumber(item.lengthValue),
+          width_value: parseNullableNonNegativeNumber(item.widthValue),
+          height_value: parseNullableNonNegativeNumber(item.heightValue),
+          dimension_unit: normalizeDimensionUnit(item.dimensionUnit),
+          shipping_notes: item.shippingNotes || null,
         }));
 
         const { data: insertedUnitOptionRows, error: unitOptionInsertError } = await supabase

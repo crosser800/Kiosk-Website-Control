@@ -63,6 +63,13 @@ export type VariationUnitOptionItem = {
   status: 'Active' | 'Inactive';
   sortOrder: string;
   notes: string;
+  weightValue: string;
+  weightUnit: 'mg' | 'g' | 'kg' | 'lb';
+  lengthValue: string;
+  widthValue: string;
+  heightValue: string;
+  dimensionUnit: 'mm' | 'cm' | 'm' | 'in';
+  shippingNotes: string;
 };
 
 export type UnitCondition = 'any_unit' | 'selected_unit';

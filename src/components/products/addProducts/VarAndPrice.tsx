@@ -60,6 +60,12 @@ type GeneratedUnitOption = {
   notes: string;
 };
 
+const WEIGHT_UNITS = ['mg', 'g', 'kg', 'lb'] as const;
+const DIMENSION_UNITS = ['mm', 'cm', 'm', 'in'] as const;
+
+type WeightUnit = VariationUnitOptionItem['weightUnit'];
+type DimensionUnit = VariationUnitOptionItem['dimensionUnit'];
+
 type DiscountDraftRow = {
   id: string;
   discountName: string;
@@ -191,6 +197,48 @@ function toPriceCode(value: string): PriceCode | null {
 
 function parseNumberInput(value: string) {
   return Number(String(value).replace(/,/g, '')) || 0;
+}
+
+function parseNullableNumberInput(value: string) {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) {
+    return null;
+  }
+  const parsed = Number(trimmed.replace(/,/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sanitizeNonNegativeNumericInput(value: string) {
+  const sanitized = value.replace(/[^\d.]/g, '');
+  const [integer = '', ...decimalParts] = sanitized.split('.');
+  const decimal = decimalParts.join('');
+  return decimalParts.length > 0 ? `${integer}.${decimal}` : integer;
+}
+
+function normalizeWeightUnit(value: unknown): WeightUnit {
+  return WEIGHT_UNITS.includes(value as WeightUnit) ? (value as WeightUnit) : 'kg';
+}
+
+function normalizeDimensionUnit(value: unknown): DimensionUnit {
+  return DIMENSION_UNITS.includes(value as DimensionUnit) ? (value as DimensionUnit) : 'cm';
+}
+
+function formatPhysicalSummary(option: VariationUnitOptionItem) {
+  const weight = parseNullableNumberInput(option.weightValue);
+  const length = parseNullableNumberInput(option.lengthValue);
+  const width = parseNullableNumberInput(option.widthValue);
+  const height = parseNullableNumberInput(option.heightValue);
+  const parts: string[] = [];
+
+  if (weight !== null) {
+    parts.push(`${option.weightValue} ${option.weightUnit}`);
+  }
+
+  if (length !== null && width !== null && height !== null) {
+    parts.push(`${option.lengthValue} x ${option.widthValue} x ${option.heightValue} ${option.dimensionUnit}`);
+  }
+
+  return parts.join(' / ');
 }
 
 function formatCurrency(value: number) {
@@ -373,6 +421,13 @@ function createDefaultUnitOption(
     status: 'Active',
     sortOrder: String(sortOrder),
     notes: '',
+    weightValue: '',
+    weightUnit: 'kg',
+    lengthValue: '',
+    widthValue: '',
+    heightValue: '',
+    dimensionUnit: 'cm',
+    shippingNotes: '',
   };
 }
 
@@ -750,7 +805,7 @@ export default function VarAndPrice({
     const { data, error } = await supabase
       .from('product_variation_unit_options')
       .select(
-        'id, variation_id, unit_code, unit_label, base_unit_code, quantity_in_base_unit, price_override, packaging_text, min_order_quantity, order_increment, is_default, status, sort_order, notes',
+        'id, variation_id, unit_code, unit_label, base_unit_code, quantity_in_base_unit, price_override, packaging_text, min_order_quantity, order_increment, is_default, status, sort_order, notes, weight_value, weight_unit, length_value, width_value, height_value, dimension_unit, shipping_notes',
       )
       .eq('variation_id', variationId)
       .eq('status', 'Active')
@@ -778,6 +833,13 @@ export default function VarAndPrice({
       isOrderable: String(row.status ?? 'Active') !== 'Inactive',
       sortOrder: String(row.sort_order ?? '0'),
       notes: String(row.notes ?? ''),
+      weightValue: row.weight_value === null || row.weight_value === undefined ? '' : String(row.weight_value),
+      weightUnit: normalizeWeightUnit(row.weight_unit),
+      lengthValue: row.length_value === null || row.length_value === undefined ? '' : String(row.length_value),
+      widthValue: row.width_value === null || row.width_value === undefined ? '' : String(row.width_value),
+      heightValue: row.height_value === null || row.height_value === undefined ? '' : String(row.height_value),
+      dimensionUnit: normalizeDimensionUnit(row.dimension_unit),
+      shippingNotes: String(row.shipping_notes ?? ''),
     } satisfies VariationUnitOptionItem));
     setRewardUnitOptions((current) => ({ ...current, [rowId]: mapped }));
     setRewardUnitLoading((current) => ({ ...current, [rowId]: false }));
@@ -1584,7 +1646,7 @@ export default function VarAndPrice({
     updateCardUnitOptions(card.id, (currentOptions) => {
       const baseRow =
         currentOptions.find((item) => item.isDefault) ?? createDefaultUnitOption(card.id, baseUnitCode);
-      const parsedRows = generatedOptions.map((item, index) => ({
+      const parsedRows: VariationUnitOptionItem[] = generatedOptions.map((item, index) => ({
         id: crypto.randomUUID(),
         variationId: card.id,
         unitCode: item.unitCode,
@@ -1600,6 +1662,13 @@ export default function VarAndPrice({
         status: 'Active' as const,
         sortOrder: String(index + 1),
         notes: item.notes,
+        weightValue: '',
+        weightUnit: 'kg',
+        lengthValue: '',
+        widthValue: '',
+        heightValue: '',
+        dimensionUnit: 'cm',
+        shippingNotes: '',
       }));
       return [
         {
@@ -2172,6 +2241,13 @@ export default function VarAndPrice({
                               status: 'Active',
                               sortOrder: String(currentOptions.length),
                               notes: '',
+                              weightValue: '',
+                              weightUnit: 'kg',
+                              lengthValue: '',
+                              widthValue: '',
+                              heightValue: '',
+                              dimensionUnit: 'cm',
+                              shippingNotes: '',
                             },
                           ])
                         }
@@ -2185,6 +2261,7 @@ export default function VarAndPrice({
                         <span>#</span>
                         <span>Unit</span>
                         <span>Contains</span>
+                        <span>Physical Specs</span>
                         <span>Computed Prices</span>
                         <span>Default</span>
                         <span>Status</span>
@@ -2255,6 +2332,129 @@ export default function VarAndPrice({
                               <span className={styles.fieldHelper}>
                                 How many {baseUnitCode} are inside 1 {option.unitCode || 'unit'}?
                               </span>
+                            </div>
+
+                            <div className={styles.physicalSpecsCell}>
+                              <span className={styles.fieldLabel}>Weight</span>
+                              <div className={styles.physicalInline}>
+                                <input
+                                  className={styles.input}
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  value={option.weightValue}
+                                  onChange={(event) =>
+                                    updateCardUnitOptions(card.id, (currentOptions) =>
+                                      currentOptions.map((item) =>
+                                        item.id === option.id
+                                          ? {
+                                              ...item,
+                                              weightValue: sanitizeNonNegativeNumericInput(event.target.value),
+                                            }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                  placeholder="0"
+                                />
+                                <select
+                                  className={styles.select}
+                                  value={option.weightUnit}
+                                  onChange={(event) =>
+                                    updateCardUnitOptions(card.id, (currentOptions) =>
+                                      currentOptions.map((item) =>
+                                        item.id === option.id
+                                          ? {
+                                              ...item,
+                                              weightUnit: normalizeWeightUnit(event.target.value),
+                                            }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                >
+                                  {WEIGHT_UNITS.map((unit) => (
+                                    <option key={unit} value={unit}>
+                                      {unit}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <span className={styles.fieldLabel}>Dimensions</span>
+                              <div className={styles.dimensionInline}>
+                                {[
+                                  ['lengthValue', 'l'],
+                                  ['widthValue', 'w'],
+                                  ['heightValue', 'h'],
+                                ].map(([field, label]) => (
+                                  <input
+                                    key={field}
+                                    className={styles.input}
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    value={option[field as 'lengthValue' | 'widthValue' | 'heightValue']}
+                                    onChange={(event) =>
+                                      updateCardUnitOptions(card.id, (currentOptions) =>
+                                        currentOptions.map((item) =>
+                                          item.id === option.id
+                                            ? {
+                                                ...item,
+                                                [field]: sanitizeNonNegativeNumericInput(event.target.value),
+                                              }
+                                            : item,
+                                        ),
+                                      )
+                                    }
+                                    placeholder={label}
+                                    aria-label={label}
+                                  />
+                                ))}
+                                <select
+                                  className={styles.select}
+                                  value={option.dimensionUnit}
+                                  onChange={(event) =>
+                                    updateCardUnitOptions(card.id, (currentOptions) =>
+                                      currentOptions.map((item) =>
+                                        item.id === option.id
+                                          ? {
+                                              ...item,
+                                              dimensionUnit: normalizeDimensionUnit(event.target.value),
+                                            }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                >
+                                  {DIMENSION_UNITS.map((unit) => (
+                                    <option key={unit} value={unit}>
+                                      {unit}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <input
+                                className={styles.input}
+                                value={option.shippingNotes}
+                                onChange={(event) =>
+                                  updateCardUnitOptions(card.id, (currentOptions) =>
+                                    currentOptions.map((item) =>
+                                      item.id === option.id
+                                        ? {
+                                            ...item,
+                                            shippingNotes: event.target.value,
+                                          }
+                                        : item,
+                                    ),
+                                  )
+                                }
+                                placeholder="Shipping notes"
+                              />
+                              {formatPhysicalSummary(option) ? (
+                                <span className={styles.physicalSummary}>{formatPhysicalSummary(option)}</span>
+                              ) : null}
                             </div>
 
                             <div className={styles.fieldGroup}>

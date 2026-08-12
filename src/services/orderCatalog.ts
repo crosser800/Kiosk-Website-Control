@@ -84,6 +84,13 @@ type UnitOptionRow = {
   status: string | null;
   sort_order: number | null;
   notes: string | null;
+  weight_value: number | null;
+  weight_unit: string | null;
+  length_value: number | null;
+  width_value: number | null;
+  height_value: number | null;
+  dimension_unit: string | null;
+  shipping_notes: string | null;
 };
 
 type DiscountRow = {
@@ -184,7 +191,7 @@ export async function loadOrderCatalog(): Promise<OrderCatalogProduct[]> {
       .order('sort_order', { ascending: true }),
     supabase
       .from('product_variation_unit_options')
-      .select('id, variation_id, unit_code, unit_label, base_unit_code, quantity_in_base_unit, price_override, packaging_text, min_order_quantity, order_increment, is_default, is_orderable, status, sort_order, notes')
+      .select('id, variation_id, unit_code, unit_label, base_unit_code, quantity_in_base_unit, price_override, packaging_text, min_order_quantity, order_increment, is_default, is_orderable, status, sort_order, notes, weight_value, weight_unit, length_value, width_value, height_value, dimension_unit, shipping_notes')
       .eq('status', 'Active')
       .order('sort_order', { ascending: true }),
     supabase
@@ -446,6 +453,13 @@ function mapUnitOption(row: UnitOptionRow): OrderCatalogUnitOption {
     status: String(row.status ?? ''),
     sortOrder: toSafeNumber(row.sort_order, 0),
     notes: String(row.notes ?? ''),
+    weightValue: row.weight_value === null ? null : Math.max(0, toSafeNumber(row.weight_value, 0)),
+    weightUnit: String(row.weight_unit ?? 'kg'),
+    lengthValue: row.length_value === null ? null : Math.max(0, toSafeNumber(row.length_value, 0)),
+    widthValue: row.width_value === null ? null : Math.max(0, toSafeNumber(row.width_value, 0)),
+    heightValue: row.height_value === null ? null : Math.max(0, toSafeNumber(row.height_value, 0)),
+    dimensionUnit: String(row.dimension_unit ?? 'cm'),
+    shippingNotes: String(row.shipping_notes ?? ''),
   };
 }
 
@@ -466,6 +480,13 @@ function createDefaultUnitOption(variationId: string): OrderCatalogUnitOption {
     status: 'Active',
     sortOrder: 0,
     notes: '',
+    weightValue: null,
+    weightUnit: 'kg',
+    lengthValue: null,
+    widthValue: null,
+    heightValue: null,
+    dimensionUnit: 'cm',
+    shippingNotes: '',
   };
 }
 
