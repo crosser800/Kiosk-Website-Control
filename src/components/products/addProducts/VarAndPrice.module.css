@@ -548,9 +548,16 @@
 
 .basePriceSummaryItem strong,
 .computedPriceItem strong {
-  color: var(--text);
+  /* Keep codes and values on each price card in the same readable color. */
+  color: inherit;
   font-size: 0.7rem;
   font-weight: 800;
+}
+
+:global(:root.dark) .computedPriceItem {
+  background: color-mix(in srgb, var(--surface) 88%, #000);
+  border-color: color-mix(in srgb, var(--yellow) 28%, var(--card-border));
+  color: #f8d46b;
 }
 
 .unitOptionActions {
@@ -1016,6 +1023,31 @@
   font-weight: 700;
   line-height: 1.45;
   font-family: 'Montserrat', sans-serif;
+}
+
+/* Keep adjustment previews visually consistent with the dark workspace. */
+:global(:root.dark) .adjustmentSummary {
+  background: color-mix(in srgb, var(--surface) 92%, #000);
+  border-color: color-mix(in srgb, var(--yellow) 20%, var(--card-border));
+}
+
+:global(:root.dark) .adjustmentSummaryFinal {
+  background: color-mix(in srgb, var(--yellow) 18%, var(--surface));
+}
+
+:global(:root.dark) .adjustmentSummaryFinal span,
+:global(:root.dark) .adjustmentSummaryFinal strong {
+  color: #f8d46b;
+}
+
+:global(:root.dark) .encoderPreviewSection {
+  background: color-mix(in srgb, var(--surface) 92%, #000);
+  border-color: color-mix(in srgb, var(--yellow) 20%, var(--card-border));
+}
+
+:global(:root.dark) .encoderPreviewSection .modalSectionTitle,
+:global(:root.dark) .encoderPreviewText {
+  color: var(--text);
 }
 
 .suggestedNameRow {
