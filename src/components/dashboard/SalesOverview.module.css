@@ -6,6 +6,8 @@
   flex: 1;
   box-shadow: var(--card-shadow);
   transition: background-color 0.3s, border 0.3s;
+  display: flex;
+  flex-direction: column;
 }
 
 .top {
@@ -18,21 +20,21 @@
 }
 
 .title {
-  font-size: 1.125rem;
+  font-size: 1rem;
   font-weight: bold;
   color: var(--text);
   font-family: 'Montserrat', sans-serif;
 }
 
 .total {
-  font-size: 1.25rem;
+  font-size: 1rem;
   font-weight: bold;
   color: var(--text);
 }
 
 .total span {
   color: var(--yellow);
-  font-size: 1.75rem;
+  font-size: 1.45rem;
 }
 
 .legendRow {
@@ -48,7 +50,7 @@
   align-items: center;
   gap: 0.45rem;
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: 0.72rem;
   font-weight: 700;
   font-family: 'Montserrat', sans-serif;
 }
@@ -74,12 +76,17 @@
 }
 
 .chartWrap {
-  height: 17.5rem;
+  min-height: 17.5rem;
+  flex: 1;
   border-radius: 0.95rem;
   padding: 0.35rem 0.1rem 0 0;
   background:
     radial-gradient(circle at top right, rgba(250, 204, 21, 0.12), transparent 35%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+}
+
+.chartWrap :global(.recharts-cartesian-axis-tick-value) {
+  font-size: 0.72rem;
 }
 
 .tooltipCard {

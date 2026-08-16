@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import DailySales from '../components/sales/DailySales';
 import MonthlySales from '../components/sales/MonthlySales';
 import OrdersSales from '../components/sales/OrdersSales';
+import SalesMap from '../components/sales/SalesMap';
 import YearlySales from '../components/sales/YearlySales';
 import YtdSales from '../components/sales/YtdSales';
 import { supabase } from '../lib/supabase';
@@ -524,6 +525,8 @@ export default function Sales() {
           disabled={isLoading}
         />
       </div>
+
+      <SalesMap />
 
       <OrdersSales />
 

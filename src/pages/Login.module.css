@@ -294,6 +294,12 @@
 }
 
 .internalLoginCard {
+  /* This login flow intentionally uses a light card in every application theme. */
+  --text: #111827;
+  --text-muted: #6b7280;
+  --surface: #ffffff;
+  --card-bg: #ffffff;
+  --card-border: rgba(107, 114, 128, 0.28);
   width: min(31.5rem, 100%);
   display: block;
   position: relative;

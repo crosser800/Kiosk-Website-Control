@@ -44,9 +44,24 @@ const toNumber = (value: ValueType | undefined) => {
 const formatY = (value: ValueType | undefined) => {
   const numericValue = toNumber(value);
   if (!numericValue) return '0';
+  if (numericValue >= 1000000) return `${numericValue / 1000000}M`;
   if (numericValue >= 1000) return `${numericValue / 1000}K`;
   return numericValue.toString();
 };
+
+function getChartScale(data: SalesOverviewProps['data']) {
+  const highestEarning = Math.max(
+    0,
+    ...data.flatMap((entry) => [entry.thisWeek, entry.previousWeek]),
+  );
+  const maximum = Math.max(100000, Math.ceil(highestEarning / 100000) * 100000);
+  const step = maximum / 4;
+
+  return {
+    maximum,
+    ticks: Array.from({ length: 5 }, (_, index) => step * index),
+  };
+}
 
 function CustomTooltip({
   active,
@@ -96,6 +111,7 @@ function CustomTooltip({
 export default function SalesOverview({ total, data }: SalesOverviewProps) {
   const chartData = data.length > 0 ? data : EMPTY_CHART_DATA;
   const hasRealData = data.some((entry) => entry.thisWeek > 0 || entry.previousWeek > 0);
+  const chartScale = getChartScale(chartData);
 
   return (
     <div className={styles.card}>
@@ -132,7 +148,15 @@ export default function SalesOverview({ total, data }: SalesOverviewProps) {
             </defs>
             <CartesianGrid vertical={false} stroke="var(--card-border)" strokeDasharray="4 4" />
             <XAxis dataKey="day" axisLine={false} tickLine={false} />
-            <YAxis tickFormatter={formatY} axisLine={false} tickLine={false} allowDecimals={false} />
+            <YAxis
+              domain={[0, chartScale.maximum]}
+              ticks={chartScale.ticks}
+              tickFormatter={formatY}
+              axisLine={false}
+              tickLine={false}
+              allowDecimals={false}
+              width={42}
+            />
             <Tooltip
               cursor={{ fill: 'rgba(250, 204, 21, 0.08)' }}
               content={<CustomTooltip />}
