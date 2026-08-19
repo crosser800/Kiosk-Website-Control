@@ -255,6 +255,102 @@
   border-color: #c4dcff;
 }
 
+.confirmOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.46);
+}
+
+.confirmDialog {
+  width: min(100%, 440px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.9rem;
+  background: var(--card-bg);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.22);
+  font-family: 'Montserrat', sans-serif;
+}
+
+.confirmTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.confirmText {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.cancelButton,
+.discardButton,
+.saveButton {
+  min-height: 2.45rem;
+  padding: 0 0.9rem;
+  border-radius: 0.65rem;
+  font-size: 0.84rem;
+  font-weight: 800;
+  font-family: 'Montserrat', sans-serif;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.cancelButton {
+  border: 1px solid var(--card-border);
+  background: color-mix(in srgb, var(--surface) 85%, white);
+  color: var(--text);
+}
+
+.discardButton {
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #991b1b;
+}
+
+.saveButton {
+  border: 1px solid color-mix(in srgb, var(--yellow) 80%, #a16207);
+  background: var(--yellow);
+  color: #111827;
+}
+
+.cancelButton:hover,
+.discardButton:hover,
+.saveButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+}
+
+.cancelButton:disabled,
+.discardButton:disabled,
+.saveButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  transform: none;
+  box-shadow: none;
+}
+
 @media (max-width: 900px) {
   .container,
   .containerEmbedded {
@@ -365,6 +461,33 @@
     padding: 0.55rem 0.65rem;
     border-radius: 0.6rem;
     font-size: 0.7rem;
+  }
+
+  .confirmDialog {
+    gap: 0.7rem;
+    padding: 0.8rem;
+    border-radius: 0.75rem;
+  }
+
+  .confirmTitle {
+    font-size: 0.88rem;
+  }
+
+  .confirmText {
+    font-size: 0.72rem;
+  }
+
+  .confirmActions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .cancelButton,
+  .discardButton,
+  .saveButton {
+    width: 100%;
+    min-height: 2.2rem;
+    font-size: 0.72rem;
   }
 }
 

@@ -24,11 +24,27 @@ type AddProductProps = {
   editProductId?: string | null;
   initialCategoryId?: string | null;
   onSaved?: (productId: string, categoryId: string) => void;
+  onRegisterNavigationGuard?: (guard: (() => Promise<boolean>) | null) => void;
   layout?: 'standalone' | 'embedded';
   initialSection?: AddProductSection;
 };
 
 type OptionItem = { id: string; label: string };
+type PendingTabChange = {
+  from: AddProductSection;
+  to: AddProductSection | null;
+  dirtySections: AddProductSection[];
+};
+type SectionDraftState = {
+  formValues: ProductFormState;
+  mediaItems: MediaItem[];
+  mainMediaId: string | null;
+  variations: VariationItem[];
+  variationPreviewMediaByCardId: Record<string, string>;
+  variationUnitOptions: VariationUnitOptionItem[];
+  discounts: DiscountItem[];
+  surcharges: SurchargeItem[];
+};
 type DiscountHistoryAction =
   | 'created'
   | 'updated'
@@ -150,6 +166,54 @@ function normalizeSnapshotValue(value: unknown) {
 
 function normalizeUnitText(value: unknown) {
   return String(value ?? '').trim().toLowerCase();
+}
+
+function cloneSectionDraftState(state: SectionDraftState): SectionDraftState {
+  return {
+    formValues: { ...state.formValues },
+    mediaItems: state.mediaItems.map((item) => ({ ...item })),
+    mainMediaId: state.mainMediaId,
+    variations: state.variations.map((item) => ({ ...item })),
+    variationPreviewMediaByCardId: { ...state.variationPreviewMediaByCardId },
+    variationUnitOptions: state.variationUnitOptions.map((item) => ({ ...item })),
+    discounts: state.discounts.map((item) => ({ ...item })),
+    surcharges: state.surcharges.map((item) => ({ ...item })),
+  };
+}
+
+function getSectionDraftSnapshot(section: AddProductSection, state: SectionDraftState) {
+  if (section === 'Basic Information') {
+    return JSON.stringify(state.formValues);
+  }
+
+  if (section === 'Images') {
+    return JSON.stringify({
+      mainMediaId: state.mainMediaId,
+      mediaItems: state.mediaItems.map((item) => ({
+        id: item.id,
+        fileName: item.fileName,
+        previewUrl: item.previewUrl,
+        type: item.type,
+        title: item.title ?? '',
+        altText: item.altText ?? '',
+        isExisting: Boolean(item.isExisting),
+        mediaPath: item.mediaPath ?? null,
+        thumbnailUrl: item.thumbnailUrl ?? null,
+        thumbnailPath: item.thumbnailPath ?? null,
+        variationId: item.variationId ?? null,
+        status: item.status ?? '',
+        hasFile: Boolean(item.file),
+      })),
+    });
+  }
+
+  return JSON.stringify({
+    variations: state.variations,
+    variationPreviewMediaByCardId: state.variationPreviewMediaByCardId,
+    variationUnitOptions: state.variationUnitOptions,
+    discounts: state.discounts,
+    surcharges: state.surcharges,
+  });
 }
 
 function getCanonicalUnitLabel(unitCode: string, unitDefinitions: ProductUnitDefinition[]) {
@@ -383,6 +447,7 @@ export default function AddProduct({
   editProductId,
   initialCategoryId = null,
   onSaved,
+  onRegisterNavigationGuard,
   layout = 'standalone',
   initialSection = 'Basic Information',
 }: AddProductProps) {
@@ -417,11 +482,95 @@ export default function AddProduct({
     type: 'success' | 'error' | 'info';
     message: string;
   } | null>(null);
+  const [pendingTabChange, setPendingTabChange] = useState<PendingTabChange | null>(null);
+  const [isResolvingTabChange, setIsResolvingTabChange] = useState(false);
 
   const isEditMode = useMemo(() => Boolean(editProductId), [editProductId]);
   const basicInformationRef = useRef<HTMLElement | null>(null);
   const imagesRef = useRef<HTMLElement | null>(null);
   const variationRef = useRef<HTMLElement | null>(null);
+  const savedDraftRef = useRef<SectionDraftState | null>(null);
+  const pendingNavigationResolveRef = useRef<((allowNavigation: boolean) => void) | null>(null);
+
+  function getCurrentDraftState(): SectionDraftState {
+    return {
+      formValues,
+      mediaItems,
+      mainMediaId,
+      variations,
+      variationPreviewMediaByCardId,
+      variationUnitOptions,
+      discounts,
+      surcharges,
+    };
+  }
+
+  function markSectionsSaved(
+    savedSections: AddProductSection[],
+    state: SectionDraftState = getCurrentDraftState(),
+  ) {
+    const currentSaved = savedDraftRef.current
+      ? cloneSectionDraftState(savedDraftRef.current)
+      : cloneSectionDraftState(state);
+
+    savedSections.forEach((section) => {
+      if (section === 'Basic Information') {
+        currentSaved.formValues = { ...state.formValues };
+        return;
+      }
+
+      if (section === 'Images') {
+        currentSaved.mediaItems = state.mediaItems.map((item) => ({ ...item }));
+        currentSaved.mainMediaId = state.mainMediaId;
+        return;
+      }
+
+      currentSaved.variations = state.variations.map((item) => ({ ...item }));
+      currentSaved.variationPreviewMediaByCardId = { ...state.variationPreviewMediaByCardId };
+      currentSaved.variationUnitOptions = state.variationUnitOptions.map((item) => ({ ...item }));
+      currentSaved.discounts = state.discounts.map((item) => ({ ...item }));
+      currentSaved.surcharges = state.surcharges.map((item) => ({ ...item }));
+    });
+
+    savedDraftRef.current = currentSaved;
+  }
+
+  function getUnsavedSections() {
+    const savedDraft = savedDraftRef.current;
+    if (!savedDraft) {
+      return [];
+    }
+    const currentDraft = getCurrentDraftState();
+    return sections.filter(
+      (section) =>
+        getSectionDraftSnapshot(section, currentDraft) !==
+        getSectionDraftSnapshot(section, savedDraft),
+    );
+  }
+
+  function restoreSectionDraft(dirtySections: AddProductSection[]) {
+    const savedDraft = savedDraftRef.current;
+    if (!savedDraft) {
+      return;
+    }
+
+    if (dirtySections.includes('Basic Information')) {
+      setFormValues({ ...savedDraft.formValues });
+    }
+
+    if (dirtySections.includes('Images')) {
+      setMediaItems(savedDraft.mediaItems.map((item) => ({ ...item })));
+      setMainMediaId(savedDraft.mainMediaId);
+    }
+
+    if (dirtySections.includes('Variation & Pricing')) {
+      setVariations(savedDraft.variations.map((item) => ({ ...item })));
+      setVariationPreviewMediaByCardId({ ...savedDraft.variationPreviewMediaByCardId });
+      setVariationUnitOptions(savedDraft.variationUnitOptions.map((item) => ({ ...item })));
+      setDiscounts(savedDraft.discounts.map((item) => ({ ...item })));
+      setSurcharges(savedDraft.surcharges.map((item) => ({ ...item })));
+    }
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -535,6 +684,20 @@ export default function AddProduct({
     setSubmitError('');
     setSaveNotice(null);
     setActiveSection(initialSection);
+    setPendingTabChange(null);
+    savedDraftRef.current = cloneSectionDraftState({
+      formValues: {
+        ...initialFormState,
+        categoryId: initialCategoryId ?? '',
+      },
+      mediaItems: [],
+      mainMediaId: null,
+      variations: [],
+      variationPreviewMediaByCardId: {},
+      variationUnitOptions: [],
+      discounts: [],
+      surcharges: [],
+    });
   }, [editProductId, initialCategoryId, initialSection]);
 
   useEffect(() => {
@@ -660,9 +823,9 @@ export default function AddProduct({
       setMediaItems(mappedMedia);
       setLoadedExistingMediaIds(mappedMedia.map((item) => item.id));
       setLoadedExistingMediaItems(mappedMedia);
-      setMainMediaId(
-        productLevelMediaRows.find((row) => row.is_primary)?.id ?? mappedMedia[0]?.id ?? null,
-      );
+      const mappedMainMediaId =
+        productLevelMediaRows.find((row) => row.is_primary)?.id ?? mappedMedia[0]?.id ?? null;
+      setMainMediaId(mappedMainMediaId);
 
       const mappedVariations: VariationItem[] = (variationRes.data ?? []).map((row) => {
         const priceCode = String(row.price_code ?? '') as VariationItem['priceCode'];
@@ -734,6 +897,7 @@ export default function AddProduct({
         });
       setVariationPreviewMediaByCardId(nextVariationPreviewMediaByCardId);
 
+      let mappedUnitOptionsForSnapshot: VariationUnitOptionItem[] = [];
       if (variationIds.length > 0) {
         const { data: unitOptionRows } = await supabase
           .from('product_variation_unit_options')
@@ -792,6 +956,7 @@ export default function AddProduct({
             } satisfies VariationUnitOptionItem;
           })
           .filter(Boolean) as VariationUnitOptionItem[];
+        mappedUnitOptionsForSnapshot = mappedUnitOptions;
         setVariationUnitOptions(mappedUnitOptions);
       } else {
         setVariationUnitOptions([]);
@@ -1110,7 +1275,25 @@ export default function AddProduct({
       });
 
       setDiscounts(mergedDiscounts);
-      setSurcharges(mappedSurcharges.filter((item) => !matchedSurchargeIds.has(item.id)));
+      const unmergedSurcharges = mappedSurcharges.filter((item) => !matchedSurchargeIds.has(item.id));
+      setSurcharges(unmergedSurcharges);
+      savedDraftRef.current = cloneSectionDraftState({
+        formValues: {
+          productName: String(productRes.data.product_name ?? ''),
+          skuCode: String(productRes.data.sku_code ?? ''),
+          categoryId,
+          brandId,
+          description: String(productRes.data.description ?? ''),
+          status: (productRes.data.status as 'Active' | 'Inactive') ?? 'Active',
+        },
+        mediaItems: mappedMedia,
+        mainMediaId: mappedMainMediaId,
+        variations: mappedVariations,
+        variationPreviewMediaByCardId: nextVariationPreviewMediaByCardId,
+        variationUnitOptions: mappedUnitOptionsForSnapshot,
+        discounts: mergedDiscounts,
+        surcharges: unmergedSurcharges,
+      });
 
       setIsLoadingProduct(false);
     };
@@ -1137,6 +1320,108 @@ export default function AddProduct({
           ? imagesRef.current
           : variationRef.current;
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function confirmUnsavedChanges(targetSection: AddProductSection | null) {
+    const dirtySections = getUnsavedSections();
+    if (dirtySections.length === 0) {
+      return Promise.resolve(true);
+    }
+
+    setPendingTabChange({ from: activeSection, to: targetSection, dirtySections });
+    return new Promise<boolean>((resolve) => {
+      pendingNavigationResolveRef.current = resolve;
+    });
+  }
+
+  useEffect(() => {
+    if (!onRegisterNavigationGuard) {
+      return;
+    }
+
+    onRegisterNavigationGuard(() => confirmUnsavedChanges(null));
+    return () => onRegisterNavigationGuard(null);
+  });
+
+  async function requestSectionChange(section: AddProductSection) {
+    if (section === activeSection || isEditorLoading || isSaving) {
+      return;
+    }
+
+    const canChangeSection = await confirmUnsavedChanges(section);
+    if (canChangeSection) {
+      scrollToSection(section);
+    }
+  }
+
+  async function saveDirtySections(dirtySections: AddProductSection[]) {
+    if (dirtySections.includes('Variation & Pricing')) {
+      return handleRegister();
+    }
+
+    let saved = true;
+    if (dirtySections.includes('Basic Information')) {
+      saved = await handleSaveBasicInformation();
+      if (!saved) {
+        return false;
+      }
+    }
+
+    if (dirtySections.includes('Images')) {
+      saved = await handleSaveMediaSection();
+      if (!saved) {
+        return false;
+      }
+    }
+
+    if (dirtySections.length === 0 && activeSection === 'Basic Information') {
+      return handleSaveBasicInformation();
+    }
+    if (dirtySections.length === 0 && activeSection === 'Images') {
+      return handleSaveMediaSection();
+    }
+    return saved;
+  }
+
+  async function handleSavePendingTabChange() {
+    if (!pendingTabChange) {
+      return;
+    }
+
+    setIsResolvingTabChange(true);
+    const targetSection = pendingTabChange.to;
+    const saved = await saveDirtySections(pendingTabChange.dirtySections);
+    setIsResolvingTabChange(false);
+    if (!saved) {
+      return;
+    }
+    setPendingTabChange(null);
+    pendingNavigationResolveRef.current?.(true);
+    pendingNavigationResolveRef.current = null;
+    if (targetSection) {
+      window.setTimeout(() => scrollToSection(targetSection), 0);
+    }
+  }
+
+  function handleDiscardPendingTabChange() {
+    if (!pendingTabChange) {
+      return;
+    }
+
+    const targetSection = pendingTabChange.to;
+    restoreSectionDraft(pendingTabChange.dirtySections);
+    setPendingTabChange(null);
+    pendingNavigationResolveRef.current?.(true);
+    pendingNavigationResolveRef.current = null;
+    if (targetSection) {
+      window.setTimeout(() => scrollToSection(targetSection), 0);
+    }
+  }
+
+  function handleCancelPendingTabChange() {
+    setPendingTabChange(null);
+    pendingNavigationResolveRef.current?.(false);
+    pendingNavigationResolveRef.current = null;
   }
 
   const parseNumber = (value: string) => Number(value.replace(/,/g, '')) || 0;
@@ -1568,7 +1853,7 @@ export default function AddProduct({
 
   async function handleRegister() {
     if (!validateForm()) {
-      return;
+      return false;
     }
 
     const unitValidationError = getVariationUnitValidationError(
@@ -1580,7 +1865,7 @@ export default function AddProduct({
     if (unitValidationError) {
       setSubmitError(unitValidationError);
       setSaveNotice({ type: 'error', message: unitValidationError });
-      return;
+      return false;
     }
 
     setIsSaving(true);
@@ -2455,12 +2740,18 @@ export default function AddProduct({
         type: 'success',
         message: `${isEditMode ? 'Product updated' : 'Product created'} successfully.`,
       });
+      markSectionsSaved(sections, {
+        ...getCurrentDraftState(),
+        mediaItems: persistedMediaItems,
+      });
       onSaved?.(productId, formValues.categoryId);
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save product.';
       setSubmitError(message);
       setSaveNotice({ type: 'error', message });
       setSnackbar({ type: 'error', message });
+      return false;
     } finally {
       setIsSaving(false);
     }
@@ -2471,7 +2762,7 @@ export default function AddProduct({
   function handleBack() {
     const currentIndex = sections.indexOf(activeSection);
     if (currentIndex > 0) {
-      setActiveSection(sections[currentIndex - 1]);
+      requestSectionChange(sections[currentIndex - 1]);
     }
   }
 
@@ -2497,13 +2788,16 @@ export default function AddProduct({
         type: 'success',
         message: 'Basic information saved.',
       });
+      markSectionsSaved(['Basic Information']);
       onSaved?.(productId, formValues.categoryId);
+      return true;
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to save basic information.';
       setSubmitError(message);
       setSaveNotice({ type: 'error', message });
       setSnackbar({ type: 'error', message });
+      return false;
     } finally {
       setIsSaving(false);
     }
@@ -2515,7 +2809,7 @@ export default function AddProduct({
 
     try {
       const productId = await ensureProductRecord();
-      await persistMediaForProduct(productId);
+      const persistedMediaItems = await persistMediaForProduct(productId);
       setSaveNotice({
         type: 'success',
         message: 'Images saved successfully.',
@@ -2524,12 +2818,18 @@ export default function AddProduct({
         type: 'success',
         message: 'Images saved.',
       });
+      markSectionsSaved(['Images'], {
+        ...getCurrentDraftState(),
+        mediaItems: persistedMediaItems,
+      });
       onSaved?.(productId, formValues.categoryId);
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save images.';
       setSubmitError(message);
       setSaveNotice({ type: 'error', message });
       setSnackbar({ type: 'error', message });
+      return false;
     } finally {
       setIsSaving(false);
     }
@@ -2560,7 +2860,7 @@ export default function AddProduct({
               className={`${styles.navButton} ${
                 activeSection === section ? styles.navButtonActive : ''
               }`}
-              onClick={() => scrollToSection(section)}
+              onClick={() => requestSectionChange(section)}
             >
               {section}
             </button>
@@ -2681,6 +2981,51 @@ export default function AddProduct({
           </section>
         ) : null}
       </div>
+
+      {pendingTabChange ? (
+        <div className={styles.confirmOverlay} role="presentation">
+          <div
+            className={styles.confirmDialog}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="product-tab-confirm-title"
+          >
+            <h4 id="product-tab-confirm-title" className={styles.confirmTitle}>
+              Save progress?
+            </h4>
+            <p className={styles.confirmText}>
+              You have unsaved changes in {pendingTabChange.dirtySections.join(', ')}. Save them before
+              {pendingTabChange.to ? ` opening ${pendingTabChange.to}` : ' leaving Products'}?
+            </p>
+            <div className={styles.confirmActions}>
+              <button
+                type="button"
+                className={styles.cancelButton}
+                onClick={handleCancelPendingTabChange}
+                disabled={isResolvingTabChange || isSaving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={styles.discardButton}
+                onClick={handleDiscardPendingTabChange}
+                disabled={isResolvingTabChange || isSaving}
+              >
+                Discard Changes
+              </button>
+              <button
+                type="button"
+                className={styles.saveButton}
+                onClick={() => void handleSavePendingTabChange()}
+                disabled={isResolvingTabChange || isSaving}
+              >
+                {isResolvingTabChange || isSaving ? 'Saving...' : 'Save Progress'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {snackbar ? (
         <div

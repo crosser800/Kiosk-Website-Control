@@ -113,7 +113,13 @@ function sortProducts(products: ProductListItem[]) {
   );
 }
 
-export default function ProductCategoryWorkspace() {
+type ProductCategoryWorkspaceProps = {
+  onRegisterNavigationGuard?: (guard: (() => Promise<boolean>) | null) => void;
+};
+
+export default function ProductCategoryWorkspace({
+  onRegisterNavigationGuard,
+}: ProductCategoryWorkspaceProps) {
   const PRODUCTS_PER_PAGE = 8;
   const [categories, setCategories] = useState<CategorySummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -732,6 +738,7 @@ export default function ProductCategoryWorkspace() {
                   initialCategoryId={detailCategory.id}
                   editProductId={selectedProductId}
                   initialSection={editorInitialSection}
+                  onRegisterNavigationGuard={onRegisterNavigationGuard}
                   onCancel={() => {
                     if (detailCategory.products.length > 0) {
                       setEditorMode('edit');

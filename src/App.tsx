@@ -83,6 +83,7 @@ export default function App() {
   const productViewRef = useRef(productView);
   const authAccessStateRef = useRef(authAccessState);
   const isInitializingAuthRef = useRef(isInitializingAuth);
+  const productNavigationGuardRef = useRef<(() => Promise<boolean>) | null>(null);
   const gatewayLogoutConfirmButtonRef =
     useRef<HTMLButtonElement | null>(null);
   const gatewayLogoutPasswordInputRef =
@@ -405,9 +406,15 @@ export default function App() {
         )
       : '';
 
-  const handleNavigate = (item: string) => {
+  const handleNavigate = async (item: string) => {
     if (allowedNavigationItems && !allowedNavigationItems.includes(item)) {
       return;
+    }
+    if (item !== 'Products' && productNavigationGuardRef.current) {
+      const canLeaveProducts = await productNavigationGuardRef.current();
+      if (!canLeaveProducts) {
+        return;
+      }
     }
     logAppLifecycle('user navigation', {
       from: activeRef.current,
@@ -625,6 +632,9 @@ export default function App() {
         return (
           <Products
             view={productView}
+            onRegisterNavigationGuard={(guard) => {
+              productNavigationGuardRef.current = guard;
+            }}
             onOpenAddProduct={() =>
               setProductView('add')
             }

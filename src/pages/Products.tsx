@@ -32,9 +32,10 @@ type ProductsProps = {
   view?: 'summary' | 'add';
   onOpenAddProduct?: () => void;
   onCloseAddProduct?: () => void;
+  onRegisterNavigationGuard?: (guard: (() => Promise<boolean>) | null) => void;
 };
 
-export default function Products(_props: ProductsProps) {
+export default function Products({ onRegisterNavigationGuard }: ProductsProps) {
   const [activeProducts, setActiveProducts] = useState(0);
   const [activeVariations, setActiveVariations] = useState(0);
 
@@ -122,7 +123,7 @@ export default function Products(_props: ProductsProps) {
         <TopProducts />
       </div>
 
-      <ProductCategoryWorkspace />
+      <ProductCategoryWorkspace onRegisterNavigationGuard={onRegisterNavigationGuard} />
     </div>
   );
 }
