@@ -298,9 +298,7 @@ async function syncInventoryLinksForVariationRows(input: {
     }
     const inventoryItemId = inventoryItemBySku.get(normalizeUnitText(row.skuCode));
     if (!inventoryItemId) {
-      throw new Error(
-        `Inventory item link missing for SKU ${row.skuCode}. Create or seed the physical inventory item before saving this pricing row.`,
-      );
+      return [];
     }
     return [
       {
