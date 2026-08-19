@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import AdministrationSettingsSection from '../components/settings/AdministrationSettingsSection';
+import AgentGroupsSettingsSection from '../components/settings/AgentGroupsSettingsSection';
 import BranchesSettingsSection from '../components/settings/BranchesSettingsSection';
 import BrandsSettingsSection from '../components/settings/BrandsSettingsSection';
 import CategoriesSettingsSection from '../components/settings/CategoriesSettingsSection';
@@ -98,6 +99,7 @@ export default function Settings({ isDark, onToggleTheme }: SettingsProps) {
 
       <AdministrationSettingsSection activePanel={activePanel} onToggle={togglePanel} />
       <InternalAdminRolesSettingsSection activePanel={activePanel} onToggle={togglePanel} />
+      <AgentGroupsSettingsSection activePanel={activePanel} onToggle={togglePanel} />
       <BranchesSettingsSection activePanel={activePanel} onToggle={togglePanel} />
       <PreferenceTypesSettingsSection
         activePanel={activePanel}

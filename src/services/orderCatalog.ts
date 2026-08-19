@@ -96,6 +96,7 @@ type UnitOptionRow = {
 type DiscountRow = {
   id: string;
   product_id: string | null;
+  discount_kind: string | null;
   discount_name: string | null;
   discount_type: string | null;
   discount_percent: number | null;
@@ -135,11 +136,20 @@ type DiscountClassRow = {
 type SurchargeRow = {
   id: string;
   product_id: string | null;
+  linked_discount_id: string | null;
   surcharge_name: string | null;
   surcharge_type: string | null;
   surcharge_percent: number | null;
   amount: number | null;
   free_quantity: number | null;
+  qualification_scope: string | null;
+  reward_target_type: string | null;
+  reward_product_id: string | null;
+  reward_variation_id: string | null;
+  reward_unit_option_id: string | null;
+  reward_unit_code: string | null;
+  reward_repeat_mode: string | null;
+  reward_every_quantity: number | null;
   status: string | null;
   min_quantity: number | null;
   max_quantity: number | null;
@@ -153,7 +163,13 @@ type SurchargeRow = {
 
 type SurchargeClassRow = DiscountClassRow & {
   surcharge_id: string | null;
+  linked_discount_class_id: string | null;
   reward_quantity: number | null;
+  reward_target_type: string | null;
+  reward_product_id: string | null;
+  reward_variation_id: string | null;
+  reward_unit_option_id: string | null;
+  reward_unit_code: string | null;
   reward_repeat_mode: string | null;
   reward_every_quantity: number | null;
 };
@@ -201,7 +217,7 @@ export async function loadOrderCatalog(): Promise<OrderCatalogProduct[]> {
       .order('sort_order', { ascending: true }),
     supabase
       .from('product_discounts')
-      .select('id, product_id, discount_name, discount_type, discount_percent, amount, status, min_quantity, max_quantity, branch_name, price_type, price_code, priority, apply_sequence, calculation_method, discount_group, applies_to, stackable, starts_at, ends_at')
+      .select('id, product_id, discount_kind, discount_name, discount_type, discount_percent, amount, status, min_quantity, max_quantity, branch_name, price_type, price_code, priority, apply_sequence, calculation_method, discount_group, applies_to, stackable, starts_at, ends_at')
       .order('apply_sequence', { ascending: true })
       .order('priority', { ascending: true }),
     supabase
@@ -209,11 +225,11 @@ export async function loadOrderCatalog(): Promise<OrderCatalogProduct[]> {
       .select('id, discount_id, variation_id, price_code, branch_name, price_type, unit_option_id, order_unit_code, unit_condition, min_order_quantity, max_order_quantity, min_base_quantity, max_base_quantity'),
     supabase
       .from('product_surcharges')
-      .select('id, product_id, surcharge_name, surcharge_type, surcharge_percent, amount, free_quantity, status, min_quantity, max_quantity, branch_name, price_type, price_code, priority, starts_at, ends_at')
+      .select('id, product_id, linked_discount_id, surcharge_name, surcharge_type, surcharge_percent, amount, free_quantity, qualification_scope, reward_target_type, reward_product_id, reward_variation_id, reward_unit_option_id, reward_unit_code, reward_repeat_mode, reward_every_quantity, status, min_quantity, max_quantity, branch_name, price_type, price_code, priority, starts_at, ends_at')
       .order('priority', { ascending: true }),
     supabase
       .from('product_surcharge_classes')
-      .select('id, surcharge_id, variation_id, price_code, branch_name, price_type, unit_option_id, order_unit_code, unit_condition, min_order_quantity, max_order_quantity, min_base_quantity, max_base_quantity, reward_quantity, reward_repeat_mode, reward_every_quantity'),
+      .select('id, surcharge_id, linked_discount_class_id, variation_id, price_code, branch_name, price_type, unit_option_id, order_unit_code, unit_condition, min_order_quantity, max_order_quantity, min_base_quantity, max_base_quantity, reward_quantity, reward_target_type, reward_product_id, reward_variation_id, reward_unit_option_id, reward_unit_code, reward_repeat_mode, reward_every_quantity'),
   ]);
 
   const loadError =
@@ -494,6 +510,7 @@ function mapDiscountRule(row: DiscountRow, classes: DiscountClassRow[]): Discoun
   return {
     id: String(row.id),
     name: String(row.discount_name ?? 'Discount'),
+    discountKind: row.discount_kind,
     type: String(row.discount_type ?? ''),
     percent: row.discount_percent === null ? null : toSafeNumber(row.discount_percent, 0),
     amount: row.amount === null ? null : toSafeNumber(row.amount, 0),
@@ -535,11 +552,20 @@ function mapDiscountClassRule(row: DiscountClassRow): DiscountClassRule {
 function mapSurchargeRule(row: SurchargeRow, classes: SurchargeClassRow[]): SurchargeRule {
   return {
     id: String(row.id),
+    linkedDiscountId: row.linked_discount_id,
     name: String(row.surcharge_name ?? 'Surcharge'),
     type: String(row.surcharge_type ?? ''),
     percent: row.surcharge_percent === null ? null : toSafeNumber(row.surcharge_percent, 0),
     amount: row.amount === null ? null : toSafeNumber(row.amount, 0),
     freeQuantity: toSafeNumber(row.free_quantity, 0),
+    qualificationScope: String(row.qualification_scope ?? 'line') || 'line',
+    rewardTargetType: String(row.reward_target_type ?? 'same_item') || 'same_item',
+    rewardProductId: row.reward_product_id,
+    rewardVariationId: row.reward_variation_id,
+    rewardUnitOptionId: row.reward_unit_option_id,
+    rewardUnitCode: row.reward_unit_code,
+    rewardRepeatMode: String(row.reward_repeat_mode ?? 'one_time') || 'one_time',
+    rewardEveryQuantity: row.reward_every_quantity === null ? null : toSafeNumber(row.reward_every_quantity, 0),
     status: String(row.status ?? ''),
     minQuantity: Math.max(1, toSafeNumber(row.min_quantity, 1)),
     maxQuantity: row.max_quantity === null ? null : toSafeNumber(row.max_quantity, 0),
@@ -556,7 +582,13 @@ function mapSurchargeRule(row: SurchargeRow, classes: SurchargeClassRow[]): Surc
 function mapSurchargeClassRule(row: SurchargeClassRow): SurchargeClassRule {
   return {
     ...mapDiscountClassRule(row),
+    linkedDiscountClassId: row.linked_discount_class_id,
     rewardQuantity: row.reward_quantity === null ? null : toSafeNumber(row.reward_quantity, 0),
+    rewardTargetType: String(row.reward_target_type ?? 'same_item') || 'same_item',
+    rewardProductId: row.reward_product_id,
+    rewardVariationId: row.reward_variation_id,
+    rewardUnitOptionId: row.reward_unit_option_id,
+    rewardUnitCode: row.reward_unit_code,
     rewardRepeatMode: String(row.reward_repeat_mode ?? 'one_time'),
     rewardEveryQuantity: row.reward_every_quantity === null ? null : toSafeNumber(row.reward_every_quantity, 0),
   };

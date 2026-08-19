@@ -74,14 +74,17 @@ export type VariationUnitOptionItem = {
 
 export type UnitCondition = 'any_unit' | 'selected_unit';
 export type ItemStatus = 'Active' | 'Inactive';
+export type DiscountKind = 'Base' | 'Promo' | '';
 export type RewardTargetType = 'same_item' | 'different_item';
 export type RewardRepeatMode = 'one_time' | 'every';
+export type QualificationScope = 'line' | 'assorted_same_product';
 
 export type DiscountItem = {
   id: string;
   discountRecordId: string;
   discountClassId: string;
   variationId: string;
+  discountKind: DiscountKind;
   discountName: string;
   discountType: 'Percent' | 'Amount';
   amount: string;
@@ -123,6 +126,7 @@ export type DiscountItem = {
   promoRewardUnitOptionId: string;
   promoRewardRepeatMode: RewardRepeatMode;
   promoRewardEveryQuantity: string;
+  promoQualificationScope: QualificationScope;
 };
 
 export type SurchargeItem = {
@@ -162,4 +166,5 @@ export type SurchargeItem = {
   rewardUnitOptionId: string;
   rewardRepeatMode: RewardRepeatMode;
   rewardEveryQuantity: string;
+  qualificationScope: QualificationScope;
 };

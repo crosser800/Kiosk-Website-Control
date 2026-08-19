@@ -86,6 +86,7 @@ export type OrderItemDraft = {
 export type DiscountRule = {
   id: string;
   name: string;
+  discountKind: 'Base' | 'Promo' | string | null;
   type: 'Percent' | 'Amount' | string;
   percent: number | null;
   amount: number | null;
@@ -123,11 +124,20 @@ export type DiscountClassRule = {
 
 export type SurchargeRule = {
   id: string;
+  linkedDiscountId: string | null;
   name: string;
   type: 'Amount' | 'Percent' | 'Freebie' | 'BonusQty' | string;
   percent: number | null;
   amount: number | null;
   freeQuantity: number;
+  qualificationScope: 'line' | 'assorted_same_product' | string;
+  rewardTargetType: 'same_item' | 'different_item' | string;
+  rewardProductId: string | null;
+  rewardVariationId: string | null;
+  rewardUnitOptionId: string | null;
+  rewardUnitCode: string | null;
+  rewardRepeatMode: string;
+  rewardEveryQuantity: number | null;
   status: string;
   minQuantity: number;
   maxQuantity: number | null;
@@ -141,7 +151,13 @@ export type SurchargeRule = {
 };
 
 export type SurchargeClassRule = DiscountClassRule & {
+  linkedDiscountClassId: string | null;
   rewardQuantity: number | null;
+  rewardTargetType: 'same_item' | 'different_item' | string;
+  rewardProductId: string | null;
+  rewardVariationId: string | null;
+  rewardUnitOptionId: string | null;
+  rewardUnitCode: string | null;
   rewardRepeatMode: string;
   rewardEveryQuantity: number | null;
 };
@@ -170,6 +186,48 @@ type RuleMatchContext = {
   branchName?: string;
   priceType?: string;
   orderDate: Date;
+};
+
+export type AssortedPromotionCartLine = {
+  id: string;
+  productId: string;
+  productName: string;
+  variationId: string;
+  variationName: string;
+  unitOption: OrderCatalogUnitOption;
+  price: OrderCatalogPrice;
+  priceCode: OrderPriceCode;
+  quantity: number;
+  surcharges: SurchargeRule[];
+};
+
+export type AssortedPromotionResult = {
+  groupKey: string;
+  promoId: string;
+  promoLabel: string;
+  productId: string;
+  productName: string;
+  qualifyingUnitCode: string;
+  qualifyingQuantity: number;
+  thresholdQuantity: number;
+  remainingQuantity: number;
+  qualified: boolean;
+  rewardQuantity: number;
+  rewardUnitCode: string;
+  rewardRepeatMode: string;
+  repeatCount: number;
+  rewardTargetType: string;
+  rewardProductId: string | null;
+  rewardVariationId: string | null;
+  rewardUnitOptionId: string | null;
+  eligibleVariationIds: string[];
+  eligibleLineIds: string[];
+  lineBreakdown: Array<{
+    lineId: string;
+    variationId: string;
+    variationName: string;
+    quantity: number;
+  }>;
 };
 
 export function toSafeNumber(value: unknown, fallback = 0) {
@@ -226,7 +284,11 @@ export function calculateOrderLine(input: {
   const discountPromotions = calculateDiscountPromotions(selectedDiscountRules, grossSubtotal);
 
   const surchargePromotions = surchargeEvaluations
-    .filter((evaluation) => evaluation.reasons.length === 0)
+    .filter(
+      (evaluation) =>
+        evaluation.reasons.length === 0 &&
+        normalizeText(evaluation.rule.qualificationScope) !== 'assorted_same_product',
+    )
     .map((evaluation) => evaluation.rule)
     .sort(comparePromotions)
     .map((rule) => {
@@ -319,6 +381,10 @@ function selectBestDiscountRuleGroup(rules: DiscountRule[]) {
   });
 
   const sortedGroups = Array.from(groups.values()).sort((left, right) => {
+    const kindOrder = compareDiscountRuleGroupKind(left, right);
+    if (kindOrder !== 0) {
+      return kindOrder;
+    }
     const leftSpecificity = getDiscountRuleGroupSpecificity(left);
     const rightSpecificity = getDiscountRuleGroupSpecificity(right);
     if (leftSpecificity !== rightSpecificity) {
@@ -328,6 +394,157 @@ function selectBestDiscountRuleGroup(rules: DiscountRule[]) {
   });
 
   return (sortedGroups[0] ?? []).slice().sort(compareDiscountRules);
+}
+
+export function qualifyAssortedPromotions(input: {
+  items: AssortedPromotionCartLine[];
+  branchName?: string;
+  priceType?: string;
+  orderDate?: Date;
+}): AssortedPromotionResult[] {
+  const groups = new Map<
+    string,
+    {
+      rule: SurchargeRule;
+      productId: string;
+      productName: string;
+      qualifyingUnitCode: string;
+      thresholdQuantity: number;
+      rewardQuantityPerRepeat: number;
+      rewardUnitCode: string;
+      rewardRepeatMode: string;
+      rewardEveryQuantity: number;
+      rewardTargetType: string;
+      rewardProductId: string | null;
+      rewardVariationId: string | null;
+      rewardUnitOptionId: string | null;
+      eligibleVariationIds: Set<string>;
+      lines: AssortedPromotionResult['lineBreakdown'];
+    }
+  >();
+  const orderDate = input.orderDate ?? new Date();
+
+  input.items.forEach((item) => {
+    item.surcharges
+      .filter(
+        (rule) =>
+          normalizeText(rule.qualificationScope) === 'assorted_same_product' &&
+          (rule.type === 'Freebie' || rule.type === 'BonusQty'),
+      )
+      .forEach((rule) => {
+        const context: RuleMatchContext = {
+          variationId: item.price.variationId,
+          price: item.price,
+          unitOption: item.unitOption,
+          quantity: Math.max(1, toSafeNumber(item.quantity, 1)),
+          baseQuantity:
+            Math.max(1, toSafeNumber(item.quantity, 1)) *
+            Math.max(1, toSafeNumber(item.unitOption.quantityInBaseUnit, 1)),
+          branchName: input.branchName,
+          priceType: input.priceType ?? item.price.priceType,
+          orderDate,
+        };
+        const match = getAssortedRuleMatch(rule, context);
+        if (!match) {
+          return;
+        }
+
+        const qualifyingUnitCode = normalizeUnitCode(match.qualifyingUnitCode);
+        if (!qualifyingUnitCode) {
+          return;
+        }
+        const groupKey = [item.productId, rule.id, qualifyingUnitCode].join('::');
+        const thresholdQuantity = Math.max(1, match.thresholdQuantity);
+        const rewardQuantityPerRepeat = Math.max(0, match.rewardQuantity);
+        const rewardEveryQuantity =
+          normalizeText(match.rewardRepeatMode) === 'every'
+            ? Math.max(1, match.rewardEveryQuantity || thresholdQuantity)
+            : thresholdQuantity;
+        const existing = groups.get(groupKey);
+        const next =
+          existing ??
+          {
+            rule,
+            productId: item.productId,
+            productName: item.productName,
+            qualifyingUnitCode,
+            thresholdQuantity,
+            rewardQuantityPerRepeat,
+            rewardUnitCode: normalizeUnitCode(match.rewardUnitCode || qualifyingUnitCode),
+            rewardRepeatMode: match.rewardRepeatMode || 'one_time',
+            rewardEveryQuantity,
+            rewardTargetType: match.rewardTargetType || 'same_item',
+            rewardProductId: match.rewardProductId,
+            rewardVariationId: match.rewardVariationId,
+            rewardUnitOptionId: match.rewardUnitOptionId,
+            eligibleVariationIds: new Set<string>(),
+            lines: [],
+          };
+
+        next.thresholdQuantity = Math.min(next.thresholdQuantity, thresholdQuantity);
+        next.rewardQuantityPerRepeat = rewardQuantityPerRepeat || next.rewardQuantityPerRepeat;
+        next.rewardEveryQuantity = rewardEveryQuantity || next.rewardEveryQuantity;
+        match.eligibleVariationIds.forEach((variationId) => next.eligibleVariationIds.add(variationId));
+        next.lines.push({
+          lineId: item.id,
+          variationId: item.price.variationId,
+          variationName: item.variationName,
+          quantity: context.quantity,
+        });
+        groups.set(groupKey, next);
+      });
+  });
+
+  return Array.from(groups.entries())
+    .map(([groupKey, group]) => {
+      const qualifyingQuantity = group.lines.reduce((sum, line) => sum + line.quantity, 0);
+      const qualified = qualifyingQuantity >= group.thresholdQuantity;
+      const repeatCount =
+        qualified && normalizeText(group.rewardRepeatMode) === 'every'
+          ? Math.floor(qualifyingQuantity / group.rewardEveryQuantity)
+          : qualified
+            ? 1
+            : 0;
+      const rewardQuantity = repeatCount * group.rewardQuantityPerRepeat;
+      return {
+        groupKey,
+        promoId: group.rule.id,
+        promoLabel: group.rule.name,
+        productId: group.productId,
+        productName: group.productName,
+        qualifyingUnitCode: group.qualifyingUnitCode,
+        qualifyingQuantity,
+        thresholdQuantity: group.thresholdQuantity,
+        remainingQuantity: Math.max(0, group.thresholdQuantity - qualifyingQuantity),
+        qualified,
+        rewardQuantity,
+        rewardUnitCode: group.rewardUnitCode,
+        rewardRepeatMode: group.rewardRepeatMode,
+        repeatCount,
+        rewardTargetType: group.rewardTargetType,
+        rewardProductId: group.rewardProductId,
+        rewardVariationId: group.rewardVariationId,
+        rewardUnitOptionId: group.rewardUnitOptionId,
+        eligibleVariationIds: Array.from(group.eligibleVariationIds),
+        eligibleLineIds: group.lines.map((line) => line.lineId),
+        lineBreakdown: group.lines,
+      } satisfies AssortedPromotionResult;
+    })
+    .sort((left, right) =>
+      left.productName.localeCompare(right.productName) ||
+      left.promoLabel.localeCompare(right.promoLabel) ||
+      left.qualifyingUnitCode.localeCompare(right.qualifyingUnitCode),
+    );
+}
+
+function compareDiscountRuleGroupKind(left: DiscountRule[], right: DiscountRule[]) {
+  const leftIsPromo = left.some((rule) => normalizeText(rule.discountKind) === 'promo');
+  const rightIsPromo = right.some((rule) => normalizeText(rule.discountKind) === 'promo');
+  const leftIsBase = left.every((rule) => normalizeText(rule.discountKind) === 'base');
+  const rightIsBase = right.every((rule) => normalizeText(rule.discountKind) === 'base');
+  if (leftIsPromo && rightIsBase) return -1;
+  if (rightIsPromo && leftIsBase) return 1;
+  return 0;
 }
 
 function getDiscountRuleGroupSpecificity(rules: DiscountRule[]) {
@@ -473,6 +690,129 @@ function getClassIneligibilityReasons(rule: DiscountClassRule, context: RuleMatc
   return Array.from(new Set(reasons));
 }
 
+function getAssortedRuleMatch(rule: SurchargeRule, context: RuleMatchContext) {
+  const baseReasons = getRuleIneligibilityReasonsWithoutQuantity(rule, context);
+  if (baseReasons.length > 0) {
+    return null;
+  }
+
+  if (rule.classes.length === 0) {
+    return {
+      thresholdQuantity: rule.minQuantity,
+      rewardQuantity: rule.freeQuantity,
+      qualifyingUnitCode: context.unitOption.unitCode,
+      rewardUnitCode: rule.rewardUnitCode,
+      rewardRepeatMode: rule.rewardRepeatMode || 'one_time',
+      rewardEveryQuantity: rule.rewardEveryQuantity ?? rule.minQuantity,
+      rewardTargetType: rule.rewardTargetType || 'same_item',
+      rewardProductId: rule.rewardProductId,
+      rewardVariationId: rule.rewardVariationId,
+      rewardUnitOptionId: rule.rewardUnitOptionId,
+      eligibleVariationIds: [context.variationId],
+    };
+  }
+
+  const matchingClass = rule.classes.find(
+    (item) => getClassTargetIneligibilityReasons(item, context).length === 0,
+  );
+  if (!matchingClass) {
+    return null;
+  }
+  return {
+    thresholdQuantity: matchingClass.minOrderQuantity || rule.minQuantity,
+    rewardQuantity: matchingClass.rewardQuantity ?? rule.freeQuantity,
+    qualifyingUnitCode: matchingClass.orderUnitCode || context.unitOption.unitCode,
+    rewardUnitCode: matchingClass.rewardUnitCode || rule.rewardUnitCode,
+    rewardRepeatMode: matchingClass.rewardRepeatMode || rule.rewardRepeatMode || 'one_time',
+    rewardEveryQuantity:
+      matchingClass.rewardEveryQuantity ?? rule.rewardEveryQuantity ?? matchingClass.minOrderQuantity ?? rule.minQuantity,
+    rewardTargetType: matchingClass.rewardTargetType || rule.rewardTargetType || 'same_item',
+    rewardProductId: matchingClass.rewardProductId ?? rule.rewardProductId,
+    rewardVariationId: matchingClass.rewardVariationId ?? rule.rewardVariationId,
+    rewardUnitOptionId: matchingClass.rewardUnitOptionId ?? rule.rewardUnitOptionId,
+    eligibleVariationIds: rule.classes
+      .filter((item) => getClassUnitAndPriceIneligibilityReasons(item, context).length === 0)
+      .map((item) => item.variationId)
+      .filter((variationId): variationId is string => Boolean(variationId)),
+  };
+}
+
+function getRuleIneligibilityReasonsWithoutQuantity(
+  rule: {
+    status: string;
+    branchName: string | null;
+    priceType: string | null;
+    priceCode: string | null;
+    startsAt: string | null;
+    endsAt: string | null;
+  },
+  context: RuleMatchContext,
+) {
+  const reasons: PromotionIneligibilityReason[] = [];
+  if (!isActive(rule.status)) {
+    reasons.push('inactive');
+  }
+  if (!isInDateRange(rule.startsAt, rule.endsAt, context.orderDate)) {
+    reasons.push('outside_effective_date');
+  }
+  if (!isNullableTextMatch(rule.branchName, context.branchName ?? context.price.branchName)) {
+    reasons.push('wrong_branch');
+  }
+  if (!isNullableTextMatch(rule.priceType, context.priceType ?? context.price.priceType)) {
+    reasons.push('wrong_price_type');
+  }
+  if (!isNullableTextMatch(rule.priceCode, context.price.priceCode)) {
+    reasons.push('wrong_price_class');
+  }
+  return Array.from(new Set(reasons));
+}
+
+function getClassTargetIneligibilityReasons(rule: DiscountClassRule, context: RuleMatchContext) {
+  const reasons: PromotionIneligibilityReason[] = [];
+  const usesSelectedUnit = String(rule.unitCondition ?? '').toLowerCase() === 'selected_unit';
+  if (!isNullableTextMatch(rule.variationId, context.variationId)) {
+    reasons.push('wrong_variation');
+  }
+  if (!isNullableTextMatch(rule.priceCode, context.price.priceCode)) {
+    reasons.push('wrong_price_class');
+  }
+  if (!isNullableTextMatch(rule.branchName, context.branchName ?? context.price.branchName)) {
+    reasons.push('wrong_branch');
+  }
+  if (!isNullableTextMatch(rule.priceType, context.priceType ?? context.price.priceType)) {
+    reasons.push('wrong_price_type');
+  }
+  if (
+    usesSelectedUnit &&
+    (!isNullableTextMatch(rule.unitOptionId, context.unitOption.id) ||
+      !isNullableTextMatch(rule.orderUnitCode, context.unitOption.unitCode))
+  ) {
+    reasons.push('wrong_unit');
+  }
+  return Array.from(new Set(reasons));
+}
+
+function getClassUnitAndPriceIneligibilityReasons(rule: DiscountClassRule, context: RuleMatchContext) {
+  const reasons: PromotionIneligibilityReason[] = [];
+  const usesSelectedUnit = String(rule.unitCondition ?? '').toLowerCase() === 'selected_unit';
+  if (!isNullableTextMatch(rule.priceCode, context.price.priceCode)) {
+    reasons.push('wrong_price_class');
+  }
+  if (!isNullableTextMatch(rule.branchName, context.branchName ?? context.price.branchName)) {
+    reasons.push('wrong_branch');
+  }
+  if (!isNullableTextMatch(rule.priceType, context.priceType ?? context.price.priceType)) {
+    reasons.push('wrong_price_type');
+  }
+  if (
+    usesSelectedUnit &&
+    !isNullableTextMatch(rule.orderUnitCode, context.unitOption.unitCode)
+  ) {
+    reasons.push('wrong_unit');
+  }
+  return Array.from(new Set(reasons));
+}
+
 function addQuantityReasons(
   reasons: PromotionIneligibilityReason[],
   quantity: number,
@@ -567,6 +907,7 @@ function createPromotionDedupeKey(rule: DiscountRule | SurchargeRule, source: 'd
     .join('::');
   return [
     source,
+    'discountKind' in rule ? normalizeText(rule.discountKind) : '',
     normalizeText(rule.priceCode),
     normalizeText(rule.priceType),
     normalizeText(rule.branchName),
@@ -579,6 +920,7 @@ function createPromotionDedupeKey(rule: DiscountRule | SurchargeRule, source: 'd
     rule.percent ?? '',
     rule.amount ?? '',
     'freeQuantity' in rule ? rule.freeQuantity ?? '' : '',
+    'qualificationScope' in rule ? normalizeText(rule.qualificationScope) : '',
     classes,
   ].join('::');
 }
@@ -628,5 +970,9 @@ function formatAmount(value: number) {
 }
 
 function normalizeText(value: string | null | undefined) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+export function normalizeUnitCode(value: string | null | undefined) {
   return String(value ?? '').trim().toLowerCase();
 }

@@ -47,6 +47,7 @@ const emptySurcharge: SurchargeItem = {
   rewardUnitOptionId: '',
   rewardRepeatMode: 'one_time',
   rewardEveryQuantity: '',
+  qualificationScope: 'line',
 };
 
 export default function Surcharge({ onBack, onSubmit, items, onChange, isSaving }: SurchargeProps) {

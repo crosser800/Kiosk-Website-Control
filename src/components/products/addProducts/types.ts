@@ -1,10 +1,12 @@
 export type {
   DiscountItem,
+  DiscountKind,
   ItemStatus,
   MediaItem,
   ProductFormState,
   ProductUnitAliasDefinition,
   ProductUnitDefinition,
+  QualificationScope,
   RewardRepeatMode,
   RewardTargetType,
   SurchargeItem,

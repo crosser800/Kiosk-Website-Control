@@ -3,6 +3,7 @@ import type { AccountSummaryItem } from './AccountsSummary';
 import { loadAccountItems } from '../../services/accounts';
 import { supabase } from '../../lib/supabase';
 import type { OrderPriceCode } from '../../services/orderPricing';
+import SearchableSelect from '../orders/SearchableSelect';
 import {
   convertImageToWebp,
   getAgentProfilePath,
@@ -39,6 +40,7 @@ type AgentDraft = {
   status: AgentStatus;
   mustChangePassword: boolean;
   passwordResetAt: string;
+  agentGroupId: string;
 };
 
 type ClientDraft = {
@@ -54,8 +56,44 @@ type ClientDraft = {
   tin: string;
   status: ClientStatus;
   notes: string;
+  customClientCode: string;
+  defaultPriceCode: string;
+  defaultDeliveryTermId: string;
+  region: string;
+  province: string;
+  cityMunicipality: string;
+  districtArea: string;
+  barangay: string;
+  regionPsgcCode: string;
+  provincePsgcCode: string;
+  cityMunicipalityPsgcCode: string;
+  barangayPsgcCode: string;
   createdAt: string;
   isTemporary?: boolean;
+};
+
+type AgentGroupOption = {
+  id: string;
+  groupName: string;
+  groupCode: string;
+};
+
+type PriceClassOption = {
+  id: string;
+  priceCode: string;
+  priceLabel: string;
+};
+
+type DeliveryTermOption = {
+  id: string;
+  termName: string;
+  termCode: string;
+};
+
+type PsgcOption = {
+  code: string;
+  name: string;
+  type: string;
 };
 
 type AgentRow = {
@@ -73,6 +111,7 @@ type AgentRow = {
   must_change_password: boolean | null;
   password_reset_at: string | null;
   updated_at: string | null;
+  agent_group_id: string | null;
 };
 
 type ClientRow = {
@@ -88,6 +127,18 @@ type ClientRow = {
   tin: string | null;
   status: string | null;
   notes: string | null;
+  custom_client_code: string | null;
+  default_price_code: string | null;
+  default_delivery_term_id: string | null;
+  region: string | null;
+  province: string | null;
+  city_municipality: string | null;
+  district_area: string | null;
+  barangay: string | null;
+  region_psgc_code: string | null;
+  province_psgc_code: string | null;
+  city_municipality_psgc_code: string | null;
+  barangay_psgc_code: string | null;
   created_at: string | null;
 };
 
@@ -142,6 +193,7 @@ function mapAccountToAgentDraft(account: AccountSummaryItem): AgentDraft {
     status: normalizeAgentStatus(account.status),
     mustChangePassword: false,
     passwordResetAt: '',
+    agentGroupId: account.agentGroupId ?? '',
   };
 }
 
@@ -161,6 +213,7 @@ function mapAgentRow(row: AgentRow): AgentDraft {
     status: normalizeAgentStatus(row.status),
     mustChangePassword: Boolean(row.must_change_password),
     passwordResetAt: normalizeText(row.password_reset_at),
+    agentGroupId: normalizeText(row.agent_group_id),
   };
 }
 
@@ -178,6 +231,18 @@ function mapClientRow(row: ClientRow): ClientDraft {
     tin: normalizeText(row.tin),
     status: normalizeClientStatus(row.status),
     notes: normalizeText(row.notes),
+    customClientCode: normalizeText(row.custom_client_code),
+    defaultPriceCode: normalizeText(row.default_price_code).toUpperCase(),
+    defaultDeliveryTermId: normalizeText(row.default_delivery_term_id),
+    region: normalizeText(row.region),
+    province: normalizeText(row.province),
+    cityMunicipality: normalizeText(row.city_municipality),
+    districtArea: normalizeText(row.district_area),
+    barangay: normalizeText(row.barangay),
+    regionPsgcCode: normalizeText(row.region_psgc_code),
+    provincePsgcCode: normalizeText(row.province_psgc_code),
+    cityMunicipalityPsgcCode: normalizeText(row.city_municipality_psgc_code),
+    barangayPsgcCode: normalizeText(row.barangay_psgc_code),
     createdAt: String(row.created_at ?? new Date().toISOString()),
   };
 }
@@ -196,6 +261,18 @@ function createEmptyClient(agentId: string): ClientDraft {
     tin: '',
     status: 'Active',
     notes: '',
+    customClientCode: '',
+    defaultPriceCode: '',
+    defaultDeliveryTermId: '',
+    region: '',
+    province: '',
+    cityMunicipality: '',
+    districtArea: '',
+    barangay: '',
+    regionPsgcCode: '',
+    provincePsgcCode: '',
+    cityMunicipalityPsgcCode: '',
+    barangayPsgcCode: '',
     createdAt: new Date().toISOString(),
     isTemporary: true,
   };
@@ -211,6 +288,7 @@ function trimAgentDraft(agent: AgentDraft): AgentDraft {
     contactNumber: agent.contactNumber.trim(),
     address: agent.address.trim(),
     notes: agent.notes.trim(),
+    agentGroupId: agent.agentGroupId.trim(),
   };
 }
 
@@ -226,6 +304,18 @@ function trimClientDraft(client: ClientDraft): ClientDraft {
     address: client.address.trim(),
     tin: client.tin.trim(),
     notes: client.notes.trim(),
+    customClientCode: client.customClientCode.trim(),
+    defaultPriceCode: client.defaultPriceCode.trim().toUpperCase(),
+    defaultDeliveryTermId: client.defaultDeliveryTermId.trim(),
+    region: client.region.trim(),
+    province: client.province.trim(),
+    cityMunicipality: client.cityMunicipality.trim(),
+    districtArea: client.districtArea.trim(),
+    barangay: client.barangay.trim(),
+    regionPsgcCode: client.regionPsgcCode.trim(),
+    provincePsgcCode: client.provincePsgcCode.trim(),
+    cityMunicipalityPsgcCode: client.cityMunicipalityPsgcCode.trim(),
+    barangayPsgcCode: client.barangayPsgcCode.trim(),
   };
 }
 
@@ -245,6 +335,7 @@ function stableAgent(agent: AgentDraft) {
     notes: trimmed.notes,
     status: trimmed.status,
     profileImageUrl: trimmed.profileImageUrl,
+    agentGroupId: trimmed.agentGroupId,
   });
 }
 
@@ -262,6 +353,18 @@ function stableClient(client: ClientDraft) {
     tin: trimmed.tin,
     status: trimmed.status,
     notes: trimmed.notes,
+    customClientCode: trimmed.customClientCode,
+    defaultPriceCode: trimmed.defaultPriceCode,
+    defaultDeliveryTermId: trimmed.defaultDeliveryTermId,
+    region: trimmed.region,
+    province: trimmed.province,
+    cityMunicipality: trimmed.cityMunicipality,
+    districtArea: trimmed.districtArea,
+    barangay: trimmed.barangay,
+    regionPsgcCode: trimmed.regionPsgcCode,
+    provincePsgcCode: trimmed.provincePsgcCode,
+    cityMunicipalityPsgcCode: trimmed.cityMunicipalityPsgcCode,
+    barangayPsgcCode: trimmed.barangayPsgcCode,
   });
 }
 
@@ -309,6 +412,56 @@ function StatusBadge({ status }: { status: AgentStatus }) {
   return <span className={`${styles.statusBadge} ${styles[`status${status}`]}`}>{status}</span>;
 }
 
+function getClientDisplayName(client: Pick<ClientDraft, 'companyName' | 'clientName'>) {
+  return client.companyName.trim() || client.clientName.trim() || 'Unnamed Client';
+}
+
+function getClientSecondaryName(client: Pick<ClientDraft, 'companyName' | 'clientName' | 'contactPerson'>) {
+  if (client.companyName.trim() && client.clientName.trim()) return client.clientName.trim();
+  return client.contactPerson.trim();
+}
+
+function normalizePsgcStatus(row: Record<string, unknown>) {
+  if ('status' in row) return String(row.status ?? '').toLowerCase() !== 'inactive';
+  if ('is_active' in row) return row.is_active !== false;
+  return true;
+}
+
+function normalizePsgcOption(row: Record<string, unknown>, nameKeys: string[], typeKeys: string[] = []): PsgcOption | null {
+  const code = String(row.psgc_code ?? row.code ?? row.id ?? '').trim();
+  const name = nameKeys.map((key) => String(row[key] ?? '').trim()).find(Boolean) ?? '';
+  const type = typeKeys.map((key) => String(row[key] ?? '').trim()).find(Boolean) ?? '';
+  if (!code || !name || !normalizePsgcStatus(row)) return null;
+  return { code, name, type };
+}
+
+function sortByName<T extends { name: string }>(items: T[]) {
+  return [...items].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function getFriendlySaveError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes('custom_client_code') ||
+    normalized.includes('client reference') ||
+    normalized.includes('duplicate key') && normalized.includes('agent_clients')
+  ) {
+    return 'This Client Reference Code is already used by another active client under this Agent.';
+  }
+
+  if (
+    normalized.includes('default_price_code') ||
+    normalized.includes('agent_price_access') ||
+    normalized.includes('price level')
+  ) {
+    return 'The selected price level is not available to this Agent.';
+  }
+
+  return message;
+}
+
 export default function AgentProfilePanel({ account, onSave, onClose }: AgentProfilePanelProps) {
   const [activeSection, setActiveSection] = useState<PanelSection>('info');
   const [agentDraft, setAgentDraft] = useState<AgentDraft>(() => mapAccountToAgentDraft(account));
@@ -317,6 +470,9 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
   const [originalClients, setOriginalClients] = useState<ClientDraft[]>([]);
   const [priceDraft, setPriceDraft] = useState<OrderPriceCode[]>([]);
   const [originalPriceAccess, setOriginalPriceAccess] = useState<OrderPriceCode[]>([]);
+  const [agentGroups, setAgentGroups] = useState<AgentGroupOption[]>([]);
+  const [priceClassOptions, setPriceClassOptions] = useState<PriceClassOption[]>([]);
+  const [deliveryTermOptions, setDeliveryTermOptions] = useState<DeliveryTermOption[]>([]);
   const [pendingProfileImage, setPendingProfileImage] = useState<PendingProfileImage | null>(null);
   const [isProfileImageRemoved, setIsProfileImageRemoved] = useState(false);
   const [profileImageError, setProfileImageError] = useState('');
@@ -357,6 +513,11 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
     [originalClients],
   );
 
+  const allowedClientPriceOptions = useMemo(() => {
+    const allowedCodes = new Set(priceDraft);
+    return priceClassOptions.filter((priceClass) => allowedCodes.has(priceClass.priceCode as OrderPriceCode));
+  }, [priceClassOptions, priceDraft]);
+
   const isDirty = useMemo(() => {
     if (stableAgent(agentDraft) !== stableAgent(originalAgent)) return true;
     if (pendingProfileImage || isProfileImageRemoved) return true;
@@ -376,6 +537,7 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
       if (!query) return true;
       return [
         client.clientCode,
+        client.customClientCode,
         client.clientName,
         client.companyName,
         client.contactPerson,
@@ -403,31 +565,48 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
     setSuccessMessage('');
 
     try {
-      const [agentRes, clientsRes, priceRes] = await Promise.all([
+      const [agentRes, clientsRes, priceRes, groupsRes, priceClassesRes, deliveryTermsRes] = await Promise.all([
         supabase
           .from('agent_accounts')
-          .select('id, auth_user_id, agent_code, full_name, company_name, contact_number, email, address, profile_image_url, status, notes, must_change_password, password_reset_at, updated_at')
+          .select('id, auth_user_id, agent_code, agent_group_id, full_name, company_name, contact_number, email, address, profile_image_url, status, notes, must_change_password, password_reset_at, updated_at')
           .eq('id', account.id)
           .maybeSingle(),
         supabase
           .from('agent_clients')
-          .select('id, agent_id, client_code, client_name, company_name, contact_person, contact_number, email, address, tin, status, notes, created_at')
+          .select('id, agent_id, client_code, client_name, company_name, contact_person, contact_number, email, address, tin, status, notes, custom_client_code, default_price_code, default_delivery_term_id, region, province, city_municipality, district_area, barangay, region_psgc_code, province_psgc_code, city_municipality_psgc_code, barangay_psgc_code, created_at')
           .eq('agent_id', account.id)
-          .order('client_name', { ascending: true }),
+          .order('company_name', { ascending: true }),
         supabase
           .from('agent_price_access')
           .select('agent_id, price_class')
           .eq('agent_id', account.id),
+        supabase
+          .from('agent_groups')
+          .select('id, group_name, group_code, status, sort_order')
+          .eq('status', 'Active')
+          .order('sort_order', { ascending: true }),
+        supabase
+          .from('price_classes')
+          .select('id, price_code, price_label, status, sort_order')
+          .eq('status', 'Active')
+          .order('sort_order', { ascending: true }),
+        supabase
+          .from('delivery_terms')
+          .select('id, term_name, term_code, status, sort_order')
+          .eq('status', 'Active')
+          .order('sort_order', { ascending: true }),
       ]);
 
-      const error = agentRes.error ?? clientsRes.error ?? priceRes.error;
+      const error = agentRes.error ?? clientsRes.error ?? priceRes.error ?? groupsRes.error ?? priceClassesRes.error ?? deliveryTermsRes.error;
       if (error) throw new Error(error.message);
       if (!agentRes.data) {
         throw new Error('Agent profile was not found. Check the selected agent and agent account access policies.');
       }
 
       const nextAgent = mapAgentRow(agentRes.data as AgentRow);
-      const nextClients = ((clientsRes.data ?? []) as ClientRow[]).map(mapClientRow);
+      const nextClients = ((clientsRes.data ?? []) as ClientRow[])
+        .map(mapClientRow)
+        .sort((left, right) => getClientDisplayName(left).localeCompare(getClientDisplayName(right)));
       const nextPriceAccess = Array.from(
         new Set(
           ((priceRes.data ?? []) as { price_class: string | null }[])
@@ -442,6 +621,27 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
       setOriginalClients(nextClients);
       setPriceDraft(nextPriceAccess);
       setOriginalPriceAccess(nextPriceAccess);
+      setAgentGroups(
+        (groupsRes.data ?? []).map((row) => ({
+          id: String(row.id),
+          groupName: String(row.group_name ?? ''),
+          groupCode: String(row.group_code ?? ''),
+        })),
+      );
+      setPriceClassOptions(
+        (priceClassesRes.data ?? []).map((row) => ({
+          id: String(row.id),
+          priceCode: String(row.price_code ?? '').trim().toUpperCase(),
+          priceLabel: String(row.price_label ?? '').trim(),
+        })),
+      );
+      setDeliveryTermOptions(
+        (deliveryTermsRes.data ?? []).map((row) => ({
+          id: String(row.id),
+          termName: String(row.term_name ?? ''),
+          termCode: String(row.term_code ?? ''),
+        })),
+      );
       setRemovedClients({});
       setPendingProfileImage((current) => {
         if (current) URL.revokeObjectURL(current.previewUrl);
@@ -528,13 +728,21 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
     const activeClientDrafts = clientDrafts.filter((client) => !removedClients[client.id]);
     for (const client of activeClientDrafts) {
       const trimmedClient = trimClientDraft(client);
-      if (!trimmedClient.clientName) {
-        setValidationError('Client Name is required for every client.');
+      if (trimmedClient.isTemporary && !trimmedClient.companyName) {
+        setValidationError('Company Name is required for new clients.');
         setActiveSection('clients');
         return false;
       }
       if (!isValidEmail(trimmedClient.email)) {
-        setValidationError(`Enter a valid email for ${trimmedClient.clientName}.`);
+        setValidationError(`Enter a valid email for ${getClientDisplayName(trimmedClient)}.`);
+        setActiveSection('clients');
+        return false;
+      }
+      if (
+        trimmedClient.defaultPriceCode &&
+        !allowedClientPriceOptions.some((priceClass) => priceClass.priceCode === trimmedClient.defaultPriceCode)
+      ) {
+        setValidationError(`The selected price level for ${getClientDisplayName(trimmedClient)} is not available to this Agent.`);
         setActiveSection('clients');
         return false;
       }
@@ -594,6 +802,7 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
             .from('agent_accounts')
             .update({
               agent_code: trimmedAgent.agentCode || null,
+              agent_group_id: trimmedAgent.agentGroupId || null,
               full_name: trimmedAgent.fullName,
               company_name: trimmedAgent.companyName || null,
               contact_number: trimmedAgent.contactNumber || null,
@@ -605,7 +814,7 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
             })
             .eq('id', trimmedAgent.id)
             .select(
-              'id, auth_user_id, agent_code, full_name, company_name, contact_number, email, address, profile_image_url, status, notes, must_change_password, password_reset_at, updated_at',
+              'id, auth_user_id, agent_code, agent_group_id, full_name, company_name, contact_number, email, address, profile_image_url, status, notes, must_change_password, password_reset_at, updated_at',
             )
             .maybeSingle()
             .then(({ data, error }) => {
@@ -666,16 +875,28 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
                 agent_id: trimmedAgent.id,
                 client_name: client.clientName,
                 company_name: client.companyName || null,
+                custom_client_code: client.customClientCode || null,
+                default_price_code: client.defaultPriceCode || null,
+                default_delivery_term_id: client.defaultDeliveryTermId || null,
                 contact_person: client.contactPerson || null,
                 contact_number: client.contactNumber || null,
                 email: client.email || null,
                 address: client.address || null,
                 tin: client.tin || null,
+                region: client.region || null,
+                province: client.province || null,
+                city_municipality: client.cityMunicipality || null,
+                district_area: client.districtArea || null,
+                barangay: client.barangay || null,
+                region_psgc_code: client.regionPsgcCode || null,
+                province_psgc_code: client.provincePsgcCode || null,
+                city_municipality_psgc_code: client.cityMunicipalityPsgcCode || null,
+                barangay_psgc_code: client.barangayPsgcCode || null,
                 status: client.status,
                 notes: client.notes || null,
               })),
             )
-            .select('id, agent_id, client_code, client_name, company_name, contact_person, contact_number, email, address, tin, status, notes, created_at')
+            .select('id, agent_id, client_code, client_name, company_name, contact_person, contact_number, email, address, tin, status, notes, custom_client_code, default_price_code, default_delivery_term_id, region, province, city_municipality, district_area, barangay, region_psgc_code, province_psgc_code, city_municipality_psgc_code, barangay_psgc_code, created_at')
             .then(({ data, error }) => {
               if (error) throw new Error(error.message);
               const insertedClients = ((data ?? []) as ClientRow[]).map(mapClientRow);
@@ -694,11 +915,23 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
             .update({
               client_name: client.clientName,
               company_name: client.companyName || null,
+              custom_client_code: client.customClientCode || null,
+              default_price_code: client.defaultPriceCode || null,
+              default_delivery_term_id: client.defaultDeliveryTermId || null,
               contact_person: client.contactPerson || null,
               contact_number: client.contactNumber || null,
               email: client.email || null,
               address: client.address || null,
               tin: client.tin || null,
+              region: client.region || null,
+              province: client.province || null,
+              city_municipality: client.cityMunicipality || null,
+              district_area: client.districtArea || null,
+              barangay: client.barangay || null,
+              region_psgc_code: client.regionPsgcCode || null,
+              province_psgc_code: client.provincePsgcCode || null,
+              city_municipality_psgc_code: client.cityMunicipalityPsgcCode || null,
+              barangay_psgc_code: client.barangayPsgcCode || null,
               status: client.status,
               notes: client.notes || null,
             })
@@ -743,9 +976,10 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
       onSave(loadAccountItems());
       setSuccessMessage('Agent profile changes saved.');
     } catch (error) {
+      const friendlyError = getFriendlySaveError(error);
       setSaveError(
-        error instanceof Error
-          ? `Save failed: ${error.message}. Some earlier requests may already have been written because no shared transaction RPC is configured.`
+        friendlyError
+          ? `Save failed: ${friendlyError}. Some earlier requests may already have been written because no shared transaction RPC is configured.`
           : 'Save failed. Your draft changes are still preserved locally.',
       );
     } finally {
@@ -767,12 +1001,19 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
 
   function saveClientDraft(client: ClientDraft) {
     const trimmedClient = trimClientDraft(client);
-    if (!trimmedClient.clientName) {
-      setValidationError('Client Name is required.');
+    if (trimmedClient.isTemporary && !trimmedClient.companyName) {
+      setValidationError('Company Name is required for new clients.');
       return;
     }
     if (!isValidEmail(trimmedClient.email)) {
       setValidationError('Enter a valid client email address.');
+      return;
+    }
+    if (
+      trimmedClient.defaultPriceCode &&
+      !allowedClientPriceOptions.some((priceClass) => priceClass.priceCode === trimmedClient.defaultPriceCode)
+    ) {
+      setValidationError('The selected price level is not available to this Agent.');
       return;
     }
 
@@ -868,6 +1109,7 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
               <div className={styles.metaLine}>
                 <span>{agentDraft.agentCode || 'No agent code'}</span>
                 <span>{agentDraft.companyName || 'No company'}</span>
+                <span>{agentGroups.find((group) => group.id === agentDraft.agentGroupId)?.groupName || 'Ungrouped'}</span>
                 <StatusBadge status={agentDraft.status} />
                 {agentDraft.authUserId ? <span className={styles.authPill}>Auth connected</span> : <span className={styles.authPill}>No auth link</span>}
                 {isDirty ? <span className={styles.dirtyPill}>Unsaved changes</span> : null}
@@ -990,6 +1232,17 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
                             <span>Company Name</span>
                             <input value={agentDraft.companyName} onChange={(event) => updateAgentField('companyName', event.target.value)} />
                           </label>
+                          <label className={styles.field}>
+                            <span>Agent Group</span>
+                            <select value={agentDraft.agentGroupId} onChange={(event) => updateAgentField('agentGroupId', event.target.value)}>
+                              <option value="">No group</option>
+                              {agentGroups.map((group) => (
+                                <option key={group.id} value={group.id}>
+                                  {group.groupName}{group.groupCode ? ` (${group.groupCode})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                           <label className={`${styles.field} ${styles.wideField}`}>
                             <span>Notes</span>
                             <textarea value={agentDraft.notes} onChange={(event) => updateAgentField('notes', event.target.value)} />
@@ -1047,13 +1300,13 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
                     <div className={styles.clientToolbar}>
                       <label className={styles.searchField}>
                         <i className="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                        <input value={clientSearch} onChange={(event) => setClientSearch(event.target.value)} placeholder="Search clients" />
+                        <input value={clientSearch} onChange={(event) => setClientSearch(event.target.value)} placeholder="Search company, client, or code" />
                       </label>
                       <span className={styles.countPill}>{visibleClients.length.toLocaleString()} clients</span>
                     </div>
                     <div className={styles.tableShell}>
                       <div className={styles.clientTableHeader}>
-                        <span>Client Code</span><span>Client Name</span><span>Company</span><span>Contact Person</span><span>Contact</span><span>Email</span><span>Status</span><span>Actions</span>
+                        <span>System Code</span><span>Client Reference</span><span>Company</span><span>Client / Contact</span><span>Contact</span><span>Email</span><span>Status</span><span>Actions</span>
                       </div>
                       {visibleClients.length === 0 ? (
                         <div className={styles.emptyState}>
@@ -1061,25 +1314,32 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
                           <p>No clients are available for this agent yet.</p>
                         </div>
                       ) : (
-                        visibleClients.map((client) => (
-                          <div key={client.id} className={styles.clientRow}>
-                            <span>{client.clientCode || '—'}</span>
-                            <strong>{client.clientName || '-'}</strong>
-                            <span>{client.companyName || '-'}</span>
-                            <span>{client.contactPerson || '-'}</span>
-                            <span>{client.contactNumber || '-'}</span>
-                            <span>{client.email || '-'}</span>
-                            <span className={`${styles.clientStatus} ${client.status === 'Active' ? styles.statusActive : styles.statusInactive}`}>{client.status}</span>
-                            <span className={styles.rowActions}>
-                              <button type="button" onClick={() => setEditingClient(client)} aria-label={`Edit ${client.clientName}`}>
-                                <i className="fa-solid fa-pen" aria-hidden="true"></i>
-                              </button>
-                              <button type="button" onClick={() => setRemoveTarget(client)} aria-label={`Remove ${client.clientName}`}>
-                                <i className="fa-solid fa-trash" aria-hidden="true"></i>
-                              </button>
-                            </span>
-                          </div>
-                        ))
+                        visibleClients.map((client) => {
+                          const displayName = getClientDisplayName(client);
+                          const secondaryName = getClientSecondaryName(client);
+                          return (
+                            <div key={client.id} className={styles.clientRow}>
+                              <span>{client.clientCode || '-'}</span>
+                              <span>{client.customClientCode || '-'}</span>
+                              <strong>
+                                {displayName}
+                                {secondaryName ? <small className={styles.metaText}>{secondaryName}</small> : null}
+                              </strong>
+                              <span>{client.contactPerson || client.clientName || '-'}</span>
+                              <span>{client.contactNumber || '-'}</span>
+                              <span>{client.email || '-'}</span>
+                              <span className={`${styles.clientStatus} ${client.status === 'Active' ? styles.statusActive : styles.statusInactive}`}>{client.status}</span>
+                              <span className={styles.rowActions}>
+                                <button type="button" onClick={() => setEditingClient(client)} aria-label={`Edit ${displayName}`}>
+                                  <i className="fa-solid fa-pen" aria-hidden="true"></i>
+                                </button>
+                                <button type="button" onClick={() => setRemoveTarget(client)} aria-label={`Remove ${displayName}`}>
+                                  <i className="fa-solid fa-trash" aria-hidden="true"></i>
+                                </button>
+                              </span>
+                            </div>
+                          );
+                        })
                       )}
                     </div>
                   </section>
@@ -1183,6 +1443,8 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
       {editingClient ? (
         <ClientEditor
           client={editingClient}
+          priceOptions={allowedClientPriceOptions}
+          deliveryTermOptions={deliveryTermOptions}
           onSave={saveClientDraft}
           onClose={() => setEditingClient(null)}
         />
@@ -1269,17 +1531,226 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
 
 function ClientEditor({
   client,
+  priceOptions,
+  deliveryTermOptions,
   onSave,
   onClose,
 }: {
   client: ClientDraft;
+  priceOptions: PriceClassOption[];
+  deliveryTermOptions: DeliveryTermOption[];
   onSave: (client: ClientDraft) => void;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<ClientDraft>(client);
+  const [regions, setRegions] = useState<PsgcOption[]>([]);
+  const [provinces, setProvinces] = useState<PsgcOption[]>([]);
+  const [cities, setCities] = useState<PsgcOption[]>([]);
+  const [barangays, setBarangays] = useState<PsgcOption[]>([]);
+  const [locationError, setLocationError] = useState('');
+  const [isLoadingRegions, setIsLoadingRegions] = useState(false);
+  const [isLoadingProvinces, setIsLoadingProvinces] = useState(false);
+  const [isLoadingCities, setIsLoadingCities] = useState(false);
+  const [isLoadingBarangays, setIsLoadingBarangays] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        setIsLoadingRegions(true);
+        const { data, error } = await supabase.from('psgc_regions').select('*');
+        if (cancelled) return;
+        if (error) {
+          setLocationError(error.message);
+          setRegions([]);
+          return;
+        }
+        setRegions(
+          sortByName(
+            ((data ?? []) as Record<string, unknown>[])
+              .map((row) => normalizePsgcOption(row, ['region_name', 'name', 'description']))
+              .filter((item): item is PsgcOption => Boolean(item)),
+          ),
+        );
+      } finally {
+        if (!cancelled) setIsLoadingRegions(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!draft.regionPsgcCode) return undefined;
+
+    void (async () => {
+      try {
+        setProvinces([]);
+        setIsLoadingProvinces(true);
+        const { data, error } = await supabase
+          .from('psgc_provinces')
+          .select('*')
+          .eq('region_psgc_code', draft.regionPsgcCode);
+        if (cancelled) return;
+        if (error) {
+          setLocationError(error.message);
+          setProvinces([]);
+          return;
+        }
+        setProvinces(
+          sortByName(
+            ((data ?? []) as Record<string, unknown>[])
+              .map((row) => normalizePsgcOption(row, ['province_name', 'name', 'description']))
+              .filter((item): item is PsgcOption => Boolean(item)),
+          ),
+        );
+      } finally {
+        if (!cancelled) setIsLoadingProvinces(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.regionPsgcCode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!draft.regionPsgcCode) return undefined;
+
+    let query = supabase
+      .from('psgc_cities_municipalities')
+      .select('*')
+      .eq('region_psgc_code', draft.regionPsgcCode);
+
+    if (draft.provincePsgcCode) {
+      query = query.eq('province_psgc_code', draft.provincePsgcCode);
+    }
+
+    void (async () => {
+      try {
+        setCities([]);
+        setIsLoadingCities(true);
+        const { data, error } = await query;
+        if (cancelled) return;
+        if (error) {
+          setLocationError(error.message);
+          setCities([]);
+          return;
+        }
+        setCities(
+          sortByName(
+            ((data ?? []) as Record<string, unknown>[])
+              .map((row) =>
+                normalizePsgcOption(row, ['city_municipality_name', 'city_name', 'municipality_name', 'name', 'description'], [
+                  'geographic_type',
+                  'type',
+                  'classification',
+                ]),
+              )
+              .filter((item): item is PsgcOption => Boolean(item)),
+          ),
+        );
+      } finally {
+        if (!cancelled) setIsLoadingCities(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.regionPsgcCode, draft.provincePsgcCode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!draft.cityMunicipalityPsgcCode) return undefined;
+
+    void (async () => {
+      try {
+        setBarangays([]);
+        setIsLoadingBarangays(true);
+        const { data, error } = await supabase
+          .from('psgc_barangays')
+          .select('*')
+          .eq('city_municipality_psgc_code', draft.cityMunicipalityPsgcCode);
+        if (cancelled) return;
+        if (error) {
+          setLocationError(error.message);
+          setBarangays([]);
+          return;
+        }
+        setBarangays(
+          sortByName(
+            ((data ?? []) as Record<string, unknown>[])
+              .map((row) => normalizePsgcOption(row, ['barangay_name', 'name', 'description']))
+              .filter((item): item is PsgcOption => Boolean(item)),
+          ),
+        );
+      } finally {
+        if (!cancelled) setIsLoadingBarangays(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.cityMunicipalityPsgcCode]);
 
   function updateField<Field extends keyof ClientDraft>(field: Field, value: ClientDraft[Field]) {
     setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function handleRegionChange(code: string) {
+    const region = regions.find((item) => item.code === code) ?? null;
+    setProvinces([]);
+    setCities([]);
+    setBarangays([]);
+    setDraft((current) => ({
+      ...current,
+      regionPsgcCode: region?.code ?? '',
+      region: region?.name ?? '',
+      provincePsgcCode: '',
+      province: '',
+      cityMunicipalityPsgcCode: '',
+      cityMunicipality: '',
+      barangayPsgcCode: '',
+      barangay: '',
+    }));
+  }
+
+  function handleProvinceChange(code: string) {
+    const province = provinces.find((item) => item.code === code) ?? null;
+    setCities([]);
+    setBarangays([]);
+    setDraft((current) => ({
+      ...current,
+      provincePsgcCode: province?.code ?? '',
+      province: province?.name ?? '',
+      cityMunicipalityPsgcCode: '',
+      cityMunicipality: '',
+      barangayPsgcCode: '',
+      barangay: '',
+    }));
+  }
+
+  function handleCityChange(code: string) {
+    const city = cities.find((item) => item.code === code) ?? null;
+    setBarangays([]);
+    setDraft((current) => ({
+      ...current,
+      cityMunicipalityPsgcCode: city?.code ?? '',
+      cityMunicipality: city?.name ?? '',
+      barangayPsgcCode: '',
+      barangay: '',
+    }));
+  }
+
+  function handleBarangayChange(code: string) {
+    const barangay = barangays.find((item) => item.code === code) ?? null;
+    setDraft((current) => ({
+      ...current,
+      barangayPsgcCode: barangay?.code ?? '',
+      barangay: barangay?.name ?? '',
+    }));
   }
 
   return (
@@ -1294,29 +1765,159 @@ function ClientEditor({
             <i className="fa-solid fa-xmark" aria-hidden="true"></i>
           </button>
         </header>
-        <div className={styles.formGrid}>
-          <label className={styles.field}><span>Client Name *</span><input value={draft.clientName} onChange={(event) => updateField('clientName', event.target.value)} /></label>
-          {!client.isTemporary ? (
-            <div className={styles.systemField}>
-              <span>Client Code</span>
-              <strong>{draft.clientCode || 'System generated'}</strong>
-              <p>Generated by the database and cannot be edited.</p>
+        <div className={styles.groupedForm}>
+          <div className={styles.formGroup}>
+            <h4>Business Information</h4>
+            <div className={styles.formGrid}>
+              <label className={styles.field}><span>Company Name{client.isTemporary ? ' *' : ''}</span><input value={draft.companyName} onChange={(event) => updateField('companyName', event.target.value)} /></label>
+              <label className={styles.field}><span>Client / Contact Name</span><input value={draft.clientName} onChange={(event) => updateField('clientName', event.target.value)} /></label>
+              <label className={styles.field}><span>Client Reference Code</span><input value={draft.customClientCode} onChange={(event) => updateField('customClientCode', event.target.value)} /></label>
+              <div className={styles.systemField}>
+                <span>System Client Code</span>
+                <strong>{draft.clientCode || 'System generated'}</strong>
+                <p>Database generated and read-only.</p>
+              </div>
+              <label className={styles.field}><span>TIN</span><input value={draft.tin} onChange={(event) => updateField('tin', event.target.value)} /></label>
+              <label className={styles.field}>
+                <span>Status</span>
+                <select value={draft.status} onChange={(event) => updateField('status', event.target.value as ClientStatus)}>
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </label>
             </div>
-          ) : null}
-          <label className={styles.field}><span>Company Name</span><input value={draft.companyName} onChange={(event) => updateField('companyName', event.target.value)} /></label>
-          <label className={styles.field}><span>Contact Person</span><input value={draft.contactPerson} onChange={(event) => updateField('contactPerson', event.target.value)} /></label>
-          <label className={styles.field}><span>Contact Number</span><input value={draft.contactNumber} onChange={(event) => updateField('contactNumber', event.target.value)} /></label>
-          <label className={styles.field}><span>Email</span><input type="email" value={draft.email} onChange={(event) => updateField('email', event.target.value)} /></label>
-          <label className={styles.field}><span>TIN</span><input value={draft.tin} onChange={(event) => updateField('tin', event.target.value)} /></label>
-          <label className={styles.field}>
-            <span>Status</span>
-            <select value={draft.status} onChange={(event) => updateField('status', event.target.value as ClientStatus)}>
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-            </select>
-          </label>
-          <label className={`${styles.field} ${styles.wideField}`}><span>Address</span><textarea value={draft.address} onChange={(event) => updateField('address', event.target.value)} /></label>
-          <label className={`${styles.field} ${styles.wideField}`}><span>Notes</span><textarea value={draft.notes} onChange={(event) => updateField('notes', event.target.value)} /></label>
+          </div>
+
+          <div className={styles.formGroup}>
+            <h4>Contact Information</h4>
+            <div className={styles.formGrid}>
+              <label className={styles.field}><span>Contact Person</span><input value={draft.contactPerson} onChange={(event) => updateField('contactPerson', event.target.value)} /></label>
+              <label className={styles.field}><span>Contact Number</span><input value={draft.contactNumber} onChange={(event) => updateField('contactNumber', event.target.value)} /></label>
+              <label className={styles.field}><span>Email</span><input type="email" value={draft.email} onChange={(event) => updateField('email', event.target.value)} /></label>
+            </div>
+          </div>
+
+          <div className={styles.formGroup}>
+            <h4>Pricing & Terms</h4>
+            <div className={styles.formGrid}>
+              <SearchableSelect
+                label="Default Price Level"
+                placeholder="No default price level"
+                value={draft.defaultPriceCode}
+                options={priceOptions}
+                noResultsText="No allowed active price levels found."
+                getOptionValue={(priceClass) => priceClass.priceCode}
+                getOptionLabel={(priceClass) => `${priceClass.priceCode} - ${priceClass.priceLabel || priceClass.priceCode}`}
+                getSearchText={(priceClass) => `${priceClass.priceCode} ${priceClass.priceLabel}`}
+                renderOption={(priceClass) => (
+                  <>
+                    <strong>{priceClass.priceCode}</strong>
+                    <span>{priceClass.priceLabel || '-'}</span>
+                  </>
+                )}
+                onChange={(value) => updateField('defaultPriceCode', value)}
+              />
+              <SearchableSelect
+                label="Default Payment Terms"
+                placeholder="No default payment terms"
+                value={draft.defaultDeliveryTermId}
+                options={deliveryTermOptions}
+                noResultsText="No active payment terms found."
+                getOptionValue={(term) => term.id}
+                getOptionLabel={(term) => `${term.termName}${term.termCode ? ` (${term.termCode})` : ''}`}
+                getSearchText={(term) => `${term.termName} ${term.termCode}`}
+                renderOption={(term) => (
+                  <>
+                    <strong>{term.termName}</strong>
+                    <span>{term.termCode || '-'}</span>
+                  </>
+                )}
+                onChange={(value) => updateField('defaultDeliveryTermId', value)}
+              />
+            </div>
+          </div>
+
+          <div className={styles.formGroup}>
+            <h4>Location</h4>
+            <div className={styles.formGrid}>
+              <SearchableSelect
+                label="Region"
+                placeholder={isLoadingRegions ? 'Loading regions...' : 'Select region'}
+                value={draft.regionPsgcCode}
+                options={regions}
+                noResultsText="No regions found."
+                getOptionValue={(option) => option.code}
+                getOptionLabel={(option) => option.name}
+                getSearchText={(option) => option.name}
+                renderOption={(option) => (
+                  <>
+                    <strong>{option.name}</strong>
+                    <span>{option.code}</span>
+                  </>
+                )}
+                onChange={handleRegionChange}
+              />
+              <SearchableSelect
+                label="Province"
+                placeholder={isLoadingProvinces ? 'Loading provinces...' : 'No province / not applicable'}
+                value={draft.provincePsgcCode}
+                options={provinces}
+                noResultsText="No province for this region."
+                getOptionValue={(option) => option.code}
+                getOptionLabel={(option) => option.name}
+                getSearchText={(option) => option.name}
+                renderOption={(option) => (
+                  <>
+                    <strong>{option.name}</strong>
+                    <span>{option.code}</span>
+                  </>
+                )}
+                onChange={handleProvinceChange}
+              />
+              <SearchableSelect
+                label="City / Municipality"
+                placeholder={isLoadingCities ? 'Loading cities...' : 'Select city or municipality'}
+                value={draft.cityMunicipalityPsgcCode}
+                options={cities}
+                noResultsText="No cities or municipalities found."
+                getOptionValue={(option) => option.code}
+                getOptionLabel={(option) => `${option.name}${option.type ? ` - ${option.type}` : ''}`}
+                getSearchText={(option) => `${option.name} ${option.type}`}
+                renderOption={(option) => (
+                  <>
+                    <strong>{option.name}</strong>
+                    <span>{option.type || option.code}</span>
+                  </>
+                )}
+                onChange={handleCityChange}
+              />
+              <SearchableSelect
+                label="Barangay"
+                placeholder={draft.cityMunicipalityPsgcCode ? (isLoadingBarangays ? 'Loading barangays...' : 'Select barangay') : 'Select city first'}
+                value={draft.barangayPsgcCode}
+                options={barangays}
+                noResultsText="No barangays found."
+                getOptionValue={(option) => option.code}
+                getOptionLabel={(option) => option.name}
+                getSearchText={(option) => option.name}
+                renderOption={(option) => (
+                  <>
+                    <strong>{option.name}</strong>
+                    <span>{option.code}</span>
+                  </>
+                )}
+                onChange={handleBarangayChange}
+              />
+              <label className={styles.field}><span>District / Area</span><input value={draft.districtArea} onChange={(event) => updateField('districtArea', event.target.value)} /></label>
+              <label className={`${styles.field} ${styles.wideField}`}><span>Street / Full Address</span><textarea value={draft.address} onChange={(event) => updateField('address', event.target.value)} /></label>
+            </div>
+            {locationError ? <p className={styles.validationError}>{locationError}</p> : null}
+          </div>
+
+          <div className={styles.formGroup}>
+            <h4>Notes</h4>
+            <label className={`${styles.field} ${styles.wideField}`}><span>Notes</span><textarea value={draft.notes} onChange={(event) => updateField('notes', event.target.value)} /></label>
+          </div>
         </div>
         <div className={styles.confirmActions}>
           <button type="button" className={styles.secondaryButton} onClick={onClose}>Cancel</button>

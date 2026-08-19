@@ -4,6 +4,7 @@ export type SettingPanel =
   | 'appearance'
   | 'administration'
   | 'internalAdminRoles'
+  | 'agentGroups'
   | 'branches'
   | 'preferenceTypes'
   | 'priceClasses'

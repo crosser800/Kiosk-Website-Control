@@ -4,6 +4,8 @@ import BasicInformation from './addProducts/BasicInformation';
 import Media from './addProducts/Media';
 import VarAndPrice from './addProducts/VarAndPrice';
 import { supabase } from '../../lib/supabase';
+import { normalizeDiscountKind } from './addProducts/discountLifecycle';
+import { generatePackagingSummary, normalizePackagingUnitCode } from './addProducts/packagingParser';
 import type {
   DiscountItem,
   MediaItem,
@@ -27,6 +29,45 @@ type AddProductProps = {
 };
 
 type OptionItem = { id: string; label: string };
+type DiscountHistoryAction =
+  | 'created'
+  | 'updated'
+  | 'classified'
+  | 'activated'
+  | 'deactivated'
+  | 'scheduled';
+
+type DiscountHistorySnapshot = {
+  discount_id: string | null;
+  product_id: string;
+  discount_group: string | null;
+  discount_name: string;
+  discount_kind: string | null;
+  discount_type: string;
+  discount_percent: number | null;
+  amount: number | null;
+  status: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  priority: number;
+  stackable: boolean;
+  calculation_method: string | null;
+  apply_sequence: number;
+  applies_to: string | null;
+  targeting: {
+    min_quantity: number;
+    max_quantity: number | null;
+    branch_name: string | null;
+    price_type: string | null;
+    price_code: string | null;
+    classes: Array<Record<string, unknown>>;
+  };
+};
+
+type DiscountHistoryActor = {
+  changed_by: string | null;
+  changed_by_name: string | null;
+};
 
 const sections: AddProductSection[] = ['Basic Information', 'Images', 'Variation & Pricing'];
 
@@ -78,10 +119,265 @@ function buildVariationCardKey(variationName: string, skuCode: string) {
   return `${variationName.trim().toLowerCase()}::${skuCode.trim().toLowerCase()}`;
 }
 
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string | null | undefined) {
+  return Boolean(value && uuidPattern.test(String(value).trim()));
+}
+
+function getStableUuid(value: string | null | undefined) {
+  return isUuid(value) ? String(value).trim() : crypto.randomUUID();
+}
+
+function getSyntheticParentUuid(value: string | null | undefined) {
+  const text = String(value ?? '').trim();
+  if (isUuid(text)) return text;
+  const possibleUuid = text.slice(0, 36);
+  return isUuid(possibleUuid) ? possibleUuid : '';
+}
+
 function normalizeCalculationMethod(
   value: string | null | undefined,
 ): DiscountItem['calculationMethod'] {
   return String(value ?? '').toLowerCase() === 'single' ? 'Single' : 'Cascading';
+}
+
+function normalizeSnapshotValue(value: unknown) {
+  if (value === undefined || value === '') return null;
+  return value;
+}
+
+function normalizeUnitText(value: unknown) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function getCanonicalUnitLabel(unitCode: string, unitDefinitions: ProductUnitDefinition[]) {
+  const normalizedUnitCode = normalizeUnitText(unitCode);
+  return (
+    unitDefinitions.find((unit) => normalizeUnitText(unit.code) === normalizedUnitCode)?.label?.trim() ||
+    normalizedUnitCode
+  );
+}
+
+function resolveKnownUnitCode(
+  value: string,
+  unitDefinitions: ProductUnitDefinition[],
+  unitAliases: ProductUnitAliasDefinition[],
+) {
+  const normalizedValue = normalizeUnitText(value);
+  if (!normalizedValue) return '';
+  const activeCodes = new Set(
+    unitDefinitions
+      .filter((unit) => normalizeUnitText(unit.status || 'Active') !== 'inactive')
+      .map((unit) => normalizeUnitText(unit.code))
+      .filter(Boolean),
+  );
+  if (activeCodes.has(normalizedValue)) {
+    return normalizedValue;
+  }
+  return normalizePackagingUnitCode(normalizedValue, unitDefinitions, unitAliases);
+}
+
+function getVariationUnitValidationError(
+  unitOptions: VariationUnitOptionItem[],
+  variations: VariationItem[],
+  unitDefinitions: ProductUnitDefinition[],
+  unitAliases: ProductUnitAliasDefinition[],
+) {
+  const variationNameById = new Map(
+    variations.map((variation) => [
+      buildVariationCardKey(variation.variationName, variation.skuCode),
+      variation.variationName || variation.className || variation.skuCode || 'Variation',
+    ]),
+  );
+  const unitsByVariation = new Map<string, Set<string>>();
+
+  for (const [index, option] of unitOptions.entries()) {
+    const rawUnitCode = String(option.unitCode ?? '').trim();
+    const rawUnitLabel = String(option.unitLabel ?? '').trim();
+    const rawBaseUnitCode = String(option.baseUnitCode ?? '').trim();
+    const variationName = variationNameById.get(option.variationId) ?? option.variationId ?? 'Variation';
+    const rowLabel = `${variationName} order unit #${index + 1}`;
+
+    if (!rawUnitCode && !rawUnitLabel && !rawBaseUnitCode && !String(option.quantityInBaseUnit ?? '').trim()) {
+      continue;
+    }
+
+    const unitCode = resolveKnownUnitCode(rawUnitCode, unitDefinitions, unitAliases);
+    if (!unitCode) {
+      return `${rowLabel} uses unknown unit code "${rawUnitCode || rawUnitLabel || 'blank'}". Select a configured unit.`;
+    }
+
+    const baseUnitCode = resolveKnownUnitCode(rawBaseUnitCode, unitDefinitions, unitAliases);
+    if (!baseUnitCode) {
+      return `${rowLabel} uses unknown base unit "${rawBaseUnitCode || 'blank'}". Select a configured base unit.`;
+    }
+
+    const quantityInBaseUnit = Number(String(option.quantityInBaseUnit ?? '').replace(/,/g, ''));
+    if (!Number.isFinite(quantityInBaseUnit) || quantityInBaseUnit <= 0) {
+      return `${rowLabel} must have a Contains quantity greater than 0.`;
+    }
+
+    const labelCode = rawUnitLabel ? resolveKnownUnitCode(rawUnitLabel, unitDefinitions, unitAliases) : '';
+    if (labelCode && labelCode !== unitCode) {
+      return `${rowLabel} has mismatched unit code "${unitCode}" and label "${rawUnitLabel}". Re-select the unit so code and label match.`;
+    }
+
+    const variationUnits = unitsByVariation.get(option.variationId) ?? new Set<string>();
+    if (variationUnits.has(unitCode)) {
+      return `${rowLabel} duplicates ${unitCode.toUpperCase()}. Each variation can only use one row per order unit.`;
+    }
+    variationUnits.add(unitCode);
+    unitsByVariation.set(option.variationId, variationUnits);
+  }
+
+  return '';
+}
+
+async function syncInventoryLinksForVariationRows(input: {
+  productId: string;
+  variationRows: Array<{ id: string; product_id: string; sku_code: string }>;
+}) {
+  const rowsWithSku = input.variationRows
+    .map((row) => ({
+      variationId: String(row.id),
+      productId: String(row.product_id || input.productId),
+      skuCode: String(row.sku_code ?? '').trim(),
+    }))
+    .filter((row) => row.variationId && row.productId && row.skuCode);
+
+  if (rowsWithSku.length === 0) {
+    return;
+  }
+
+  const variationIds = rowsWithSku.map((row) => row.variationId);
+  const [{ data: inventoryRows, error: inventoryError }, { data: existingLinkRows, error: linkError }] =
+    await Promise.all([
+      supabase
+        .from('inventory_items')
+        .select('id, product_id, sku_code')
+        .eq('product_id', input.productId),
+      supabase
+        .from('inventory_item_variation_links')
+        .select('product_variation_id')
+        .in('product_variation_id', variationIds),
+    ]);
+
+  if (inventoryError) {
+    throw new Error(inventoryError.message);
+  }
+  if (linkError) {
+    throw new Error(linkError.message);
+  }
+
+  const inventoryItemBySku = new Map<string, string>();
+  ((inventoryRows ?? []) as Array<Record<string, unknown>>).forEach((row) => {
+    const skuCode = normalizeUnitText(row.sku_code);
+    const inventoryItemId = String(row.id ?? '');
+    const existingInventoryItemId = inventoryItemBySku.get(skuCode);
+    if (skuCode && inventoryItemId && existingInventoryItemId && existingInventoryItemId !== inventoryItemId) {
+      throw new Error(
+        `Multiple physical inventory items exist for SKU ${skuCode}. Resolve the inventory item mapping before saving product pricing rows.`,
+      );
+    }
+    if (skuCode && inventoryItemId && !existingInventoryItemId) {
+      inventoryItemBySku.set(skuCode, inventoryItemId);
+    }
+  });
+
+  const existingLinkedVariationIds = new Set(
+    ((existingLinkRows ?? []) as Array<Record<string, unknown>>)
+      .map((row) => String(row.product_variation_id ?? ''))
+      .filter(Boolean),
+  );
+
+  const rowsToInsert = rowsWithSku.flatMap((row) => {
+    if (existingLinkedVariationIds.has(row.variationId)) {
+      return [];
+    }
+    const inventoryItemId = inventoryItemBySku.get(normalizeUnitText(row.skuCode));
+    if (!inventoryItemId) {
+      throw new Error(
+        `Inventory item link missing for SKU ${row.skuCode}. Create or seed the physical inventory item before saving this pricing row.`,
+      );
+    }
+    return [
+      {
+        inventory_item_id: inventoryItemId,
+        product_variation_id: row.variationId,
+        product_id: row.productId,
+        sku_code: row.skuCode,
+      },
+    ];
+  });
+
+  if (rowsToInsert.length === 0) {
+    return;
+  }
+
+  const { error: insertLinkError } = await supabase
+    .from('inventory_item_variation_links')
+    .insert(rowsToInsert);
+  if (insertLinkError) {
+    throw new Error(insertLinkError.message);
+  }
+}
+
+function normalizeHistorySnapshot(snapshot: DiscountHistorySnapshot) {
+  return {
+    ...snapshot,
+    discount_id: null,
+    targeting: {
+      ...snapshot.targeting,
+      classes: snapshot.targeting.classes.map((classRow) => ({
+        class_name: normalizeSnapshotValue(classRow.class_name),
+        price_code: normalizeSnapshotValue(classRow.price_code),
+        branch_name: normalizeSnapshotValue(classRow.branch_name),
+        price_type: normalizeSnapshotValue(classRow.price_type),
+        order_unit_code: normalizeSnapshotValue(classRow.order_unit_code),
+        unit_condition: normalizeSnapshotValue(classRow.unit_condition) ?? 'any_unit',
+        min_order_quantity: normalizeSnapshotValue(classRow.min_order_quantity),
+        max_order_quantity: normalizeSnapshotValue(classRow.max_order_quantity),
+        min_base_quantity: normalizeSnapshotValue(classRow.min_base_quantity),
+        max_base_quantity: normalizeSnapshotValue(classRow.max_base_quantity),
+      })),
+    },
+  };
+}
+
+function snapshotsEqual(left: DiscountHistorySnapshot, right: DiscountHistorySnapshot) {
+  return JSON.stringify(normalizeHistorySnapshot(left)) === JSON.stringify(normalizeHistorySnapshot(right));
+}
+
+function getDiscountHistoryKey(snapshot: DiscountHistorySnapshot) {
+  return snapshot.discount_group || snapshot.discount_id || '';
+}
+
+function isFutureTimestamp(value: string | null | undefined) {
+  if (!value) return false;
+  const time = Date.parse(value);
+  return Number.isFinite(time) && time > Date.now();
+}
+
+function determineDiscountHistoryAction(
+  oldSnapshot: DiscountHistorySnapshot | null,
+  newSnapshot: DiscountHistorySnapshot,
+): DiscountHistoryAction | null {
+  if (!oldSnapshot) return 'created';
+  if (snapshotsEqual(oldSnapshot, newSnapshot)) return null;
+
+  const oldKind = oldSnapshot.discount_kind;
+  const newKind = newSnapshot.discount_kind;
+  if (oldKind !== newKind) return 'classified';
+
+  const oldStatus = String(oldSnapshot.status ?? '');
+  const newStatus = String(newSnapshot.status ?? '');
+  if (oldStatus === 'Active' && newStatus === 'Inactive') return 'deactivated';
+  if (newStatus === 'Active' && isFutureTimestamp(newSnapshot.starts_at)) return 'scheduled';
+  if (oldStatus === 'Inactive' && newStatus === 'Active') return 'activated';
+
+  return 'updated';
 }
 
 export default function AddProduct({
@@ -193,8 +489,8 @@ export default function AddProduct({
 
       const mappedAliases = ((aliasRows ?? []) as Array<Record<string, unknown>>)
         .map((row) => {
-          const alias = getStringValue(row, ['alias', 'alias_text', 'alias_name', 'name']);
-          const unitCode = getStringValue(row, ['unit_code', 'code']);
+          const alias = getStringValue(row, ['alias_code', 'alias', 'alias_text', 'alias_name', 'name']);
+          const unitCode = getStringValue(row, ['normalized_unit_code', 'unit_code', 'code']);
           if (!alias || !unitCode) {
             return null;
           }
@@ -280,14 +576,14 @@ export default function AddProduct({
         supabase
           .from('product_discounts')
           .select(
-            'id, discount_name, discount_type, discount_percent, amount, description, status, min_quantity, max_quantity, branch_name, price_type, price_code, calculation_method, apply_sequence, discount_group, applies_to, stackable, priority, starts_at, ends_at, product_discount_classes!left(id, variation_id, class_name, price_code, branch_name, price_type, unit_option_id, order_unit_code, unit_condition, min_order_quantity, max_order_quantity, min_base_quantity, max_base_quantity, unit_rule_label, unit_rule_notes)',
+            'id, discount_kind, discount_name, discount_type, discount_percent, amount, description, status, min_quantity, max_quantity, branch_name, price_type, price_code, calculation_method, apply_sequence, discount_group, applies_to, stackable, priority, starts_at, ends_at, product_discount_classes!left(id, variation_id, class_name, price_code, branch_name, price_type, unit_option_id, order_unit_code, unit_condition, min_order_quantity, max_order_quantity, min_base_quantity, max_base_quantity, unit_rule_label, unit_rule_notes)',
           )
           .eq('product_id', editProductId)
           .order('apply_sequence', { ascending: true }),
         supabase
           .from('product_surcharges')
           .select(
-            'id, linked_discount_id, surcharge_name, surcharge_type, surcharge_percent, amount, description, status, free_quantity, free_item_label, min_quantity, max_quantity, branch_name, price_type, price_code, priority, starts_at, ends_at, reward_target_type, reward_product_id, reward_variation_id, reward_unit_option_id, reward_unit_code, reward_repeat_mode, reward_every_quantity, product_surcharge_classes!left(id, linked_discount_class_id, variation_id, class_name, price_code, branch_name, price_type, unit_option_id, order_unit_code, unit_condition, min_order_quantity, max_order_quantity, min_base_quantity, max_base_quantity, reward_target_type, reward_product_id, reward_variation_id, reward_unit_option_id, reward_unit_code, reward_quantity, reward_label, reward_repeat_mode, reward_every_quantity, unit_rule_label, unit_rule_notes)',
+            'id, linked_discount_id, surcharge_name, surcharge_type, surcharge_percent, amount, description, status, free_quantity, free_item_label, qualification_scope, min_quantity, max_quantity, branch_name, price_type, price_code, priority, starts_at, ends_at, reward_target_type, reward_product_id, reward_variation_id, reward_unit_option_id, reward_unit_code, reward_repeat_mode, reward_every_quantity, product_surcharge_classes!left(id, linked_discount_class_id, variation_id, class_name, price_code, branch_name, price_type, unit_option_id, order_unit_code, unit_condition, min_order_quantity, max_order_quantity, min_base_quantity, max_base_quantity, reward_target_type, reward_product_id, reward_variation_id, reward_unit_option_id, reward_unit_code, reward_quantity, reward_label, reward_repeat_mode, reward_every_quantity, unit_rule_label, unit_rule_notes)',
           )
           .eq('product_id', editProductId)
           .order('priority', { ascending: true }),
@@ -478,10 +774,10 @@ export default function AddProduct({
               priceOverride: String(row.price_override ?? ''),
               packagingText: String(row.packaging_text ?? ''),
               minOrderQuantity: String(row.min_order_quantity ?? '1'),
-              orderIncrement: '1',
+              orderIncrement: String(row.order_increment ?? '1'),
               isDefault: Boolean(row.is_default ?? false),
               status: String(row.status ?? 'Active') === 'Inactive' ? 'Inactive' : 'Active',
-              isOrderable: String(row.status ?? 'Active') !== 'Inactive',
+              isOrderable: row.is_orderable !== false,
               sortOrder: String(row.sort_order ?? '0'),
               notes: String(row.notes ?? ''),
               weightValue: row.weight_value === null || row.weight_value === undefined ? '' : String(row.weight_value),
@@ -514,6 +810,7 @@ export default function AddProduct({
               discountRecordId: String(row.id),
               discountClassId: '',
               variationId: '',
+              discountKind: normalizeDiscountKind(row.discount_kind),
               discountName: String(row.discount_name ?? ''),
               discountType: (row.discount_type as DiscountItem['discountType']) ?? 'Percent',
               amount: String(
@@ -557,6 +854,7 @@ export default function AddProduct({
               promoRewardUnitOptionId: '',
               promoRewardRepeatMode: 'one_time',
               promoRewardEveryQuantity: '',
+              promoQualificationScope: 'line',
             },
           ];
         }
@@ -567,6 +865,7 @@ export default function AddProduct({
           variationId:
             variationIdToKey.get(String(classRow.variation_id ?? '')) ??
             String(classRow.variation_id ?? ''),
+          discountKind: normalizeDiscountKind(row.discount_kind),
           discountName: String(row.discount_name ?? ''),
           discountType: (row.discount_type as DiscountItem['discountType']) ?? 'Percent',
           amount: String(
@@ -622,6 +921,7 @@ export default function AddProduct({
           promoRewardUnitOptionId: '',
           promoRewardRepeatMode: 'one_time',
           promoRewardEveryQuantity: '',
+          promoQualificationScope: 'line',
         }));
       });
       const mappedSurcharges: SurchargeItem[] = (surchargeRes.data ?? []).flatMap((row: any) => {
@@ -675,6 +975,10 @@ export default function AddProduct({
                   ? 'every'
                   : 'one_time',
               rewardEveryQuantity: String(row.reward_every_quantity ?? ''),
+              qualificationScope:
+                String(row.qualification_scope ?? '').toLowerCase() === 'assorted_same_product'
+                  ? 'assorted_same_product'
+                  : 'line',
             },
           ];
         }
@@ -745,6 +1049,10 @@ export default function AddProduct({
                 ? 'every'
                 : 'one_time',
             rewardEveryQuantity: String(classRow.reward_every_quantity ?? row.reward_every_quantity ?? ''),
+            qualificationScope:
+              String(row.qualification_scope ?? '').toLowerCase() === 'assorted_same_product'
+                ? 'assorted_same_product'
+                : 'line',
           };
         });
       });
@@ -799,6 +1107,7 @@ export default function AddProduct({
           promoRewardUnitOptionId: matchedPromo.rewardUnitOptionId || '',
           promoRewardRepeatMode: matchedPromo.rewardRepeatMode || 'one_time',
           promoRewardEveryQuantity: matchedPromo.rewardEveryQuantity || '',
+          promoQualificationScope: matchedPromo.qualificationScope || 'line',
         };
       });
 
@@ -841,10 +1150,194 @@ export default function AddProduct({
     const parsed = Number(trimmed.replace(/,/g, ''));
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
   };
+  const normalizeSnapshotNumber = (value: unknown, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
   const normalizeWeightUnit = (value: string): VariationUnitOptionItem['weightUnit'] =>
     ['mg', 'g', 'kg', 'lb'].includes(value) ? (value as VariationUnitOptionItem['weightUnit']) : 'kg';
   const normalizeDimensionUnit = (value: string): VariationUnitOptionItem['dimensionUnit'] =>
     ['mm', 'cm', 'm', 'in'].includes(value) ? (value as VariationUnitOptionItem['dimensionUnit']) : 'cm';
+
+  function buildPersistedDiscountSnapshot(row: Record<string, any>): DiscountHistorySnapshot {
+    const classes = Array.isArray(row.product_discount_classes)
+      ? row.product_discount_classes
+      : [];
+    return {
+      discount_id: row.id ? String(row.id) : null,
+      product_id: String(row.product_id ?? ''),
+      discount_group: row.discount_group ? String(row.discount_group) : null,
+      discount_name: String(row.discount_name ?? ''),
+      discount_kind: normalizeDiscountKind(row.discount_kind) || null,
+      discount_type: String(row.discount_type ?? ''),
+      discount_percent:
+        row.discount_percent === null || row.discount_percent === undefined
+          ? null
+          : normalizeSnapshotNumber(row.discount_percent),
+      amount:
+        row.amount === null || row.amount === undefined
+          ? null
+          : normalizeSnapshotNumber(row.amount),
+      status: String(row.status ?? 'Active'),
+      starts_at: row.starts_at ? String(row.starts_at) : null,
+      ends_at: row.ends_at ? String(row.ends_at) : null,
+      priority: normalizeSnapshotNumber(row.priority),
+      stackable: Boolean(row.stackable),
+      calculation_method: row.calculation_method ? String(row.calculation_method) : null,
+      apply_sequence: normalizeSnapshotNumber(row.apply_sequence, normalizeSnapshotNumber(row.priority)),
+      applies_to: row.applies_to ? String(row.applies_to) : null,
+      targeting: {
+        min_quantity: normalizeSnapshotNumber(row.min_quantity, 1),
+        max_quantity:
+          row.max_quantity === null || row.max_quantity === undefined
+            ? null
+            : normalizeSnapshotNumber(row.max_quantity),
+        branch_name: row.branch_name ? String(row.branch_name) : null,
+        price_type: row.price_type ? String(row.price_type) : null,
+        price_code: row.price_code ? String(row.price_code) : null,
+        classes: classes.map((classRow: Record<string, any>) => ({
+          variation_id: normalizeSnapshotValue(classRow.variation_id),
+          class_name: normalizeSnapshotValue(classRow.class_name),
+          price_code: normalizeSnapshotValue(classRow.price_code),
+          branch_name: normalizeSnapshotValue(classRow.branch_name),
+          price_type: normalizeSnapshotValue(classRow.price_type),
+          unit_option_id: normalizeSnapshotValue(classRow.unit_option_id),
+          order_unit_code: normalizeSnapshotValue(classRow.order_unit_code),
+          unit_condition: normalizeSnapshotValue(classRow.unit_condition) ?? 'any_unit',
+          min_order_quantity: normalizeSnapshotNumber(classRow.min_order_quantity, 1),
+          max_order_quantity:
+            classRow.max_order_quantity === null || classRow.max_order_quantity === undefined
+              ? null
+              : normalizeSnapshotNumber(classRow.max_order_quantity),
+          min_base_quantity:
+            classRow.min_base_quantity === null || classRow.min_base_quantity === undefined
+              ? null
+              : normalizeSnapshotNumber(classRow.min_base_quantity),
+          max_base_quantity:
+            classRow.max_base_quantity === null || classRow.max_base_quantity === undefined
+              ? null
+              : normalizeSnapshotNumber(classRow.max_base_quantity),
+        })),
+      },
+    };
+  }
+
+  function buildDiscountSnapshotFromSource(input: {
+    productId: string;
+    source: DiscountItem;
+    discountId: string | null;
+    classRows: Array<Record<string, unknown>>;
+  }): DiscountHistorySnapshot {
+    return {
+      discount_id: input.discountId,
+      product_id: input.productId,
+      discount_group: input.source.discountGroup || null,
+      discount_name: input.source.discountName,
+      discount_kind: input.source.discountKind || null,
+      discount_type: input.source.discountType,
+      discount_percent: input.source.discountType === 'Percent' ? parseNumber(input.source.amount) : null,
+      amount: input.source.discountType === 'Amount' ? parseNumber(input.source.amount) : null,
+      status: input.source.status || 'Active',
+      starts_at: input.source.startsAt || null,
+      ends_at: input.source.endsAt || null,
+      priority: parseInt(input.source.priority || '0', 10) || 0,
+      stackable: input.source.stackable,
+      calculation_method: normalizeCalculationMethod(input.source.calculationMethod),
+      apply_sequence: Math.max(1, parseInt(input.source.applySequence || '1', 10)),
+      applies_to: input.source.appliesTo || null,
+      targeting: {
+        min_quantity: Math.max(1, parseInt(input.source.minQuantity || '1', 10)),
+        max_quantity: input.source.maxQuantity ? parseInt(input.source.maxQuantity, 10) : null,
+        branch_name: input.source.branchName || null,
+        price_type: input.source.priceType || null,
+        price_code: input.source.priceCode || null,
+        classes: input.classRows.map((row) => ({ ...row })),
+      },
+    };
+  }
+
+  async function loadExistingDiscountHistorySnapshots(productId: string) {
+    const { data, error } = await supabase
+      .from('product_discounts')
+      .select(
+        'id, product_id, discount_kind, discount_name, discount_type, discount_percent, amount, status, min_quantity, max_quantity, branch_name, price_type, price_code, priority, stackable, calculation_method, apply_sequence, discount_group, applies_to, starts_at, ends_at, product_discount_classes!left(variation_id, class_name, price_code, branch_name, price_type, unit_option_id, order_unit_code, unit_condition, min_order_quantity, max_order_quantity, min_base_quantity, max_base_quantity)',
+      )
+      .eq('product_id', productId);
+
+    if (error) {
+      console.warn('[discount-history] Unable to load existing discount snapshots.', error);
+      return new Map<string, DiscountHistorySnapshot>();
+    }
+
+    return new Map(
+      ((data ?? []) as Array<Record<string, any>>).map((row) => {
+        const snapshot = buildPersistedDiscountSnapshot(row);
+        return [getDiscountHistoryKey(snapshot), snapshot] as const;
+      }),
+    );
+  }
+
+  async function resolveDiscountHistoryActor(): Promise<DiscountHistoryActor> {
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const authUserId = userData.user?.id;
+      if (!authUserId) {
+        return { changed_by: null, changed_by_name: null };
+      }
+
+      const { data } = await supabase
+        .from('admin_accounts')
+        .select('id, full_name, email')
+        .eq('auth_user_id', authUserId)
+        .maybeSingle();
+
+      if (!data) {
+        return { changed_by: null, changed_by_name: null };
+      }
+
+      return {
+        changed_by: String(data.id ?? '') || null,
+        changed_by_name:
+          String(data.full_name ?? '').trim() ||
+          String(data.email ?? '').trim() ||
+          null,
+      };
+    } catch (error) {
+      console.warn('[discount-history] Unable to resolve admin actor.', error);
+      return { changed_by: null, changed_by_name: null };
+    }
+  }
+
+  async function writeDiscountHistoryRows(input: {
+    productId: string;
+    oldSnapshots: Map<string, DiscountHistorySnapshot>;
+    newSnapshots: Array<{ compareKey: string; snapshot: DiscountHistorySnapshot }>;
+  }) {
+    const actor = await resolveDiscountHistoryActor();
+    const rows = input.newSnapshots.flatMap(({ compareKey, snapshot }) => {
+      const oldSnapshot = input.oldSnapshots.get(compareKey) ?? null;
+      const actionType = determineDiscountHistoryAction(oldSnapshot, snapshot);
+      if (!actionType) return [];
+      return [{
+        discount_id: snapshot.discount_id,
+        product_id: input.productId,
+        discount_group: snapshot.discount_group,
+        action_type: actionType,
+        old_snapshot: oldSnapshot,
+        new_snapshot: snapshot,
+        changed_by: actor.changed_by,
+        changed_by_name: actor.changed_by_name,
+        reason: null,
+      }];
+    });
+
+    if (rows.length === 0) return;
+
+    const { error } = await supabase.from('product_discount_history').insert(rows);
+    if (error) {
+      console.warn('[discount-history] Failed to insert discount history rows.', error);
+    }
+  }
 
   async function ensureProductRecord() {
     let productId = draftProductId ?? editProductId ?? null;
@@ -1080,6 +1573,18 @@ export default function AddProduct({
       return;
     }
 
+    const unitValidationError = getVariationUnitValidationError(
+      variationUnitOptions,
+      variations,
+      unitDefinitions,
+      unitAliases,
+    );
+    if (unitValidationError) {
+      setSubmitError(unitValidationError);
+      setSaveNotice({ type: 'error', message: unitValidationError });
+      return;
+    }
+
     setIsSaving(true);
     setSubmitError('');
     setSaveNotice({ type: 'info', message: 'Saving product data...' });
@@ -1090,21 +1595,32 @@ export default function AddProduct({
       if (!productId) throw new Error('Product reference missing.');
 
       const persistedMediaItems = await persistMediaForProduct(productId);
+      const oldDiscountSnapshots = await loadExistingDiscountHistorySnapshots(productId);
 
-      const { error: variationMediaDeleteError } = await supabase
-        .from('product_media')
-        .delete()
-        .eq('product_id', productId)
-        .not('variation_id', 'is', null);
-      if (variationMediaDeleteError) throw new Error(variationMediaDeleteError.message);
-
-      await Promise.all([
-        supabase.from('product_variations').delete().eq('product_id', productId),
-        supabase.from('product_discounts').delete().eq('product_id', productId),
-        supabase.from('product_surcharges').delete().eq('product_id', productId),
+      const [
+        { data: existingVariationRows, error: existingVariationError },
+        { data: existingDiscountRows, error: existingDiscountError },
+        { data: existingSurchargeRows, error: existingSurchargeError },
+      ] = await Promise.all([
+        supabase
+          .from('product_variations')
+          .select('id, sku_code, price_code')
+          .eq('product_id', productId),
+        supabase
+          .from('product_discounts')
+          .select('id')
+          .eq('product_id', productId),
+        supabase
+          .from('product_surcharges')
+          .select('id')
+          .eq('product_id', productId),
       ]);
+      if (existingVariationError) throw new Error(existingVariationError.message);
+      if (existingDiscountError) throw new Error(existingDiscountError.message);
+      if (existingSurchargeError) throw new Error(existingSurchargeError.message);
 
       const variationRows = variations.map((item, index) => ({
+        id: getStableUuid(item.id),
         product_id: productId,
         branch_name: PRICE_CODE_META[item.priceCode]?.branchName ?? item.branchName,
         price_type: PRICE_CODE_META[item.priceCode]?.priceType ?? item.priceType,
@@ -1119,9 +1635,57 @@ export default function AddProduct({
       }));
       const { data: insertedVariationRows, error: variationError } = await supabase
         .from('product_variations')
-        .insert(variationRows)
+        .upsert(variationRows, { onConflict: 'id' })
         .select('id, variation_name, class_name, sku_code, price_code');
       if (variationError) throw new Error(variationError.message);
+
+      await syncInventoryLinksForVariationRows({
+        productId,
+        variationRows,
+      });
+
+      const submittedVariationIds = new Set(variationRows.map((row) => String(row.id)));
+      const removedVariationIds = ((existingVariationRows ?? []) as Array<Record<string, unknown>>)
+        .map((row) => String(row.id ?? ''))
+        .filter((id) => id && !submittedVariationIds.has(id));
+
+      if (removedVariationIds.length > 0) {
+        const { data: referencedVariationRows, error: referencedVariationError } = await supabase
+          .from('order_items')
+          .select('variation_id')
+          .in('variation_id', removedVariationIds);
+        if (referencedVariationError) throw new Error(referencedVariationError.message);
+
+        const referencedVariationIds = new Set(
+          ((referencedVariationRows ?? []) as Array<Record<string, unknown>>)
+            .map((row) => String(row.variation_id ?? ''))
+            .filter(Boolean),
+        );
+        const deletableVariationIds = removedVariationIds.filter((id) => !referencedVariationIds.has(id));
+        const retiredVariationIds = removedVariationIds.filter((id) => referencedVariationIds.has(id));
+
+        if (retiredVariationIds.length > 0) {
+          const { error: retireVariationError } = await supabase
+            .from('product_variations')
+            .update({ availability: 'Unavailable' })
+            .in('id', retiredVariationIds);
+          if (retireVariationError) throw new Error(retireVariationError.message);
+        }
+
+        if (deletableVariationIds.length > 0) {
+          const { error: deleteInventoryLinksError } = await supabase
+            .from('inventory_item_variation_links')
+            .delete()
+            .in('product_variation_id', deletableVariationIds);
+          if (deleteInventoryLinksError) throw new Error(deleteInventoryLinksError.message);
+
+          const { error: deleteVariationError } = await supabase
+            .from('product_variations')
+            .delete()
+            .in('id', deletableVariationIds);
+          if (deleteVariationError) throw new Error(deleteVariationError.message);
+        }
+      }
 
       const variationLookup = new Map<string, string>();
       const variationClassLookup = new Map<string, string>();
@@ -1148,6 +1712,13 @@ export default function AddProduct({
           .filter((item) => item.isExisting && item.type === 'image' && !item.variationId)
           .map((item) => [item.id, item] as const),
       );
+      const { error: variationMediaDeleteError } = await supabase
+        .from('product_media')
+        .delete()
+        .eq('product_id', productId)
+        .not('variation_id', 'is', null);
+      if (variationMediaDeleteError) throw new Error(variationMediaDeleteError.message);
+
       const variationMediaRows = Object.entries(variationPreviewMediaByCardId).flatMap(
         ([cardKey, mediaId]) => {
           const sourceMedia = productImageMediaById.get(mediaId);
@@ -1236,14 +1807,16 @@ export default function AddProduct({
             id: item.id || crypto.randomUUID(),
             variationId: variationDbId,
             unitCode: item.unitCode.trim().toLowerCase(),
-            unitLabel: item.unitLabel.trim() || item.unitCode.trim().toLowerCase(),
+            unitLabel:
+              item.unitLabel.trim() ||
+              getCanonicalUnitLabel(item.unitCode, unitDefinitions),
             baseUnitCode: item.baseUnitCode.trim().toLowerCase() || 'pc',
             quantityInBaseUnit: item.quantityInBaseUnit || '1',
             minOrderQuantity: item.minOrderQuantity || '1',
-            orderIncrement: '1',
+            orderIncrement: item.orderIncrement || '1',
             sortOrder: item.sortOrder || String(index),
             isDefault: item.isDefault && !hasDefaultAlready,
-            isOrderable: item.status !== 'Inactive',
+            isOrderable: item.isOrderable,
             weightValue: item.weightValue || '',
             weightUnit: normalizeWeightUnit(item.weightUnit),
             lengthValue: item.lengthValue || '',
@@ -1261,24 +1834,43 @@ export default function AddProduct({
       const localUnitOptionLookup = new Map(
         variationUnitOptions.map((item) => [item.id, item] as const),
       );
-      const uuidPattern =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      const isUuid = (value: string | null | undefined) =>
-        Boolean(value && uuidPattern.test(String(value).trim()));
 
       if (normalizedUnitOptions.length > 0) {
+        const packagingSummaryByVariationId = new Map<string, string>();
+        const normalizedUnitOptionsByVariation = normalizedUnitOptions.reduce<Map<string, VariationUnitOptionItem[]>>(
+          (groups, item) => {
+            groups.set(item.variationId, [...(groups.get(item.variationId) ?? []), item]);
+            return groups;
+          },
+          new Map(),
+        );
+        normalizedUnitOptionsByVariation.forEach((items, variationId) => {
+          const baseUnitCode =
+            items.find((item) => item.isDefault)?.baseUnitCode ??
+            items[0]?.baseUnitCode ??
+            'pc';
+          packagingSummaryByVariationId.set(
+            variationId,
+            generatePackagingSummary(items, baseUnitCode).summary,
+          );
+        });
+
+        const persistedUnitOptionIdBySourceId = new Map(
+          normalizedUnitOptions.map((item) => [item.id, getStableUuid(item.id)] as const),
+        );
         const unitOptionRows = normalizedUnitOptions.map((item, index) => ({
+          id: persistedUnitOptionIdBySourceId.get(item.id),
           variation_id: item.variationId,
           unit_code: item.unitCode,
           unit_label: item.unitLabel,
           base_unit_code: item.baseUnitCode,
           quantity_in_base_unit: Number(item.quantityInBaseUnit || '1') || 1,
           price_override: item.priceOverride ? parseNumber(item.priceOverride) : null,
-          packaging_text: item.packagingText || null,
+          packaging_text: packagingSummaryByVariationId.get(item.variationId) || null,
           min_order_quantity: Number(item.minOrderQuantity || '1') || 1,
-          order_increment: 1,
+          order_increment: Number(item.orderIncrement || '1') || 1,
           is_default: item.isDefault,
-          is_orderable: item.status !== 'Inactive',
+          is_orderable: item.isOrderable,
           status: item.status,
           sort_order: Number(item.sortOrder || String(index)) || index,
           notes: item.notes || null,
@@ -1291,21 +1883,66 @@ export default function AddProduct({
           shipping_notes: item.shippingNotes || null,
         }));
 
-        const { data: insertedUnitOptionRows, error: unitOptionInsertError } = await supabase
+        const { error: unitOptionInsertError } = await supabase
           .from('product_variation_unit_options')
-          .insert(unitOptionRows)
+          .upsert(unitOptionRows, { onConflict: 'id' })
           .select('id, variation_id, unit_code, sort_order');
 
         if (unitOptionInsertError) {
           throw new Error(unitOptionInsertError.message);
         }
 
-        normalizedUnitOptions.forEach((item, index) => {
-          const inserted = insertedUnitOptionRows?.[index];
-          if (inserted?.id) {
-            unitOptionLookup.set(item.id, String(inserted.id));
-          }
+        normalizedUnitOptions.forEach((item) => {
+          const persistedId = persistedUnitOptionIdBySourceId.get(item.id);
+          if (!persistedId) return;
+          unitOptionLookup.set(item.id, persistedId);
         });
+
+        const submittedUnitOptionIds = new Set(unitOptionRows.map((row) => String(row.id)));
+        const submittedVariationIdsForUnits = Array.from(
+          new Set(unitOptionRows.map((row) => String(row.variation_id))),
+        );
+        const { data: existingUnitRows, error: existingUnitError } = await supabase
+          .from('product_variation_unit_options')
+          .select('id')
+          .in('variation_id', submittedVariationIdsForUnits);
+        if (existingUnitError) throw new Error(existingUnitError.message);
+
+        const removedUnitOptionIds = ((existingUnitRows ?? []) as Array<Record<string, unknown>>)
+          .map((row) => String(row.id ?? ''))
+          .filter((id) => id && !submittedUnitOptionIds.has(id));
+
+        if (removedUnitOptionIds.length > 0) {
+          const { data: referencedUnitRows, error: referencedUnitError } = await supabase
+            .from('order_items')
+            .select('unit_option_id')
+            .in('unit_option_id', removedUnitOptionIds);
+          if (referencedUnitError) throw new Error(referencedUnitError.message);
+
+          const referencedUnitOptionIds = new Set(
+            ((referencedUnitRows ?? []) as Array<Record<string, unknown>>)
+              .map((row) => String(row.unit_option_id ?? ''))
+              .filter(Boolean),
+          );
+          const deletableUnitOptionIds = removedUnitOptionIds.filter((id) => !referencedUnitOptionIds.has(id));
+          const retiredUnitOptionIds = removedUnitOptionIds.filter((id) => referencedUnitOptionIds.has(id));
+
+          if (retiredUnitOptionIds.length > 0) {
+            const { error: retireUnitError } = await supabase
+              .from('product_variation_unit_options')
+              .update({ status: 'Inactive', is_orderable: false })
+              .in('id', retiredUnitOptionIds);
+            if (retireUnitError) throw new Error(retireUnitError.message);
+          }
+
+          if (deletableUnitOptionIds.length > 0) {
+            const { error: deleteUnitError } = await supabase
+              .from('product_variation_unit_options')
+              .delete()
+              .in('id', deletableUnitOptionIds);
+            if (deleteUnitError) throw new Error(deleteUnitError.message);
+          }
+        }
       }
 
       const resolveRewardSelection = (item: {
@@ -1345,10 +1982,26 @@ export default function AddProduct({
 
       const discountIdBySourceId = new Map<string, string>();
       const discountClassIdBySourceId = new Map<string, string>();
+      const newDiscountHistorySnapshots: Array<{
+        compareKey: string;
+        snapshot: DiscountHistorySnapshot;
+      }> = [];
 
       if (discounts.length > 0) {
-        const discountRows = discounts.map((item, index) => ({
+        const discountEntries = Array.from(
+          discounts.reduce<Map<string, { source: DiscountItem; index: number }>>((entries, item, index) => {
+            const persistedId = getStableUuid(item.discountRecordId || item.id);
+            if (!entries.has(persistedId)) {
+              entries.set(persistedId, { source: item, index });
+            }
+            discountIdBySourceId.set(item.id, persistedId);
+            return entries;
+          }, new Map()),
+        );
+        const discountRows = discountEntries.map(([id, { source: item, index }]) => ({
+          id,
           product_id: productId,
+          discount_kind: item.discountKind || null,
           discount_name: item.discountName,
           discount_type: item.discountType,
           discount_percent:
@@ -1370,26 +2023,27 @@ export default function AddProduct({
           starts_at: item.startsAt || null,
           ends_at: item.endsAt || null,
         }));
-        const { data: insertedDiscounts, error: discountInsertError } = await supabase
+        const { error: discountInsertError } = await supabase
           .from('product_discounts')
-          .insert(discountRows)
+          .upsert(discountRows, { onConflict: 'id' })
           .select('id');
         if (discountInsertError) throw new Error(discountInsertError.message);
 
-        (insertedDiscounts ?? []).forEach((insertedRow: any, index: number) => {
-          const source = discounts[index];
-          if (source) {
-            discountIdBySourceId.set(source.id, String(insertedRow.id));
-          }
-        });
+        const submittedDiscountIds = new Set(discountRows.map((row) => String(row.id)));
+        const removedDiscountIds = ((existingDiscountRows ?? []) as Array<Record<string, unknown>>)
+          .map((row) => String(row.id ?? ''))
+          .filter((id) => id && !submittedDiscountIds.has(id));
+        const submittedDiscountIdList = Array.from(submittedDiscountIds);
+        if (submittedDiscountIdList.length > 0) {
+          const { error: deleteDiscountClassError } = await supabase
+            .from('product_discount_classes')
+            .delete()
+            .in('discount_id', submittedDiscountIdList);
+          if (deleteDiscountClassError) throw new Error(deleteDiscountClassError.message);
+        }
 
-        const discountClassRows = (insertedDiscounts ?? []).flatMap(
-          (insertedRow: any, index: number) => {
-            const source = discounts[index];
-            if (!source) return [];
-            return [
-              {
-                discount_id: String(insertedRow.id),
+        const discountClassRows = discounts.map((source) => ({
+                discount_id: discountIdBySourceId.get(source.id) ?? getStableUuid(source.discountRecordId || source.id),
                 variation_id: resolveVariationDbId(source.variationId, source.priceCode),
                 class_name: resolveVariationClassName(
                   source.variationId,
@@ -1423,10 +2077,7 @@ export default function AddProduct({
                   : null,
                 unit_rule_label: null,
                 unit_rule_notes: null,
-              },
-            ];
-          },
-        );
+              }));
         if (discountClassRows.length > 0) {
           const { data: insertedDiscountClassRows, error: classInsertError } = await supabase
             .from('product_discount_classes')
@@ -1439,6 +2090,87 @@ export default function AddProduct({
               discountClassIdBySourceId.set(source.id, String(insertedRow.id));
             }
           });
+        }
+
+        if (removedDiscountIds.length > 0) {
+          const { data: referencedDiscountRows, error: referencedDiscountError } = await supabase
+            .from('order_items')
+            .select('discount_id')
+            .in('discount_id', removedDiscountIds);
+          if (referencedDiscountError) throw new Error(referencedDiscountError.message);
+
+          const referencedDiscountIds = new Set(
+            ((referencedDiscountRows ?? []) as Array<Record<string, unknown>>)
+              .map((row) => String(row.discount_id ?? ''))
+              .filter(Boolean),
+          );
+          const deletableDiscountIds = removedDiscountIds.filter((id) => !referencedDiscountIds.has(id));
+          const retiredDiscountIds = removedDiscountIds.filter((id) => referencedDiscountIds.has(id));
+
+          if (retiredDiscountIds.length > 0) {
+            const { error: retireDiscountError } = await supabase
+              .from('product_discounts')
+              .update({ status: 'Inactive' })
+              .in('id', retiredDiscountIds);
+            if (retireDiscountError) throw new Error(retireDiscountError.message);
+          }
+
+          if (deletableDiscountIds.length > 0) {
+            const { error: deleteDiscountError } = await supabase
+              .from('product_discounts')
+              .delete()
+              .in('id', deletableDiscountIds);
+            if (deleteDiscountError) throw new Error(deleteDiscountError.message);
+          }
+        }
+
+        discountEntries.forEach(([discountId, { source }]) => {
+          const classRowsForSource = discountClassRows.filter((row) => row.discount_id === discountId);
+          newDiscountHistorySnapshots.push({
+            compareKey: source.discountGroup || source.discountRecordId || source.id,
+            snapshot: buildDiscountSnapshotFromSource({
+              productId,
+              source,
+              discountId,
+              classRows: classRowsForSource,
+            }),
+          });
+        });
+      } else {
+        const removedDiscountIds = ((existingDiscountRows ?? []) as Array<Record<string, unknown>>)
+          .map((row) => String(row.id ?? ''))
+          .filter(Boolean);
+
+        if (removedDiscountIds.length > 0) {
+          const { data: referencedDiscountRows, error: referencedDiscountError } = await supabase
+            .from('order_items')
+            .select('discount_id')
+            .in('discount_id', removedDiscountIds);
+          if (referencedDiscountError) throw new Error(referencedDiscountError.message);
+
+          const referencedDiscountIds = new Set(
+            ((referencedDiscountRows ?? []) as Array<Record<string, unknown>>)
+              .map((row) => String(row.discount_id ?? ''))
+              .filter(Boolean),
+          );
+          const deletableDiscountIds = removedDiscountIds.filter((id) => !referencedDiscountIds.has(id));
+          const retiredDiscountIds = removedDiscountIds.filter((id) => referencedDiscountIds.has(id));
+
+          if (retiredDiscountIds.length > 0) {
+            const { error: retireDiscountError } = await supabase
+              .from('product_discounts')
+              .update({ status: 'Inactive' })
+              .in('id', retiredDiscountIds);
+            if (retireDiscountError) throw new Error(retireDiscountError.message);
+          }
+
+          if (deletableDiscountIds.length > 0) {
+            const { error: deleteDiscountError } = await supabase
+              .from('product_discounts')
+              .delete()
+              .in('id', deletableDiscountIds);
+            if (deleteDiscountError) throw new Error(deleteDiscountError.message);
+          }
         }
       }
 
@@ -1495,6 +2227,7 @@ export default function AddProduct({
             item.promoRewardRepeatMode === 'every'
               ? item.promoRewardEveryQuantity || item.minOrderQuantity || '1'
               : '',
+          qualificationScope: item.promoQualificationScope || 'line',
         }));
 
       const allSurchargesToSave = [...surcharges, ...derivedPromoSurcharges];
@@ -1526,8 +2259,38 @@ export default function AddProduct({
         };
       });
 
+      const persistedSurchargeIdBySourceId = resolvedSurchargesToSave.reduce<Map<string, string>>(
+        (ids, item) => {
+          const parentId =
+            getSyntheticParentUuid(item.id) ||
+            (isUuid(item.linkedDiscountId) && String(item.id).startsWith('promo-')
+              ? item.linkedDiscountId
+              : item.id);
+          ids.set(item.id, getStableUuid(parentId));
+          return ids;
+        },
+        new Map(),
+      );
+      const submittedSurchargeIds = new Set(Array.from(persistedSurchargeIdBySourceId.values()));
+      const removedSurchargeIds = ((existingSurchargeRows ?? []) as Array<Record<string, unknown>>)
+        .map((row) => String(row.id ?? ''))
+        .filter((id) => id && !submittedSurchargeIds.has(id));
+
       if (resolvedSurchargesToSave.length > 0) {
-        const surchargeRows = resolvedSurchargesToSave.map((item, index) => ({
+        const surchargeEntries = Array.from(
+          resolvedSurchargesToSave.reduce<Map<string, { source: SurchargeItem; index: number }>>(
+            (entries, item, index) => {
+              const persistedId = persistedSurchargeIdBySourceId.get(item.id) ?? getStableUuid(item.id);
+              if (!entries.has(persistedId)) {
+                entries.set(persistedId, { source: item, index });
+              }
+              return entries;
+            },
+            new Map(),
+          ),
+        );
+        const surchargeRows = surchargeEntries.map(([id, { source: item, index }]) => ({
+          id,
           product_id: productId,
           linked_discount_id: item.linkedDiscountId || null,
           surcharge_name: item.surchargeName,
@@ -1539,6 +2302,10 @@ export default function AddProduct({
           status: item.status || 'Active',
           free_quantity: parseInt(item.freeQuantity || '0', 10) || 0,
           free_item_label: item.rewardLabel || null,
+          qualification_scope:
+            item.surchargeType === 'Freebie' || item.surchargeType === 'BonusQty'
+              ? item.qualificationScope || 'line'
+              : 'line',
           reward_target_type: item.rewardTargetType || 'same_item',
           reward_product_id: item.rewardProductId || null,
           reward_variation_id: item.rewardVariationId || null,
@@ -1558,19 +2325,23 @@ export default function AddProduct({
           starts_at: item.startsAt || null,
           ends_at: item.endsAt || null,
         }));
-        const { data: insertedSurcharges, error: surchargeInsertError } = await supabase
+        const { error: surchargeInsertError } = await supabase
           .from('product_surcharges')
-          .insert(surchargeRows)
+          .upsert(surchargeRows, { onConflict: 'id' })
           .select('id');
         if (surchargeInsertError) throw new Error(surchargeInsertError.message);
 
-        const classRows = (insertedSurcharges ?? []).flatMap(
-          (insertedRow: any, index: number) => {
-            const source = resolvedSurchargesToSave[index];
-            if (!source) return [];
-            return [
-              {
-                surcharge_id: String(insertedRow.id),
+        const submittedSurchargeIdList = Array.from(submittedSurchargeIds);
+        if (submittedSurchargeIdList.length > 0) {
+          const { error: deleteSurchargeClassError } = await supabase
+            .from('product_surcharge_classes')
+            .delete()
+            .in('surcharge_id', submittedSurchargeIdList);
+          if (deleteSurchargeClassError) throw new Error(deleteSurchargeClassError.message);
+        }
+
+        const classRows = resolvedSurchargesToSave.map((source) => ({
+                surcharge_id: persistedSurchargeIdBySourceId.get(source.id) ?? getStableUuid(source.id),
                 linked_discount_class_id: source.linkedDiscountClassId || null,
                 variation_id: resolveVariationDbId(source.variationId, source.priceCode),
                 class_name: resolveVariationClassName(
@@ -1619,10 +2390,7 @@ export default function AddProduct({
                     : null,
                 unit_rule_label: null,
                 unit_rule_notes: null,
-              },
-            ];
-          },
-        );
+              }));
 
         if (classRows.length > 0) {
           const { error: surchargeClassInsertError } = await supabase
@@ -1631,6 +2399,44 @@ export default function AddProduct({
           if (surchargeClassInsertError) throw new Error(surchargeClassInsertError.message);
         }
       }
+
+      if (removedSurchargeIds.length > 0) {
+        const { data: referencedSurchargeRows, error: referencedSurchargeError } = await supabase
+          .from('order_items')
+          .select('promo_id')
+          .in('promo_id', removedSurchargeIds);
+        if (referencedSurchargeError) throw new Error(referencedSurchargeError.message);
+
+        const referencedSurchargeIds = new Set(
+          ((referencedSurchargeRows ?? []) as Array<Record<string, unknown>>)
+            .map((row) => String(row.promo_id ?? ''))
+            .filter(Boolean),
+        );
+        const deletableSurchargeIds = removedSurchargeIds.filter((id) => !referencedSurchargeIds.has(id));
+        const retiredSurchargeIds = removedSurchargeIds.filter((id) => referencedSurchargeIds.has(id));
+
+        if (retiredSurchargeIds.length > 0) {
+          const { error: retireSurchargeError } = await supabase
+            .from('product_surcharges')
+            .update({ status: 'Inactive' })
+            .in('id', retiredSurchargeIds);
+          if (retireSurchargeError) throw new Error(retireSurchargeError.message);
+        }
+
+        if (deletableSurchargeIds.length > 0) {
+          const { error: deleteSurchargeError } = await supabase
+            .from('product_surcharges')
+            .delete()
+            .in('id', deletableSurchargeIds);
+          if (deleteSurchargeError) throw new Error(deleteSurchargeError.message);
+        }
+      }
+
+      await writeDiscountHistoryRows({
+        productId,
+        oldSnapshots: oldDiscountSnapshots,
+        newSnapshots: newDiscountHistorySnapshots,
+      });
 
       const { data: verifyProduct, error: verifyError } = await supabase
         .from('products')

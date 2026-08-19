@@ -14,6 +14,7 @@ const emptyDiscount: DiscountItem = {
   discountRecordId: '',
   discountClassId: '',
   variationId: '',
+  discountKind: '',
   discountName: '',
   discountType: 'Percent',
   amount: '',
@@ -28,7 +29,7 @@ const emptyDiscount: DiscountItem = {
   appliesTo: 'UnitPrice',
   stackable: true,
   description: '',
-  status: 'Active',
+  status: 'Inactive',
   priority: '0',
   startsAt: '',
   endsAt: '',
@@ -55,6 +56,7 @@ const emptyDiscount: DiscountItem = {
   promoRewardUnitOptionId: '',
   promoRewardRepeatMode: 'one_time',
   promoRewardEveryQuantity: '',
+  promoQualificationScope: 'line',
 };
 
 export default function Discount({ onBack, onNext, items, onChange }: DiscountProps) {

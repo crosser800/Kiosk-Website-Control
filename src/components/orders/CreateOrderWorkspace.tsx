@@ -8,7 +8,13 @@ import {
 } from '../../services/adminOrders';
 import { loadAgentPriceAccess } from '../../services/agentPriceAccess';
 import { loadOrderCatalog, loadOrderPriceClasses, type OrderCatalogPriceClass, type OrderCatalogProduct } from '../../services/orderCatalog';
-import type { OrderPriceCode } from '../../services/orderPricing';
+import {
+  normalizeUnitCode,
+  qualifyAssortedPromotions,
+  type AssortedPromotionResult,
+  type OrderCatalogUnitOption,
+  type OrderPriceCode,
+} from '../../services/orderPricing';
 import OrderItemConfigurator from './OrderItemConfigurator';
 import SearchableSelect from './SearchableSelect';
 import type {
@@ -68,6 +74,19 @@ type AgentAccessState = {
   error: string;
 };
 
+type AssortedRewardSelection = {
+  rewardVariationId: string;
+  rewardUnitOptionId: string;
+};
+
+type SelectedAssortedReward = {
+  result: AssortedPromotionResult;
+  rewardVariationId: string;
+  rewardVariationName: string;
+  rewardUnitOption: OrderCatalogUnitOption;
+  carrierLineId: string;
+};
+
 const PRICE_CODE_FALLBACK_ORDER: OrderPriceCode[] = ['R1', 'R2', 'W1', 'W2', 'SP', 'CP'];
 
 function formatCurrency(value: number) {
@@ -87,6 +106,10 @@ function formatAgentLabel(agent: CreateOrderAgent) {
   return [agent.fullName || 'Unnamed Agent', agent.agentCode].filter(Boolean).join(' - ');
 }
 
+function getClientDisplayName(client: Pick<CreateOrderClient, 'companyName' | 'clientName'>) {
+  return client.companyName.trim() || client.clientName.trim() || 'Unnamed Client';
+}
+
 export default function CreateOrderWorkspace({ onClose, onCreated }: Props) {
   const [draft, setDraft] = useState<CreateOrderDraft>(emptyDraft);
   const [agents, setAgents] = useState<CreateOrderAgent[]>([]);
@@ -103,6 +126,7 @@ export default function CreateOrderWorkspace({ onClose, onCreated }: Props) {
   const [editingItem, setEditingItem] = useState<CreateOrderCartItem | null>(null);
   const [removeTarget, setRemoveTarget] = useState<CreateOrderCartItem | null>(null);
   const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
+  const [assortedRewardSelections, setAssortedRewardSelections] = useState<Record<string, AssortedRewardSelection>>({});
   const [validationError, setValidationError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createResult, setCreateResult] = useState<AdminOrderCreateResult | null>(null);
@@ -132,9 +156,45 @@ export default function CreateOrderWorkspace({ onClose, onCreated }: Props) {
     [agentClients, draft.agentClientId],
   );
   const priceAccessValidation = getPriceAccessValidation(draft, allowedPriceClasses, selectedAgentAccess);
-  const canCreate = isDraftComplete(draft) && !priceAccessValidation && !isSubmitting;
   const canAddProduct = isHeaderComplete(draft) && !priceAccessValidation && !isSubmitting;
   const addProductDisabledMessage = getAddProductDisabledMessage(draft, priceAccessValidation);
+  const assortedPromotions = useMemo(
+    () =>
+      qualifyAssortedPromotions({
+        items: draft.items.map((item) => ({
+          id: item.id,
+          productId: item.productId,
+          productName: item.productName,
+          variationId: item.variationId,
+          variationName: item.variationName,
+          unitOption: item.unitOption,
+          price: item.price,
+          priceCode: item.priceCode,
+          quantity: item.quantity,
+          surcharges: item.surcharges ?? [],
+        })),
+        branchName: selectedBranch?.branchName ?? draft.branchName,
+        priceType: draft.pricePreference?.priceType,
+      }),
+    [draft.branchName, draft.items, draft.pricePreference?.priceType, selectedBranch?.branchName],
+  );
+  const selectedAssortedRewards = useMemo(
+    () => resolveSelectedAssortedRewards(assortedPromotions, assortedRewardSelections, catalogProducts),
+    [assortedPromotions, assortedRewardSelections, catalogProducts],
+  );
+  const assortedFreeQuantity = selectedAssortedRewards.reduce(
+    (sum, reward) => sum + reward.result.rewardQuantity,
+    0,
+  );
+  const displayTotals = useMemo(
+    () => ({
+      ...draft.totals,
+      freeQuantity: draft.totals.freeQuantity + assortedFreeQuantity,
+    }),
+    [assortedFreeQuantity, draft.totals],
+  );
+  const assortedSelectionError = getAssortedSelectionError(assortedPromotions, selectedAssortedRewards);
+  const canCreate = isDraftComplete(draft) && !priceAccessValidation && !assortedSelectionError && !isSubmitting;
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -146,6 +206,42 @@ export default function CreateOrderWorkspace({ onClose, onCreated }: Props) {
   useEffect(() => {
     void loadLookups();
   }, []);
+
+  useEffect(() => {
+    setAssortedRewardSelections((current) => {
+      const next: Record<string, AssortedRewardSelection> = {};
+      assortedPromotions.forEach((result) => {
+        if (!result.qualified || result.rewardQuantity <= 0) {
+          return;
+        }
+        const options = getAssortedRewardOptions(result, catalogProducts);
+        if (options.length === 0) {
+          return;
+        }
+        const currentSelection = current[result.groupKey];
+        const currentIsValid = Boolean(
+          currentSelection &&
+            options.some(
+              (option) =>
+                option.variationId === currentSelection.rewardVariationId &&
+                option.unitOption.id === currentSelection.rewardUnitOptionId,
+            ),
+        );
+        const selection = currentIsValid
+          ? currentSelection
+          : {
+              rewardVariationId: options[0].variationId,
+              rewardUnitOptionId: options[0].unitOption.id,
+            };
+        next[result.groupKey] = selection;
+      });
+
+      if (JSON.stringify(current) === JSON.stringify(next)) {
+        return current;
+      }
+      return next;
+    });
+  }, [assortedPromotions, catalogProducts]);
 
   useEffect(() => {
     if (!draft.agentId) {
@@ -209,10 +305,10 @@ export default function CreateOrderWorkspace({ onClose, onCreated }: Props) {
       try {
         const { data, error } = await supabase
           .from('agent_clients')
-          .select('id, client_code, client_name, company_name, contact_person, contact_number, email, address, tin, status')
+          .select('id, client_code, client_name, company_name, contact_person, contact_number, email, address, tin, status, custom_client_code, default_price_code, default_delivery_term_id')
           .eq('agent_id', draft.agentId)
           .eq('status', 'Active')
-          .order('client_name', { ascending: true });
+          .order('company_name', { ascending: true });
 
         if (cancelled) return;
         if (error) {
@@ -232,7 +328,10 @@ export default function CreateOrderWorkspace({ onClose, onCreated }: Props) {
           address: String(row.address ?? ''),
           tin: String(row.tin ?? ''),
           status: String(row.status ?? ''),
-        }));
+          customClientCode: String(row.custom_client_code ?? ''),
+          defaultPriceCode: String(row.default_price_code ?? '').trim().toUpperCase(),
+          defaultDeliveryTermId: String(row.default_delivery_term_id ?? ''),
+        })).sort((left, right) => getClientDisplayName(left).localeCompare(getClientDisplayName(right)));
 
         setAgentClients(nextClients);
         setDraft((current) => {
@@ -370,10 +469,26 @@ export default function CreateOrderWorkspace({ onClose, onCreated }: Props) {
   function handleClientChange(clientId: string) {
     const client = agentClients.find((item) => item.id === clientId) ?? null;
     setValidationError('');
+    const defaultPriceClass =
+      client?.defaultPriceCode
+        ? allowedPriceClasses.find((priceClass) => priceClass.priceCode === client.defaultPriceCode)
+        : null;
+    const inaccessibleDefaultPrice = Boolean(client?.defaultPriceCode && !defaultPriceClass);
+    const defaultTerm = client?.defaultDeliveryTermId
+      ? terms.find((term) => term.id === client.defaultDeliveryTermId)
+      : null;
+
+    if (inaccessibleDefaultPrice) {
+      setValidationError('The selected client default price level is not available to this Agent. Existing price selection was kept.');
+    }
+
     setDraft((current) => ({
       ...current,
       agentClientId: clientId,
-      clientName: client?.clientName ?? '',
+      clientName: client ? getClientDisplayName(client) : '',
+      pricePreferenceId: defaultPriceClass && current.items.length === 0 ? defaultPriceClass.id : current.pricePreferenceId,
+      pricePreference: defaultPriceClass && current.items.length === 0 ? mapPriceClassToPreference(defaultPriceClass) : current.pricePreference,
+      termId: defaultTerm?.id ?? current.termId,
     }));
   }
 
@@ -485,6 +600,10 @@ export default function CreateOrderWorkspace({ onClose, onCreated }: Props) {
       setValidationError(priceAccessValidation);
       return;
     }
+    if (assortedSelectionError) {
+      setValidationError(assortedSelectionError);
+      return;
+    }
     if (!selectedBranch || !selectedTerm || !draft.pricePreference) {
       setValidationError('Complete the required order information and add at least one product.');
       return;
@@ -508,7 +627,7 @@ export default function CreateOrderWorkspace({ onClose, onCreated }: Props) {
           price_code: nullableText(draft.pricePreference.priceCode),
           client_name:
             customerType === 'existing'
-              ? selectedClient?.clientName.trim() || draft.clientName.trim()
+              ? (selectedClient ? getClientDisplayName(selectedClient) : draft.clientName.trim())
               : draft.guestFullName.trim(),
           client_company:
             customerType === 'existing'
@@ -542,16 +661,16 @@ export default function CreateOrderWorkspace({ onClose, onCreated }: Props) {
                 }
               : null,
           remarks: nullableText(draft.notes),
-          subtotal: roundMoney(draft.totals.subtotal),
-          discount_total: roundMoney(draft.totals.discountTotal),
-          surcharge_total: roundMoney(draft.totals.surchargeTotal),
-          grand_total: roundMoney(draft.totals.grandTotal),
+          subtotal: roundMoney(displayTotals.subtotal),
+          discount_total: roundMoney(displayTotals.discountTotal),
+          surcharge_total: roundMoney(displayTotals.surchargeTotal),
+          grand_total: roundMoney(displayTotals.grandTotal),
           metadata: {
             source: 'admin',
             created_from: 'admin_orders_page',
           },
         },
-        buildOrderItemPayloads(draft.items, branchName),
+        buildOrderItemPayloads(draft.items, branchName, selectedAssortedRewards),
       );
       setCreateResult(result);
       onCreated?.();
@@ -681,20 +800,21 @@ export default function CreateOrderWorkspace({ onClose, onCreated }: Props) {
                 <div className={styles.wideField}>
                   {draft.agentId ? (
                     <SearchableSelect
-                      label="Client Name *"
+                      label="Client *"
                       placeholder={isLoadingClients ? 'Loading active clients...' : 'Search assigned client'}
                       value={draft.agentClientId}
                       options={agentClients}
                       noResultsText="No active clients found for this agent."
                       getOptionValue={(client) => client.id}
                       getOptionLabel={(client) =>
-                        [client.clientName || 'Unnamed Client', client.companyName].filter(Boolean).join(' - ')
+                        [getClientDisplayName(client), client.clientName && client.companyName ? client.clientName : ''].filter(Boolean).join(' - ')
                       }
                       getSearchText={(client) =>
                         [
-                          client.clientName,
                           client.companyName,
+                          client.clientName,
                           client.clientCode,
+                          client.customClientCode,
                           client.contactPerson,
                           client.contactNumber,
                         ]
@@ -703,9 +823,9 @@ export default function CreateOrderWorkspace({ onClose, onCreated }: Props) {
                       }
                       renderOption={(client) => (
                         <>
-                          <strong>{client.clientName || 'Unnamed Client'}</strong>
-                          <span>{client.companyName || '-'}</span>
-                          <span>{client.clientCode || '-'}</span>
+                          <strong>{getClientDisplayName(client)}</strong>
+                          <span>{client.clientName || client.contactPerson || '-'}</span>
+                          <span>{client.customClientCode || client.clientCode || '-'}</span>
                           <span>{client.contactPerson || client.contactNumber || '-'}</span>
                         </>
                       )}
@@ -716,8 +836,8 @@ export default function CreateOrderWorkspace({ onClose, onCreated }: Props) {
                   )}
                   {selectedClient ? (
                     <p className={styles.fieldHint}>
-                      Selected client: {selectedClient.clientName}
-                      {selectedClient.companyName ? ` - ${selectedClient.companyName}` : ''}
+                      Selected client: {getClientDisplayName(selectedClient)}
+                      {selectedClient.clientName && selectedClient.companyName ? ` - ${selectedClient.clientName}` : ''}
                     </p>
                   ) : null}
                 </div>
@@ -845,15 +965,69 @@ export default function CreateOrderWorkspace({ onClose, onCreated }: Props) {
             <section className={styles.summaryPanel}>
               <h3>Order Summary</h3>
               <div className={styles.summaryRows}>
-                <span>Line items</span><strong>{draft.totals.lineItems}</strong>
-                <span>Total paid quantity</span><strong>{draft.totals.paidQuantity}</strong>
-                <span>Total free quantity</span><strong>{draft.totals.freeQuantity}</strong>
-                <span>Subtotal</span><strong>{formatCurrency(draft.totals.subtotal)}</strong>
-                <span>Discount</span><strong>{formatCurrency(draft.totals.discountTotal)}</strong>
-                <span>Surcharge</span><strong>{formatCurrency(draft.totals.surchargeTotal)}</strong>
-                <span>Grand total</span><strong>{formatCurrency(draft.totals.grandTotal)}</strong>
+                <span>Line items</span><strong>{displayTotals.lineItems}</strong>
+                <span>Total paid quantity</span><strong>{displayTotals.paidQuantity}</strong>
+                <span>Total free quantity</span><strong>{displayTotals.freeQuantity}</strong>
+                <span>Subtotal</span><strong>{formatCurrency(displayTotals.subtotal)}</strong>
+                <span>Discount</span><strong>{formatCurrency(displayTotals.discountTotal)}</strong>
+                <span>Surcharge</span><strong>{formatCurrency(displayTotals.surchargeTotal)}</strong>
+                <span>Grand total</span><strong>{formatCurrency(displayTotals.grandTotal)}</strong>
               </div>
+              {assortedPromotions.length > 0 ? (
+                <div className={styles.assortedPromoList}>
+                  {assortedPromotions.map((promo) => {
+                    const options = getAssortedRewardOptions(promo, catalogProducts);
+                    const selection = assortedRewardSelections[promo.groupKey];
+                    return (
+                      <div key={promo.groupKey} className={styles.assortedPromoCard}>
+                        <div className={styles.assortedPromoHeader}>
+                          <strong>{promo.promoLabel}</strong>
+                          <span>{promo.qualified ? 'Qualified' : `${promo.remainingQuantity} ${promo.qualifyingUnitCode.toUpperCase()} remaining`}</span>
+                        </div>
+                        <div className={styles.assortedPromoLines}>
+                          {promo.lineBreakdown.map((line) => (
+                            <span key={line.lineId}>
+                              {line.variationName}: {line.quantity} {promo.qualifyingUnitCode.toUpperCase()}
+                            </span>
+                          ))}
+                        </div>
+                        <div className={styles.assortedPromoProgress}>
+                          <span>
+                            {promo.qualifyingQuantity} / {promo.thresholdQuantity} {promo.qualifyingUnitCode.toUpperCase()}
+                          </span>
+                          <strong>Reward: {promo.rewardQuantity} {promo.rewardUnitCode.toUpperCase()}</strong>
+                        </div>
+                        {promo.qualified && promo.rewardQuantity > 0 && options.length > 0 ? (
+                          <label className={styles.assortedRewardField}>
+                            <span>Free Variation</span>
+                            <select
+                              value={`${selection?.rewardVariationId ?? ''}::${selection?.rewardUnitOptionId ?? ''}`}
+                              onChange={(event) => {
+                                const [rewardVariationId, rewardUnitOptionId] = event.target.value.split('::');
+                                setAssortedRewardSelections((current) => ({
+                                  ...current,
+                                  [promo.groupKey]: { rewardVariationId, rewardUnitOptionId },
+                                }));
+                              }}
+                            >
+                              {options.map((option) => (
+                                <option
+                                  key={`${option.variationId}::${option.unitOption.id}`}
+                                  value={`${option.variationId}::${option.unitOption.id}`}
+                                >
+                                  {option.variationName} - {option.unitOption.unitLabel}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
               {validationError ? <p className={styles.alert}>{validationError}</p> : null}
+              {assortedSelectionError && !validationError ? <p className={styles.alert}>{assortedSelectionError}</p> : null}
               <button type="button" className={styles.primaryButton} disabled={!canCreate} onClick={() => void handleCreateOrder()}>
                 {isSubmitting ? 'Creating Order...' : 'Create Order'}
               </button>
@@ -869,7 +1043,7 @@ export default function CreateOrderWorkspace({ onClose, onCreated }: Props) {
           branchName={selectedBranch?.branchName ?? ''}
           pricePreference={draft.pricePreference}
           cartItems={draft.items}
-          cartTotals={draft.totals}
+          cartTotals={displayTotals}
           initialItem={editingItem}
           onClose={() => {
             setIsConfiguratorOpen(false);
@@ -995,8 +1169,22 @@ function isUuid(value: string) {
 function buildOrderItemPayloads(
   items: CreateOrderCartItem[],
   branchName: string,
+  assortedRewards: SelectedAssortedReward[] = [],
 ): AdminOrderItemCreatePayload[] {
+  const assortedRewardsByCarrierLineId = assortedRewards.reduce<Record<string, SelectedAssortedReward[]>>(
+    (result, reward) => {
+      result[reward.carrierLineId] = [...(result[reward.carrierLineId] ?? []), reward];
+      return result;
+    },
+    {},
+  );
+
   return items.map((item, index) => {
+    const lineAssortedRewards = assortedRewardsByCarrierLineId[item.id] ?? [];
+    const assortedFreeQuantity = lineAssortedRewards.reduce(
+      (sum, reward) => sum + reward.result.rewardQuantity,
+      0,
+    );
     const discountPromotions = item.calculation.appliedPromotions.filter(
       (promotion) => promotion.source === 'discount',
     );
@@ -1013,6 +1201,7 @@ function buildOrderItemPayloads(
       unit_option: item.unitOption,
       calculation: item.calculation,
       price_preference: item.pricePreference,
+      assorted_promotions: lineAssortedRewards.map(toAssortedRewardSnapshot),
     };
     const metadata = {
       source: 'admin_create_order',
@@ -1020,6 +1209,7 @@ function buildOrderItemPayloads(
       applied_promotions: item.calculation.appliedPromotions,
       available_promotions: item.calculation.availablePromotions,
       ineligible_promotions: item.calculation.ineligiblePromotions,
+      assorted_promotions: lineAssortedRewards.map(toAssortedRewardSnapshot),
     };
     const productKey = [
       item.productId,
@@ -1048,7 +1238,7 @@ function buildOrderItemPayloads(
       quantity: safeNumber(item.quantity, 1),
       discount_amount: roundMoney(item.calculation.discountAmount),
       surcharge_amount: roundMoney(item.calculation.surchargeAmount),
-      free_quantity: safeNumber(item.calculation.freeQuantity),
+      free_quantity: safeNumber(item.calculation.freeQuantity) + assortedFreeQuantity,
       sort_order: index + 1,
       metadata,
       buying_option_id: null,
@@ -1061,8 +1251,8 @@ function buildOrderItemPayloads(
       discount_name: discountPromotions.map((promotion) => promotion.name).filter(Boolean).join(' + ') || null,
       discount_type: discountPromotions.map((promotion) => promotion.type).filter(Boolean).join(' + ') || null,
       discount_percent: discountPercent,
-      promo_id: nullableUuid(promoPromotion?.id),
-      promo_label: promoPromotion?.name ?? null,
+      promo_id: nullableUuid(promoPromotion?.id ?? lineAssortedRewards[0]?.result.promoId),
+      promo_label: promoPromotion?.name ?? lineAssortedRewards[0]?.result.promoLabel ?? null,
       pricing_snapshot: pricingSnapshot,
       unit_option_id: nullableUuid(item.unitOption.id),
       ordered_quantity: safeNumber(item.quantity, 1),
@@ -1071,6 +1261,148 @@ function buildOrderItemPayloads(
       to_follow_reason: null,
     };
   });
+}
+
+function resolveSelectedAssortedRewards(
+  results: AssortedPromotionResult[],
+  selections: Record<string, AssortedRewardSelection>,
+  products: OrderCatalogProduct[],
+): SelectedAssortedReward[] {
+  return results.flatMap((result) => {
+    if (!result.qualified || result.rewardQuantity <= 0) {
+      return [];
+    }
+    const options = getAssortedRewardOptions(result, products);
+    const selection = selections[result.groupKey];
+    const selectedOption = options.find(
+      (option) =>
+        option.variationId === selection?.rewardVariationId &&
+        option.unitOption.id === selection?.rewardUnitOptionId,
+    );
+    if (!selectedOption) {
+      return [];
+    }
+    const carrierLineId =
+      result.lineBreakdown.find((line) => line.variationId === selectedOption.variationId)?.lineId ??
+      result.eligibleLineIds[0] ??
+      '';
+    if (!carrierLineId) {
+      return [];
+    }
+    return [
+      {
+        result,
+        rewardVariationId: selectedOption.variationId,
+        rewardVariationName: selectedOption.variationName,
+        rewardUnitOption: selectedOption.unitOption,
+        carrierLineId,
+      },
+    ];
+  });
+}
+
+function getAssortedRewardOptions(result: AssortedPromotionResult, products: OrderCatalogProduct[]) {
+  const product = products.find((item) => item.id === (result.rewardProductId || result.productId));
+  if (!product) {
+    return [];
+  }
+  const rewardUnitCode = normalizeUnitCode(result.rewardUnitCode || result.qualifyingUnitCode);
+  const fixedVariationId =
+    result.rewardTargetType === 'different_item' && result.rewardVariationId
+      ? result.rewardVariationId
+      : '';
+  const eligibleVariationIds = new Set(result.eligibleVariationIds);
+
+  return product.variations.flatMap((variation) => {
+    const entries = Object.values(variation.prices).flatMap((price) => {
+      if (!price) return [];
+      const isEligible =
+        fixedVariationId
+          ? price.variationId === fixedVariationId
+          : eligibleVariationIds.has(price.variationId);
+      if (!isEligible) {
+        return [];
+      }
+      const unitOption = resolveRewardUnitOption(
+        variation.unitOptions,
+        price.variationId,
+        result.rewardUnitOptionId,
+        rewardUnitCode,
+      );
+      if (!unitOption) {
+        return [];
+      }
+      return [
+        {
+          variationId: price.variationId,
+          variationName: variation.variationName,
+          unitOption,
+        },
+      ];
+    });
+    return entries;
+  });
+}
+
+function resolveRewardUnitOption(
+  unitOptions: OrderCatalogUnitOption[],
+  variationId: string,
+  configuredUnitOptionId: string | null,
+  unitCode: string,
+) {
+  const activeOptions = unitOptions.filter(
+    (option) => option.isOrderable && option.status.toLowerCase() === 'active',
+  );
+  return (
+    activeOptions.find(
+      (option) =>
+        configuredUnitOptionId &&
+        option.id === configuredUnitOptionId &&
+        option.variationId === variationId,
+    ) ??
+    activeOptions.find(
+      (option) =>
+        option.variationId === variationId &&
+        normalizeUnitCode(option.unitCode) === unitCode,
+    ) ??
+    activeOptions.find((option) => normalizeUnitCode(option.unitCode) === unitCode) ??
+    null
+  );
+}
+
+function getAssortedSelectionError(
+  results: AssortedPromotionResult[],
+  selectedRewards: SelectedAssortedReward[],
+) {
+  const requiredCount = results.filter((result) => result.qualified && result.rewardQuantity > 0).length;
+  if (requiredCount === selectedRewards.length) {
+    return '';
+  }
+  return requiredCount > 0 ? 'Select a free variation for each qualified assorted promo.' : '';
+}
+
+function toAssortedRewardSnapshot(reward: SelectedAssortedReward) {
+  const result = reward.result;
+  return {
+    qualification_scope: 'assorted_same_product',
+    promo_id: result.promoId,
+    promo_label: result.promoLabel,
+    product_id: result.productId,
+    qualifying_unit_code: result.qualifyingUnitCode,
+    threshold_quantity: result.thresholdQuantity,
+    grouped_qualifying_quantity: result.qualifyingQuantity,
+    remaining_quantity: result.remainingQuantity,
+    reward_repeat_mode: result.rewardRepeatMode,
+    repeat_count: result.repeatCount,
+    reward_quantity: result.rewardQuantity,
+    reward_unit_code: result.rewardUnitCode,
+    qualifying_variation_ids: result.eligibleVariationIds,
+    qualifying_line_ids: result.eligibleLineIds,
+    selected_reward_variation_id: reward.rewardVariationId,
+    selected_reward_variation_name: reward.rewardVariationName,
+    selected_reward_unit_option_id: reward.rewardUnitOption.id,
+    selected_reward_unit_code: reward.rewardUnitOption.unitCode,
+  };
 }
 
 function validateDraftForSubmit(draft: CreateOrderDraft) {

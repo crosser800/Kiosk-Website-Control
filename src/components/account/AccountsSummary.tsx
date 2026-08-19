@@ -16,6 +16,9 @@ export type AccountSummaryItem = {
   handle: string;
   access: string;
   branch: string;
+  agentGroupId?: string;
+  agentGroupName?: string;
+  agentGroupCode?: string;
   status: string;
   authUserId?: string;
   address?: string;
@@ -248,8 +251,21 @@ export default function AccountsSummary({
   const [searchValue, setSearchValue] = useState('');
   const [filterBy, setFilterBy] = useState<FilterMode>('alphabetical');
   const [sortOrder, setSortOrder] = useState<SortOrder>('ascending');
+  const [agentGroupFilter, setAgentGroupFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [accessDetailsAccount, setAccessDetailsAccount] = useState<AccountSummaryItem | null>(null);
+
+  const agentGroupOptions = useMemo(() => {
+    const groups = new Map<string, { id: string; label: string }>();
+    accounts.forEach((account) => {
+      if (account.role !== 'agents' || !account.agentGroupId) return;
+      groups.set(account.agentGroupId, {
+        id: account.agentGroupId,
+        label: account.agentGroupName || account.agentGroupCode || 'Unnamed Group',
+      });
+    });
+    return Array.from(groups.values()).sort((left, right) => left.label.localeCompare(right.label));
+  }, [accounts]);
 
   const filteredAccounts = useMemo(() => {
     const normalizedSearch = searchValue.trim().toLowerCase();
@@ -257,6 +273,17 @@ export default function AccountsSummary({
     const searchedAccounts = accounts.filter((account) => {
       if (account.role !== activeView) {
         return false;
+      }
+
+      if (activeView === 'agents') {
+        if (agentGroupFilter === 'ungrouped' && account.agentGroupId) return false;
+        if (
+          agentGroupFilter !== 'all' &&
+          agentGroupFilter !== 'ungrouped' &&
+          account.agentGroupId !== agentGroupFilter
+        ) {
+          return false;
+        }
       }
 
       if (!normalizedSearch) {
@@ -270,6 +297,8 @@ export default function AccountsSummary({
         account.handle,
         account.access,
         account.branch,
+        account.agentGroupName ?? '',
+        account.agentGroupCode ?? '',
         account.status,
       ].some((value) => value.toLowerCase().includes(normalizedSearch));
     });
@@ -287,7 +316,7 @@ export default function AccountsSummary({
     }
 
     return sortedAccounts;
-  }, [accounts, activeView, filterBy, searchValue, sortOrder]);
+  }, [accounts, activeView, agentGroupFilter, filterBy, searchValue, sortOrder]);
 
   const totalDataCount = filteredAccounts.length;
   const totalPages = Math.max(Math.ceil(totalDataCount / ROWS_PER_PAGE), 1);
@@ -300,7 +329,7 @@ export default function AccountsSummary({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeView, filterBy, searchValue, sortOrder]);
+  }, [activeView, agentGroupFilter, filterBy, searchValue, sortOrder]);
 
   useEffect(() => {
     setCurrentPage((prev) => Math.min(prev, totalPages));
@@ -391,6 +420,25 @@ export default function AccountsSummary({
             </select>
           </label>
 
+          {activeView === 'agents' ? (
+            <label className={styles.selectControl}>
+              <FilterIcon />
+              <select
+                value={agentGroupFilter}
+                onChange={(event) => setAgentGroupFilter(event.target.value)}
+                className={styles.selectField}
+              >
+                <option value="all">All Groups</option>
+                <option value="ungrouped">Ungrouped</option>
+                {agentGroupOptions.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
           <button
             type="button"
             className={styles.primaryButton}
@@ -410,7 +458,7 @@ export default function AccountsSummary({
           <span>{activeView === 'admins' ? 'Role / Position' : 'Contact'}</span>
           <span>{activeView === 'admins' ? 'Department' : 'Role'}</span>
           <span>{activeView === 'admins' ? 'Access' : 'Agent Code'}</span>
-          <span>{activeView === 'admins' ? 'Password Status' : 'Company'}</span>
+          <span>{activeView === 'admins' ? 'Password Status' : 'Group'}</span>
           <span>Status</span>
           <span className={styles.actionHeader}>Action</span>
         </div>
@@ -473,7 +521,7 @@ export default function AccountsSummary({
                     {account.passwordStatus ?? 'Password Changed'}
                   </span>
                 ) : (
-                  account.branch
+                  account.agentGroupName || 'Ungrouped'
                 )}
                 {account.role === 'admins' && account.passwordChangedAt ? (
                   <small className={styles.metaText}>{formatDateTime(account.passwordChangedAt)}</small>

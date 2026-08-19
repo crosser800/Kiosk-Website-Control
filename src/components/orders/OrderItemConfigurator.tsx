@@ -196,6 +196,7 @@ export default function OrderItemConfigurator({
       variationSku: selectedVariation.skuCode,
       unitOption: selectedUnitOption,
       price: selectedPrice,
+      surcharges: selectedVariation.surcharges,
       priceCode: selectedPrice.priceCode,
       pricePreference,
       quantity: numericQuantity,

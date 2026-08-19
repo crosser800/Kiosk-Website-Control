@@ -74,6 +74,7 @@ type AgentAccountRow = {
   id: string;
   auth_user_id: string | null;
   agent_code: string | null;
+  agent_group_id: string | null;
   full_name: string;
   company_name: string | null;
   contact_number: string | null;
@@ -84,6 +85,12 @@ type AgentAccountRow = {
   notes: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type AgentGroupRow = {
+  id: string;
+  group_name: string | null;
+  group_code: string | null;
 };
 
 type InternalAdminAccountRow = {
@@ -231,7 +238,7 @@ function validateUsername(value: string) {
   return /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/.test(value);
 }
 
-function mapAgentRowToAccount(row: AgentAccountRow): AccountSummaryItem {
+function mapAgentRowToAccount(row: AgentAccountRow, group?: AgentGroupRow): AccountSummaryItem {
   return {
     id: String(row.id),
     name: String(row.full_name ?? '').trim(),
@@ -241,6 +248,9 @@ function mapAgentRowToAccount(row: AgentAccountRow): AccountSummaryItem {
     handle: String(row.agent_code ?? '').trim(),
     access: '',
     branch: String(row.company_name ?? '').trim() || String(row.address ?? '').trim() || '-',
+    agentGroupId: row.agent_group_id ? String(row.agent_group_id) : '',
+    agentGroupName: group ? String(group.group_name ?? '').trim() : '',
+    agentGroupCode: group ? String(group.group_code ?? '').trim() : '',
     status: normalizeStatus(row.status),
     profileImage: String(row.profile_image_url ?? '').trim() || undefined,
     authUserId: row.auth_user_id ? String(row.auth_user_id) : '',
@@ -454,7 +464,7 @@ async function fetchAgentAccounts() {
   const { data, error } = await supabase
     .from('agent_accounts')
     .select(
-      'id, auth_user_id, agent_code, full_name, company_name, contact_number, email, address, profile_image_url, status, notes, created_at, updated_at',
+      'id, auth_user_id, agent_code, agent_group_id, full_name, company_name, contact_number, email, address, profile_image_url, status, notes, created_at, updated_at',
     )
     .order('created_at', { ascending: false });
 
@@ -462,7 +472,28 @@ async function fetchAgentAccounts() {
     throw new Error(error.message);
   }
 
-  return (data ?? []).map((row) => mapAgentRowToAccount(row as AgentAccountRow));
+  const rows = (data ?? []) as AgentAccountRow[];
+  const groupIds = Array.from(
+    new Set(rows.map((row) => String(row.agent_group_id ?? '').trim()).filter(Boolean)),
+  );
+  let groupsById = new Map<string, AgentGroupRow>();
+
+  if (groupIds.length > 0) {
+    const { data: groupData, error: groupError } = await supabase
+      .from('agent_groups')
+      .select('id, group_name, group_code')
+      .in('id', groupIds);
+
+    if (groupError) {
+      throw new Error(groupError.message);
+    }
+
+    groupsById = new Map(
+      ((groupData ?? []) as AgentGroupRow[]).map((group) => [String(group.id), group] as const),
+    );
+  }
+
+  return rows.map((row) => mapAgentRowToAccount(row, groupsById.get(String(row.agent_group_id ?? ''))));
 }
 
 export async function loadInternalAdminFormOptions(): Promise<InternalAdminFormOptions> {

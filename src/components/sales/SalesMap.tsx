@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
-import philippinesRegions from '../../../2B Sales Map/src/data/philippines-regions.json';
+import philippinesRegions from '../../data/philippines-regions.json';
 import { supabase } from '../../lib/supabase';
 import { COMPLETED_RAW_STATUSES, ORDER_STATUS_FIELD } from '../../services/completedSales';
 import 'leaflet/dist/leaflet.css';

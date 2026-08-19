@@ -3,6 +3,7 @@ import type {
   OrderCatalogUnitOption,
   OrderLineCalculation,
   OrderPriceCode,
+  SurchargeRule,
 } from '../../services/orderPricing';
 import type { OrderCatalogPriceClass } from '../../services/orderCatalog';
 
@@ -41,6 +42,9 @@ export type CreateOrderClient = {
   address: string;
   tin: string;
   status: string;
+  customClientCode: string;
+  defaultPriceCode: string;
+  defaultDeliveryTermId: string;
 };
 
 export type CreateOrderPricePreference = {
@@ -61,6 +65,7 @@ export type CreateOrderCartItem = {
   variationSku: string;
   unitOption: OrderCatalogUnitOption;
   price: OrderCatalogPrice;
+  surcharges: SurchargeRule[];
   priceCode: OrderPriceCode;
   pricePreference: CreateOrderPricePreference;
   quantity: number;

@@ -3,10 +3,27 @@ import type { DragEvent } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './VarAndPrice.module.css';
 import { supabase } from '../../../lib/supabase';
+import {
+  applyDurationPreset,
+  datetimeLocalToIso,
+  formatDiscountDateRange,
+  getActivationMode,
+  getDefaultScheduledStart,
+  getDiscountDerivedState,
+  getDiscountKindLabel,
+  toDatetimeLocalValue,
+  validateDiscountTiming,
+  type DiscountActivationMode,
+  type PromoDurationPreset,
+  type PromoValidityMode,
+} from './discountLifecycle';
+import { generatePackagingSummary } from './packagingParser';
 import type {
   DiscountItem,
+  DiscountKind,
   ProductUnitAliasDefinition,
   ProductUnitDefinition,
+  QualificationScope,
   RewardRepeatMode,
   RewardTargetType,
   SurchargeItem,
@@ -52,14 +69,6 @@ type VariationCard = {
   prices: Record<PriceCode, string>;
 };
 
-type GeneratedUnitOption = {
-  unitCode: string;
-  unitLabel: string;
-  quantityInBaseUnit: string;
-  packagingText: string;
-  notes: string;
-};
-
 const WEIGHT_UNITS = ['mg', 'g', 'kg', 'lb'] as const;
 const DIMENSION_UNITS = ['mm', 'cm', 'm', 'in'] as const;
 
@@ -69,6 +78,7 @@ type DimensionUnit = VariationUnitOptionItem['dimensionUnit'];
 type DiscountDraftRow = {
   id: string;
   adjustmentKind: 'Discount' | 'Surcharge';
+  discountKind: DiscountKind;
   discountName: string;
   discountType: DiscountItem['discountType'];
   amount: string;
@@ -80,6 +90,10 @@ type DiscountDraftRow = {
   minOrderQuantity: string;
   maxOrderQuantity: string;
   status: DiscountItem['status'];
+  startsAt: string;
+  endsAt: string;
+  promoValidityMode: PromoValidityMode;
+  promoDurationPreset: PromoDurationPreset;
   stackable: boolean;
   hasPromo: boolean;
   promoType: DiscountItem['promoType'];
@@ -94,6 +108,7 @@ type DiscountDraftRow = {
   promoRewardUnitOptionId: string;
   promoRewardRepeatMode: RewardRepeatMode;
   promoRewardEveryQuantity: string;
+  promoQualificationScope: QualificationScope;
   promoRewardSearchQuery: string;
 };
 
@@ -146,21 +161,6 @@ const PRICE_CODES: Array<{
   { code: 'SP', label: 'Special', branchName: 'Both', priceType: 'Special' },
   { code: 'CP', label: 'Concept Store', branchName: 'Both', priceType: 'Concept Store' },
 ];
-
-const FALLBACK_UNIT_ALIASES: Record<string, string> = {
-  pcs: 'pc',
-  piece: 'pc',
-  pieces: 'pc',
-  ctns: 'ctn',
-  boxes: 'box',
-  pairs: 'pair',
-  prs: 'pair',
-  rolls: 'roll',
-  tubes: 'tube',
-  kgs: 'kg',
-  packs: 'pack',
-  units: 'unit',
-};
 
 function buildVariationKey(variationName: string, baseSku: string) {
   return `${variationName.trim().toLowerCase()}::${baseSku.trim().toLowerCase()}`;
@@ -328,31 +328,6 @@ function formatQuantityLabel(quantity: string, unitCode: string) {
   return `${quantity} ${unitCode || 'unit'}`;
 }
 
-function normalizeUnitCode(
-  rawValue: string,
-  unitDefinitions: ProductUnitDefinition[],
-  unitAliases: ProductUnitAliasDefinition[],
-) {
-  const normalized = rawValue.trim().toLowerCase();
-  if (!normalized) {
-    return '';
-  }
-
-  const aliasMap = new Map<string, string>();
-  Object.entries(FALLBACK_UNIT_ALIASES).forEach(([alias, code]) => {
-    aliasMap.set(alias, code);
-  });
-  unitAliases.forEach((alias) => {
-    aliasMap.set(alias.alias.trim().toLowerCase(), alias.unitCode.trim().toLowerCase());
-  });
-  unitDefinitions.forEach((unit) => {
-    aliasMap.set(unit.code.trim().toLowerCase(), unit.code.trim().toLowerCase());
-    aliasMap.set(unit.label.trim().toLowerCase(), unit.code.trim().toLowerCase());
-  });
-
-  return aliasMap.get(normalized) ?? normalized;
-}
-
 function toVariationCards(items: VariationItem[]): VariationCard[] {
   const grouped = new Map<string, VariationCard>();
   for (const item of items) {
@@ -414,6 +389,31 @@ function countDiscountGroups(items: DiscountItem[]) {
   return new Set(items.map((item) => item.discountGroup?.trim() || item.id)).size;
 }
 
+function inferPromoValidityMode(startsAt: string, endsAt: string): PromoValidityMode {
+  return startsAt || endsAt ? 'Fixed' : 'Duration';
+}
+
+function getDurationLabel(preset: PromoDurationPreset) {
+  switch (preset) {
+    case '7d':
+      return '7 Days';
+    case '14d':
+      return '14 Days';
+    case '30d':
+      return '30 Days';
+    case '1m':
+      return '1 Month';
+    case '3m':
+      return '3 Months';
+    case 'custom':
+      return 'Custom';
+  }
+}
+
+function getPromoEffectiveStart(rule: Pick<DiscountDraftRow, 'startsAt'>) {
+  return rule.startsAt || new Date().toISOString();
+}
+
 function createDefaultUnitOption(
   variationId: string,
   baseUnitCode: string,
@@ -445,63 +445,9 @@ function createDefaultUnitOption(
   };
 }
 
-function parsePackagingText(
-  rawValue: string,
-  baseUnitCode: string,
-  unitDefinitions: ProductUnitDefinition[],
-  unitAliases: ProductUnitAliasDefinition[],
-) {
-  const segments = rawValue
-    .split(':')
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-
-  const generatedOptions: GeneratedUnitOption[] = [];
-  const quantityByUnit = new Map<string, number>([[baseUnitCode, 1]]);
-  const notes: string[] = [];
-
-  segments.forEach((segment) => {
-    const match = segment.match(/^(\d+(?:\.\d+)?)\s*([a-zA-Z]+)\s*\/\s*([a-zA-Z]+)$/);
-    if (!match) {
-      notes.push(`Skipped "${segment}" because it could not be parsed.`);
-      return;
-    }
-
-    const quantity = Number(match[1]);
-    const fromUnit = normalizeUnitCode(match[2], unitDefinitions, unitAliases);
-    const toUnit = normalizeUnitCode(match[3], unitDefinitions, unitAliases);
-
-    if (!fromUnit || !toUnit) {
-      notes.push(`Skipped "${segment}" because the unit could not be recognized.`);
-      return;
-    }
-
-    const fromUnitBaseQuantity = quantityByUnit.get(fromUnit);
-    const quantityInBaseUnit = fromUnitBaseQuantity ? quantity * fromUnitBaseQuantity : quantity;
-    if (!fromUnitBaseQuantity && fromUnit !== baseUnitCode) {
-      notes.push(`Used approximate conversion for "${segment}". Please review the generated row.`);
-    }
-
-    quantityByUnit.set(toUnit, quantityInBaseUnit);
-    generatedOptions.push({
-      unitCode: toUnit,
-      unitLabel: toUnit,
-      quantityInBaseUnit: String(quantityInBaseUnit),
-      packagingText: segment,
-      notes: fromUnitBaseQuantity || fromUnit === baseUnitCode ? '' : 'Please verify computed base quantity.',
-    });
-  });
-
-  return {
-    generatedOptions,
-    message:
-      generatedOptions.length > 0
-        ? notes.length > 0
-          ? notes[0]
-          : 'Packaging text parsed successfully. Review and adjust the rows if needed.'
-        : notes[0] ?? 'No packaging rows were generated.',
-  };
-}
+const DEFAULT_UNIT_CHOICES: ProductUnitDefinition[] = [
+  { code: 'pc', label: 'pc', status: 'Active' },
+];
 
 export default function VarAndPrice({
   onBack,
@@ -512,7 +458,6 @@ export default function VarAndPrice({
   defaultBaseSku = '',
   items,
   unitDefinitions,
-  unitAliases,
   unitOptions,
   mediaItems,
   mainMediaId,
@@ -532,6 +477,10 @@ export default function VarAndPrice({
       unitDefinitions.filter((unit) => String(unit.status).toLowerCase() === 'active'),
     [unitDefinitions],
   );
+  const unitChoices = useMemo(
+    () => (activeUnits.length > 0 ? activeUnits : DEFAULT_UNIT_CHOICES),
+    [activeUnits],
+  );
   const selectableMediaItems = useMemo(
     () =>
       mediaItems.filter(
@@ -549,8 +498,6 @@ export default function VarAndPrice({
   const [isVariationModalOpen, setVariationModalOpen] = useState(false);
   const [discountContext, setDiscountContext] = useState<{ variationId: string; code: PriceCode } | null>(null);
   const [activeVariationTabId, setActiveVariationTabId] = useState<string>('');
-  const [packagingInputs, setPackagingInputs] = useState<Record<string, string>>({});
-  const [parserMessages, setParserMessages] = useState<Record<string, string>>({});
   const [duplicateTarget, setDuplicateTarget] = useState<VariationCard | null>(null);
   const [imageSelectorCardId, setImageSelectorCardId] = useState<string | null>(null);
 
@@ -820,7 +767,7 @@ export default function VarAndPrice({
     const { data, error } = await supabase
       .from('product_variation_unit_options')
       .select(
-        'id, variation_id, unit_code, unit_label, base_unit_code, quantity_in_base_unit, price_override, packaging_text, min_order_quantity, order_increment, is_default, status, sort_order, notes, weight_value, weight_unit, length_value, width_value, height_value, dimension_unit, shipping_notes',
+        'id, variation_id, unit_code, unit_label, base_unit_code, quantity_in_base_unit, price_override, packaging_text, min_order_quantity, order_increment, is_default, is_orderable, status, sort_order, notes, weight_value, weight_unit, length_value, width_value, height_value, dimension_unit, shipping_notes',
       )
       .eq('variation_id', variationId)
       .eq('status', 'Active')
@@ -845,7 +792,7 @@ export default function VarAndPrice({
       orderIncrement: String(row.order_increment ?? '1'),
       isDefault: Boolean(row.is_default ?? false),
       status: String(row.status ?? 'Active') === 'Inactive' ? 'Inactive' : 'Active',
-      isOrderable: String(row.status ?? 'Active') !== 'Inactive',
+      isOrderable: row.is_orderable !== false,
       sortOrder: String(row.sort_order ?? '0'),
       notes: String(row.notes ?? ''),
       weightValue: row.weight_value === null || row.weight_value === undefined ? '' : String(row.weight_value),
@@ -944,7 +891,7 @@ export default function VarAndPrice({
         variationId: nextId,
         priceOverride: '',
         isDefault: index === defaultIndex,
-        isOrderable: item.status !== 'Inactive',
+        isOrderable: item.isOrderable,
         sortOrder: String(index),
       };
     });
@@ -975,10 +922,6 @@ export default function VarAndPrice({
     if (copiedDiscounts.length > 0) {
       onDiscountsChange([...discounts, ...copiedDiscounts]);
     }
-    setPackagingInputs((current) => ({
-      ...current,
-      [nextId]: copiedUnitOptions.find((item) => item.packagingText)?.packagingText ?? '',
-    }));
     clearVariationPreviewMedia(nextId);
     setActiveVariationTabId(nextId);
     setActiveCard(nextCard);
@@ -997,6 +940,16 @@ export default function VarAndPrice({
 
   function getUnitOptionLabel(option?: VariationUnitOptionItem | null) {
     return option?.unitLabel?.trim() || option?.unitCode?.trim() || 'unit';
+  }
+
+  function getUnitDefinition(unitCode: string) {
+    const normalizedUnitCode = unitCode.trim().toLowerCase();
+    return unitChoices.find((unit) => unit.code.trim().toLowerCase() === normalizedUnitCode) ?? null;
+  }
+
+  function getCanonicalUnitLabel(unitCode: string) {
+    const normalizedUnitCode = unitCode.trim().toLowerCase();
+    return getUnitDefinition(normalizedUnitCode)?.label?.trim() || normalizedUnitCode;
   }
 
   function getDraftUnitOption(
@@ -1242,7 +1195,11 @@ export default function VarAndPrice({
     }
     if (
       rule.promoRewardTargetType === 'same_item' &&
-      !orderableOptions.some((option) => option.id === rule.promoRewardUnitOptionId)
+      !orderableOptions.some(
+        (option) =>
+          option.id === rule.promoRewardUnitOptionId ||
+          option.unitCode.trim().toLowerCase() === rule.promoRewardUnitCode.trim().toLowerCase(),
+      )
     ) {
       return 'Select a reward unit from this item.';
     }
@@ -1265,6 +1222,7 @@ export default function VarAndPrice({
     return {
       id: crypto.randomUUID(),
       adjustmentKind: 'Discount',
+      discountKind: '',
       discountName: '',
       discountType: 'Percent',
       amount: '',
@@ -1275,7 +1233,11 @@ export default function VarAndPrice({
       unitOptionId: '',
       minOrderQuantity: '1',
       maxOrderQuantity: '',
-      status: 'Active',
+      status: 'Inactive',
+      startsAt: '',
+      endsAt: '',
+      promoValidityMode: 'Fixed',
+      promoDurationPreset: '7d',
       stackable: true,
       hasPromo: false,
       promoType: 'Freebie',
@@ -1290,6 +1252,7 @@ export default function VarAndPrice({
       promoRewardUnitOptionId: '',
       promoRewardRepeatMode: 'one_time',
       promoRewardEveryQuantity: '',
+      promoQualificationScope: 'line',
       promoRewardSearchQuery: '',
     };
   }
@@ -1329,12 +1292,17 @@ export default function VarAndPrice({
     return rows.map((row, index) => ({
       ...row,
       adjustmentKind: row.adjustmentKind || 'Discount',
+      discountKind: rule.discountKind,
       discountName: rule.discountName,
       unitCondition: rule.unitCondition,
       unitOptionId: rule.unitOptionId,
       minOrderQuantity: rule.minOrderQuantity || '1',
       maxOrderQuantity: rule.maxOrderQuantity,
       status: rule.status,
+      startsAt: rule.startsAt,
+      endsAt: rule.endsAt,
+      promoValidityMode: rule.promoValidityMode,
+      promoDurationPreset: rule.promoDurationPreset,
       hasPromo: rule.hasPromo,
       promoType: rule.promoType,
       promoRewardUnitCode: rule.promoRewardUnitCode,
@@ -1348,6 +1316,7 @@ export default function VarAndPrice({
       promoRewardUnitOptionId: rule.promoRewardUnitOptionId,
       promoRewardRepeatMode: rule.promoRewardRepeatMode,
       promoRewardEveryQuantity: rule.promoRewardEveryQuantity,
+      promoQualificationScope: rule.promoQualificationScope || 'line',
       applySequence: String(index + 1),
       discountGroup: group,
       stackable: stacked,
@@ -1432,6 +1401,77 @@ export default function VarAndPrice({
         current.map((item) => (getDraftRuleKey(item) === groupKey ? { ...item, ...patch } : item)),
       ),
     );
+  }
+
+  function updateDiscountKind(groupKey: string, discountKind: DiscountKind) {
+    const patch: Partial<DiscountDraftRow> = { discountKind };
+    if (discountKind === 'Base') {
+      patch.endsAt = '';
+      patch.promoValidityMode = 'Fixed';
+    }
+    updateDiscountRule(groupKey, patch);
+  }
+
+  function updateDiscountActivation(groupKey: string, activationMode: DiscountActivationMode) {
+    const group = getDiscountRuleGroups().find((item) => item.groupKey === groupKey);
+    const rule = group?.rows[0];
+    if (!rule) return;
+
+    if (activationMode === 'Inactive') {
+      updateDiscountRule(groupKey, { status: 'Inactive' });
+      return;
+    }
+
+    if (activationMode === 'Scheduled') {
+      updateDiscountRule(groupKey, {
+        status: 'Active',
+        startsAt: rule.startsAt && Date.parse(rule.startsAt) > Date.now()
+          ? rule.startsAt
+          : getDefaultScheduledStart(),
+      });
+      return;
+    }
+
+    const startsAt = '';
+    const endsAt =
+      rule.discountKind === 'Promo' && rule.promoValidityMode === 'Duration'
+        ? applyDurationPreset(startsAt, rule.promoDurationPreset)
+        : rule.endsAt;
+    updateDiscountRule(groupKey, { status: 'Active', startsAt, endsAt });
+  }
+
+  function updateDiscountStart(groupKey: string, startsAt: string) {
+    const group = getDiscountRuleGroups().find((item) => item.groupKey === groupKey);
+    const rule = group?.rows[0];
+    const endsAt =
+      rule?.discountKind === 'Promo' && rule.promoValidityMode === 'Duration'
+        ? applyDurationPreset(startsAt, rule.promoDurationPreset)
+        : undefined;
+    updateDiscountRule(groupKey, {
+      startsAt,
+      ...(endsAt !== undefined && endsAt ? { endsAt } : {}),
+    });
+  }
+
+  function updatePromoValidityMode(groupKey: string, promoValidityMode: PromoValidityMode) {
+    const group = getDiscountRuleGroups().find((item) => item.groupKey === groupKey);
+    const rule = group?.rows[0];
+    if (!rule) return;
+    const endsAt =
+      promoValidityMode === 'Duration'
+        ? applyDurationPreset(getPromoEffectiveStart(rule), rule.promoDurationPreset)
+        : rule.endsAt;
+    updateDiscountRule(groupKey, { promoValidityMode, endsAt });
+  }
+
+  function updatePromoDurationPreset(groupKey: string, promoDurationPreset: PromoDurationPreset) {
+    const group = getDiscountRuleGroups().find((item) => item.groupKey === groupKey);
+    const rule = group?.rows[0];
+    if (!rule) return;
+    updateDiscountRule(groupKey, {
+      promoDurationPreset,
+      endsAt: applyDurationPreset(getPromoEffectiveStart(rule), promoDurationPreset) || rule.endsAt,
+    });
   }
 
   function updateDiscountPromo(groupKey: string, patch: Partial<DiscountDraftRow>) {
@@ -1608,7 +1648,6 @@ export default function VarAndPrice({
     const nextOptions = updater(currentOptions).map((item, index) => ({
       ...item,
       variationId: cardId,
-      orderIncrement: '1',
       sortOrder: String(index),
     }));
     const normalizedBaseUnitCode =
@@ -1622,7 +1661,6 @@ export default function VarAndPrice({
       ...item,
       baseUnitCode: normalizedBaseUnitCode,
       isDefault: item.isDefault ? true : false,
-      isOrderable: item.status !== 'Inactive',
       sortOrder: String(index),
     }));
 
@@ -1637,85 +1675,39 @@ export default function VarAndPrice({
   }
 
   function handleBaseUnitChange(cardId: string, nextBaseUnitCode: string) {
-    updateCardUnitOptions(cardId, (currentOptions) => {
-      const normalizedBaseUnitCode = nextBaseUnitCode || 'pc';
-      const updatedOptions = currentOptions.map((item) => ({
-        ...item,
-        baseUnitCode: normalizedBaseUnitCode,
-      }));
-      const baseRowIndex = updatedOptions.findIndex(
-        (item) => item.quantityInBaseUnit === '1' && item.isDefault,
-      );
-
-      if (baseRowIndex >= 0) {
-        updatedOptions[baseRowIndex] = {
-          ...updatedOptions[baseRowIndex],
-          unitCode: normalizedBaseUnitCode,
-          unitLabel: normalizedBaseUnitCode,
-          baseUnitCode: normalizedBaseUnitCode,
-          quantityInBaseUnit: '1',
-          isDefault: true,
-        };
-        return updatedOptions;
-      }
-
-      return [createDefaultUnitOption(cardId, normalizedBaseUnitCode), ...updatedOptions.filter((item) => item.quantityInBaseUnit !== '1')];
-    });
-  }
-
-  function handlePackagingParse(card: VariationCard) {
-    const baseUnitCode = getCardBaseUnitCode(card.id);
-    const packagingText = packagingInputs[card.id] ?? getCardUnitOptions(card.id).find((item) => item.packagingText)?.packagingText ?? '';
-    const { generatedOptions, message } = parsePackagingText(
-      packagingText,
-      baseUnitCode,
-      activeUnits,
-      unitAliases,
-    );
-
-    setParserMessages((current) => ({ ...current, [card.id]: message }));
-    if (generatedOptions.length === 0) {
+    const currentOptions = getCardUnitOptions(cardId);
+    const normalizedBaseUnitCode = nextBaseUnitCode || 'pc';
+    const currentBaseUnitCode = getCardBaseUnitCode(cardId);
+    if (normalizedBaseUnitCode === currentBaseUnitCode) {
       return;
     }
 
-    updateCardUnitOptions(card.id, (currentOptions) => {
-      const baseRow =
-        currentOptions.find((item) => item.isDefault) ?? createDefaultUnitOption(card.id, baseUnitCode);
-      const parsedRows: VariationUnitOptionItem[] = generatedOptions.map((item, index) => ({
-        id: crypto.randomUUID(),
-        variationId: card.id,
-        unitCode: item.unitCode,
-        unitLabel: item.unitLabel,
-        baseUnitCode,
-        quantityInBaseUnit: item.quantityInBaseUnit,
-        priceOverride: '',
-        packagingText: item.packagingText,
-        minOrderQuantity: '1',
-        orderIncrement: '1',
-        isDefault: false,
-        isOrderable: true,
-        status: 'Active' as const,
-        sortOrder: String(index + 1),
-        notes: item.notes,
-        weightValue: '',
-        weightUnit: 'kg',
-        lengthValue: '',
-        widthValue: '',
-        heightValue: '',
-        dimensionUnit: 'cm',
-        shippingNotes: '',
-      }));
+    const hasConfiguredPackageRows = currentOptions.some(
+      (item) =>
+        item.unitCode.trim().toLowerCase() !== currentBaseUnitCode ||
+        String(item.quantityInBaseUnit || '').trim() !== '1',
+    );
+    if (
+      hasConfiguredPackageRows &&
+      !window.confirm(
+        'Changing the base unit resets this variation to a single base-unit row. Re-enter package quantities after changing the base unit.',
+      )
+    ) {
+      return;
+    }
+
+    updateCardUnitOptions(cardId, (currentOptions) => {
+      const existingBaseRow = currentOptions.find((item) => item.isDefault) ?? currentOptions[0];
       return [
         {
-          ...baseRow,
-          unitCode: baseUnitCode,
-          unitLabel: baseUnitCode,
-          baseUnitCode,
+          ...(existingBaseRow ?? createDefaultUnitOption(cardId, normalizedBaseUnitCode)),
+          unitCode: normalizedBaseUnitCode,
+          unitLabel: getCanonicalUnitLabel(normalizedBaseUnitCode),
+          baseUnitCode: normalizedBaseUnitCode,
           quantityInBaseUnit: '1',
-          packagingText,
+          packagingText: '',
           isDefault: true,
         },
-        ...parsedRows,
       ];
     });
   }
@@ -1810,6 +1802,7 @@ export default function VarAndPrice({
       .map((item) => ({
         id: item.id,
         adjustmentKind: 'Discount' as const,
+        discountKind: (item.discountKind || '') as DiscountKind,
         discountName: item.discountName,
         discountType: item.discountType,
         amount: item.amount,
@@ -1821,6 +1814,10 @@ export default function VarAndPrice({
         minOrderQuantity: item.minOrderQuantity || item.minQuantity || '1',
         maxOrderQuantity: item.maxOrderQuantity || item.maxQuantity || '',
         status: item.status || 'Active',
+        startsAt: item.startsAt || '',
+        endsAt: item.endsAt || '',
+        promoValidityMode: inferPromoValidityMode(item.startsAt || '', item.endsAt || ''),
+        promoDurationPreset: '7d' as const,
         stackable: item.stackable,
         hasPromo: Boolean(item.hasPromo),
         promoType: item.promoType || 'Freebie',
@@ -1835,6 +1832,7 @@ export default function VarAndPrice({
         promoRewardUnitOptionId: item.promoRewardUnitOptionId || '',
         promoRewardRepeatMode: item.promoRewardRepeatMode || 'one_time',
         promoRewardEveryQuantity: item.promoRewardEveryQuantity || '',
+        promoQualificationScope: item.promoQualificationScope || 'line',
         promoRewardSearchQuery: '',
       }));
     const existingSurcharges = surcharges
@@ -1848,6 +1846,7 @@ export default function VarAndPrice({
       .map((item) => ({
         id: item.id,
         adjustmentKind: 'Surcharge' as const,
+        discountKind: '' as DiscountKind,
         discountName: item.surchargeName,
         discountType: item.surchargeType === 'Percent' ? ('Percent' as const) : ('Amount' as const),
         amount: item.amount,
@@ -1859,6 +1858,10 @@ export default function VarAndPrice({
         minOrderQuantity: item.minOrderQuantity || item.minQuantity || '1',
         maxOrderQuantity: item.maxOrderQuantity || item.maxQuantity || '',
         status: item.status || 'Active',
+        startsAt: item.startsAt || '',
+        endsAt: item.endsAt || '',
+        promoValidityMode: 'Fixed' as const,
+        promoDurationPreset: '7d' as const,
         stackable: false,
         hasPromo: false,
         promoType: 'Freebie' as const,
@@ -1873,10 +1876,11 @@ export default function VarAndPrice({
         promoRewardUnitOptionId: '',
         promoRewardRepeatMode: 'one_time' as const,
         promoRewardEveryQuantity: '',
+        promoQualificationScope: 'line' as const,
         promoRewardSearchQuery: '',
       }));
-    const existing = [...existingDiscounts, ...existingSurcharges];
-    const visibleExisting = existing.map((item) => ({
+    const existing: DiscountDraftRow[] = [...existingDiscounts, ...existingSurcharges];
+    const visibleExisting: DiscountDraftRow[] = existing.map((item) => ({
       ...item,
       discountGroup: item.discountGroup || `legacy-${item.id}`,
     }));
@@ -1895,10 +1899,15 @@ export default function VarAndPrice({
   }
 
   function saveDiscountModal() {
-    if (!discountContext) return;
+    if (!discountContext) {
+      setDiscountModalError('Open an adjustment context before saving.');
+      return;
+    }
     const codeConfig = PRICE_CODES.find((entry) => entry.code === discountContext.code);
-    if (!codeConfig) return;
-    const orderableOptions = getOrderableUnitOptions(discountContext.variationId);
+    if (!codeConfig) {
+      setDiscountModalError('Choose a valid price class before saving.');
+      return;
+    }
     const currentCard = cards.find((card) => card.id === discountContext.variationId);
     const fallbackRowId = currentCard?.rowIds[discountContext.code];
     const matchVariation = matchesVariation(discountContext.variationId, fallbackRowId);
@@ -1916,28 +1925,77 @@ export default function VarAndPrice({
         ] as const;
       }),
     );
-    const validationError = normalizedDraft.find((item) => {
+    const getDraftValidationLabel = (item: DiscountDraftRow) => {
+      const groupIndex = normalizedGroups.findIndex((group) =>
+        group.rows.some((row) => row.id === item.id),
+      );
+      const group = groupIndex >= 0 ? normalizedGroups[groupIndex] : null;
+      const stackIndex = group?.rows.findIndex((row) => row.id === item.id) ?? -1;
+      const name =
+        group?.rows[0]?.discountName.trim() ||
+        suggestedNameByGroup.get(group?.groupKey ?? '') ||
+        `Adjustment ${groupIndex >= 0 ? groupIndex + 1 : '?'}`;
+      const stackSuffix =
+        group && group.rows.length > 1 && stackIndex >= 0
+          ? `, stack ${stackIndex + 1}`
+          : '';
+      return `${name}${stackSuffix}`;
+    };
+    const getDraftValidationMessage = (item: DiscountDraftRow) => {
+      const label = getDraftValidationLabel(item);
       const suggestedName = suggestedNameByGroup.get(getDraftRuleKey(item)) ?? '';
       if ((!item.discountName.trim() && !suggestedName) || !item.amount.trim()) {
-        return true;
+        const reason = item.adjustmentKind === 'Discount'
+          ? 'Enter a discount value before saving this adjustment.'
+          : 'Enter a surcharge value before saving this adjustment.';
+        return `${label}: ${reason}`;
       }
-      if (item.unitCondition === 'selected_unit' && !item.unitOptionId) {
-        return true;
+      if (
+        item.unitCondition === 'selected_unit' &&
+        !getDraftUnitOption(discountContext.variationId, item.unitOptionId)
+      ) {
+        return `${label}: Select an order unit for the selected-unit rule.`;
       }
+      if (item.adjustmentKind === 'Discount' && !item.discountKind) {
+        return `${label}: Choose Base / Regular Discount or Promotional Discount before saving.`;
+      }
+      const timingMessage =
+        item.adjustmentKind === 'Discount'
+          ? validateDiscountTiming({
+              discountKind: item.discountKind,
+              activationMode: getActivationMode({ status: item.status, startsAt: item.startsAt }),
+              startsAt: item.startsAt,
+              endsAt: item.endsAt,
+            })
+          : '';
+      if (
+        item.adjustmentKind === 'Discount' &&
+        timingMessage
+      ) {
+        return `${label}: ${timingMessage}`;
+      }
+      const sameItemRewardUnit =
+        item.hasPromo && item.promoRewardTargetType === 'same_item'
+          ? getDraftUnitOption(
+              discountContext.variationId,
+              item.promoRewardUnitOptionId,
+              item.promoRewardUnitCode,
+            )
+          : null;
       if (
         item.adjustmentKind === 'Discount' &&
         item.hasPromo &&
-        (!item.promoRewardUnitOptionId || !item.promoRewardUnitCode || !item.promoRewardQuantity)
+        (!item.promoRewardQuantity || Number(item.promoRewardQuantity) <= 0)
       ) {
-        return true;
+        return `${label}: Enter a reward quantity greater than zero before saving.`;
       }
       if (
         item.adjustmentKind === 'Discount' &&
         item.hasPromo &&
         item.promoRewardTargetType === 'same_item' &&
-        !orderableOptions.some((option) => option.id === item.promoRewardUnitOptionId)
+        !sameItemRewardUnit
       ) {
-        return true;
+        return `${label}: Select a reward unit from this item before saving.`;
       }
       if (
         item.adjustmentKind === 'Discount' &&
@@ -1945,7 +2003,15 @@ export default function VarAndPrice({
         item.promoRewardTargetType === 'different_item' &&
         (!item.promoRewardProductId || !item.promoRewardVariationId || !item.promoRewardUnitOptionId)
       ) {
-        return true;
+        return `${label}: Select the reward product, variation, and unit before saving.`;
+      }
+      if (
+        item.adjustmentKind === 'Discount' &&
+        item.hasPromo &&
+        item.promoRewardTargetType === 'different_item' &&
+        !item.promoRewardUnitCode
+      ) {
+        return `${label}: Select a reward unit before saving.`;
       }
       if (
         item.adjustmentKind === 'Discount' &&
@@ -1953,17 +2019,24 @@ export default function VarAndPrice({
         item.promoRewardRepeatMode === 'every' &&
         (!item.promoRewardEveryQuantity || Number(item.promoRewardEveryQuantity) <= 0)
       ) {
-        return true;
+        return `${label}: Enter an every-quantity trigger greater than zero before saving.`;
       }
       if (Number(item.minOrderQuantity || '0') <= 0) {
-        return true;
+        return `${label}: Enter a minimum order quantity greater than zero.`;
       }
-      return false;
-    });
+      if (
+        item.adjustmentKind === 'Discount' &&
+        item.hasPromo &&
+        item.promoQualificationScope !== 'line' &&
+        item.promoQualificationScope !== 'assorted_same_product'
+      ) {
+        return `${label}: Choose a valid promo qualification scope before saving.`;
+      }
+      return '';
+    };
+    const validationError = normalizedDraft.map(getDraftValidationMessage).find(Boolean);
     if (validationError) {
-      setDiscountModalError(
-        'Complete the discount fields and choose a valid reward unit option before saving promo/freebie. Save the variation and unit options first if needed.',
-      );
+      setDiscountModalError(validationError);
       return;
     }
     const filtered = discounts.filter((item) => {
@@ -1979,96 +2052,125 @@ export default function VarAndPrice({
           (item.discountName.trim() || suggestedNameByGroup.get(getDraftRuleKey(item))) &&
           item.amount.trim(),
       )
-      .map((item, index) => ({
-        id: item.id,
-        discountRecordId: '',
-        discountClassId: '',
-        variationId: discountContext.variationId,
-        discountName: item.discountName.trim() || suggestedNameByGroup.get(getDraftRuleKey(item)) || 'Discount',
-        discountType: item.discountType,
-        amount: item.amount,
-        minQuantity: item.minOrderQuantity || '1',
-        maxQuantity: item.maxOrderQuantity,
-        branchName: codeConfig.branchName,
-        priceType: codeConfig.priceType,
-        priceCode: codeConfig.code,
-        calculationMethod: item.calculationMethod,
-        applySequence: item.applySequence || String(index + 1),
-        discountGroup: item.discountGroup,
-        appliesTo: 'UnitPrice',
-        stackable: item.stackable,
-        description: '',
-        status: item.status,
-        priority: String(index),
-        startsAt: '',
-        endsAt: '',
-        unitCondition: item.unitCondition,
-        unitOptionId: item.unitCondition === 'selected_unit' ? item.unitOptionId : '',
-        orderUnitCode:
+      .map((item, index) => {
+        const selectedOption =
           item.unitCondition === 'selected_unit'
-            ? getDraftUnitOption(discountContext.variationId, item.unitOptionId)?.unitCode ?? ''
-            : '',
-        minOrderQuantity: item.minOrderQuantity || '1',
-        maxOrderQuantity: item.maxOrderQuantity,
-        minBaseQuantity:
-          item.unitCondition === 'selected_unit'
-            ? computeBaseQuantityPreview(
+            ? getDraftUnitOption(discountContext.variationId, item.unitOptionId)
+            : null;
+        const sameItemRewardUnit =
+          item.hasPromo && item.promoRewardTargetType === 'same_item'
+            ? getDraftUnitOption(
                 discountContext.variationId,
-                item.unitCondition,
-                item.unitOptionId,
-                item.minOrderQuantity || '1',
-              ).split(' ')[0] || ''
-            : '',
-        maxBaseQuantity:
-          item.unitCondition === 'selected_unit'
-            ? computeBaseQuantityPreview(
-                discountContext.variationId,
-                item.unitCondition,
-                item.unitOptionId,
-                item.maxOrderQuantity,
-              ).split(' ')[0] || ''
-            : '',
-        unitRuleLabel: '',
-        unitRuleNotes: '',
-        hasPromo: item.hasPromo,
-        promoType: item.promoType,
-        promoRewardUnitCode: item.hasPromo ? item.promoRewardUnitCode : '',
-        promoRewardQuantity: item.hasPromo ? item.promoRewardQuantity : '',
-        promoRewardLabel:
-          item.hasPromo && item.promoRewardQuantity && item.promoRewardUnitCode
-            ? `free ${item.promoRewardQuantity} ${item.promoRewardUnitCode}${
-                item.promoRewardTargetType === 'different_item' && item.promoRewardProductLabel
-                  ? ` of ${item.promoRewardProductLabel}`
-                  : item.promoRewardTargetType === 'same_item'
-                    ? ' of this item'
-                    : ''
-              }`
-            : '',
-        promoSourceSurchargeId: '',
-        promoRewardTargetType: item.hasPromo ? item.promoRewardTargetType : 'same_item',
-        promoRewardProductId:
-          item.hasPromo && item.promoRewardTargetType === 'different_item'
-            ? item.promoRewardProductId
-            : '',
-        promoRewardProductLabel:
-          item.hasPromo && item.promoRewardTargetType === 'different_item'
-            ? item.promoRewardProductLabel
-            : '',
-        promoRewardVariationId:
-          item.hasPromo && item.promoRewardTargetType === 'different_item'
-            ? item.promoRewardVariationId
-            : '',
-        promoRewardVariationLabel:
-          item.hasPromo && item.promoRewardTargetType === 'different_item'
-            ? item.promoRewardVariationLabel
-            : '',
-        promoRewardUnitOptionId: item.hasPromo ? item.promoRewardUnitOptionId : '',
-        promoRewardRepeatMode: item.hasPromo ? item.promoRewardRepeatMode : 'one_time',
-        promoRewardEveryQuantity:
-          item.hasPromo && item.promoRewardRepeatMode === 'every'
-            ? item.promoRewardEveryQuantity
-            : '',
-      }));
+                item.promoRewardUnitOptionId,
+                item.promoRewardUnitCode,
+              )
+            : null;
+        const promoRewardUnitOptionId =
+          item.hasPromo && item.promoRewardTargetType === 'same_item'
+            ? sameItemRewardUnit?.id ?? item.promoRewardUnitOptionId
+            : item.hasPromo
+              ? item.promoRewardUnitOptionId
+              : '';
+        const promoRewardUnitCode =
+          item.hasPromo && item.promoRewardTargetType === 'same_item'
+            ? sameItemRewardUnit?.unitCode ?? item.promoRewardUnitCode
+            : item.hasPromo
+              ? item.promoRewardUnitCode
+              : '';
+
+        return {
+          id: item.id,
+          discountRecordId: '',
+          discountClassId: '',
+          variationId: discountContext.variationId,
+          discountKind: item.discountKind,
+          discountName: item.discountName.trim() || suggestedNameByGroup.get(getDraftRuleKey(item)) || 'Discount',
+          discountType: item.discountType,
+          amount: item.amount,
+          minQuantity: item.minOrderQuantity || '1',
+          maxQuantity: item.maxOrderQuantity,
+          branchName: codeConfig.branchName,
+          priceType: codeConfig.priceType,
+          priceCode: codeConfig.code,
+          calculationMethod: item.calculationMethod,
+          applySequence: item.applySequence || String(index + 1),
+          discountGroup: item.discountGroup,
+          appliesTo: 'UnitPrice',
+          stackable: item.stackable,
+          description: '',
+          status: item.status,
+          priority: String(index),
+          startsAt: item.startsAt,
+          endsAt: item.discountKind === 'Base' ? '' : item.endsAt,
+          unitCondition: item.unitCondition,
+          unitOptionId: selectedOption ? selectedOption.id : '',
+          orderUnitCode:
+            item.unitCondition === 'selected_unit'
+              ? selectedOption?.unitCode ?? ''
+              : '',
+          minOrderQuantity: item.minOrderQuantity || '1',
+          maxOrderQuantity: item.maxOrderQuantity,
+          minBaseQuantity:
+            item.unitCondition === 'selected_unit'
+              ? computeBaseQuantityPreview(
+                  discountContext.variationId,
+                  item.unitCondition,
+                  selectedOption?.id ?? item.unitOptionId,
+                  item.minOrderQuantity || '1',
+                ).split(' ')[0] || ''
+              : '',
+          maxBaseQuantity:
+            item.unitCondition === 'selected_unit'
+              ? computeBaseQuantityPreview(
+                  discountContext.variationId,
+                  item.unitCondition,
+                  selectedOption?.id ?? item.unitOptionId,
+                  item.maxOrderQuantity,
+                ).split(' ')[0] || ''
+              : '',
+          unitRuleLabel: '',
+          unitRuleNotes: '',
+          hasPromo: item.hasPromo,
+          promoType: item.promoType,
+          promoRewardUnitCode,
+          promoRewardQuantity: item.hasPromo ? item.promoRewardQuantity : '',
+          promoRewardLabel:
+            item.hasPromo && item.promoRewardQuantity && promoRewardUnitCode
+              ? `free ${item.promoRewardQuantity} ${promoRewardUnitCode}${
+                  item.promoRewardTargetType === 'different_item' && item.promoRewardProductLabel
+                    ? ` of ${item.promoRewardProductLabel}`
+                    : item.promoRewardTargetType === 'same_item'
+                      ? ' of this item'
+                      : ''
+                }`
+              : '',
+          promoSourceSurchargeId: '',
+          promoRewardTargetType: item.hasPromo ? item.promoRewardTargetType : 'same_item',
+          promoRewardProductId:
+            item.hasPromo && item.promoRewardTargetType === 'different_item'
+              ? item.promoRewardProductId
+              : '',
+          promoRewardProductLabel:
+            item.hasPromo && item.promoRewardTargetType === 'different_item'
+              ? item.promoRewardProductLabel
+              : '',
+          promoRewardVariationId:
+            item.hasPromo && item.promoRewardTargetType === 'different_item'
+              ? item.promoRewardVariationId
+              : '',
+          promoRewardVariationLabel:
+            item.hasPromo && item.promoRewardTargetType === 'different_item'
+              ? item.promoRewardVariationLabel
+              : '',
+          promoRewardUnitOptionId,
+          promoRewardRepeatMode: item.hasPromo ? item.promoRewardRepeatMode : 'one_time',
+          promoRewardEveryQuantity:
+            item.hasPromo && item.promoRewardRepeatMode === 'every'
+              ? item.promoRewardEveryQuantity
+              : '',
+          promoQualificationScope: item.hasPromo ? item.promoQualificationScope || 'line' : 'line',
+        };
+      });
     const filteredSurcharges = surcharges.filter((item) => {
       const samePriceContext =
         matchVariation(item.variationId) &&
@@ -2126,8 +2228,8 @@ export default function VarAndPrice({
           description: '',
           status: item.status,
           priority: item.applySequence || String(index + 1),
-          startsAt: '',
-          endsAt: '',
+          startsAt: item.startsAt,
+          endsAt: item.endsAt,
           unitCondition: item.unitCondition,
           unitOptionId: item.unitCondition === 'selected_unit' ? item.unitOptionId : '',
           orderUnitCode: item.unitCondition === 'selected_unit' ? selectedOption?.unitCode ?? '' : '',
@@ -2146,6 +2248,7 @@ export default function VarAndPrice({
           rewardUnitOptionId: '',
           rewardRepeatMode: 'one_time',
           rewardEveryQuantity: '',
+          qualificationScope: 'line',
         };
       });
     onDiscountsChange([...filtered, ...inserted]);
@@ -2217,10 +2320,7 @@ export default function VarAndPrice({
             const baseUnitCode = getCardBaseUnitCode(card.id);
             const cardUnitOptions = getCardUnitOptions(card.id);
             const selectedPreviewMedia = getSelectedPreviewMedia(card.id);
-            const packagingValue =
-              packagingInputs[card.id] ??
-              cardUnitOptions.find((item) => item.packagingText)?.packagingText ??
-              '';
+            const packagingSummary = generatePackagingSummary(cardUnitOptions, baseUnitCode);
 
             return (
               <article key={card.id} className={styles.variationCard}>
@@ -2276,7 +2376,7 @@ export default function VarAndPrice({
                             value={baseUnitCode}
                             onChange={(event) => handleBaseUnitChange(card.id, event.target.value)}
                           >
-                            {(activeUnits.length > 0 ? activeUnits : [{ code: 'pc', label: 'pc', status: 'Active' }]).map((unit) => (
+                            {unitChoices.map((unit) => (
                               <option key={unit.code} value={unit.code}>
                                 {unit.label}
                               </option>
@@ -2304,30 +2404,18 @@ export default function VarAndPrice({
                       </div>
 
                       <div className={styles.packagingRow}>
-                        <label className={styles.fieldGroup}>
-                          <span className={styles.fieldLabel}>Packaging Text Quick Input</span>
-                          <input
-                            className={styles.input}
-                            value={packagingValue}
-                            onChange={(event) =>
-                              setPackagingInputs((current) => ({
-                                ...current,
-                                [card.id]: event.target.value,
-                              }))
-                            }
-                            placeholder="100pcs/box:1000pcs/ctn"
-                          />
+                        <div className={styles.fieldGroup}>
+                          <span className={styles.fieldLabel}>Generated Packaging Summary</span>
+                          <div className={styles.input}>
+                            {packagingSummary.summary || 'Add order unit rows to generate a packaging summary.'}
+                          </div>
                           <span className={styles.fieldHelper}>
-                            Examples: 10pcs/pack:20pack/box:200pack/ctn, 180pcs/box:900pcs/ctn
+                            Derived from Order Units. The Contains value remains cumulative to {baseUnitCode}.
                           </span>
-                        </label>
-                        <button
-                          type="button"
-                          className={styles.secondaryAction}
-                          onClick={() => handlePackagingParse(card)}
-                        >
-                          Parse / Generate Units
-                        </button>
+                          {packagingSummary.warnings.length > 0 ? (
+                            <span className={styles.parserMessage}>{packagingSummary.warnings.join(' ')}</span>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
 
@@ -2377,10 +2465,6 @@ export default function VarAndPrice({
                       </div>
                     </div>
                   </div>
-
-                  {parserMessages[card.id] ? (
-                    <p className={styles.parserMessage}>{parserMessages[card.id]}</p>
-                  ) : null}
 
                   <div className={styles.unitOptionsPanel}>
                     <div className={styles.unitOptionsHeader}>
@@ -2445,30 +2529,38 @@ export default function VarAndPrice({
                                 <select
                                   className={styles.select}
                                   value={option.unitCode}
-                                  onChange={(event) =>
+                                  onChange={(event) => {
+                                    const nextUnitCode = event.target.value.trim().toLowerCase();
+                                    if (
+                                      nextUnitCode &&
+                                      cardUnitOptions.some(
+                                        (item) =>
+                                          item.id !== option.id &&
+                                          item.unitCode.trim().toLowerCase() === nextUnitCode.trim().toLowerCase(),
+                                      )
+                                    ) {
+                                      window.alert('Each order unit can only be added once per variation.');
+                                      return;
+                                    }
                                     updateCardUnitOptions(card.id, (currentOptions) =>
                                       currentOptions.map((item) =>
                                         item.id === option.id
                                           ? {
                                               ...item,
-                                              unitCode: event.target.value,
-                                              unitLabel: item.unitLabel || event.target.value,
+                                              unitCode: nextUnitCode,
+                                              unitLabel: nextUnitCode ? getCanonicalUnitLabel(nextUnitCode) : '',
                                             }
                                           : item,
                                       ),
-                                    )
-                                  }
+                                    );
+                                  }}
                                 >
                                   <option value="">Select unit</option>
-                                  {(activeUnits.length > 0
-                                    ? activeUnits
-                                    : [{ code: 'pc', label: 'pc', status: 'Active' }]).map(
-                                    (unit) => (
-                                      <option key={unit.code} value={unit.code}>
-                                        {unit.label}
-                                      </option>
-                                    ),
-                                  )}
+                                  {unitChoices.map((unit) => (
+                                    <option key={unit.code} value={unit.code}>
+                                      {unit.label}
+                                    </option>
+                                  ))}
                                 </select>
                             </label>
 
@@ -2501,7 +2593,7 @@ export default function VarAndPrice({
                             </div>
 
                             <div className={styles.physicalSpecsCell}>
-                              <span className={styles.fieldLabel}>Weight</span>
+                              <span className={styles.fieldLabel}>Package Weight</span>
                               <div className={styles.physicalInline}>
                                 <input
                                   className={styles.input}
@@ -2547,7 +2639,7 @@ export default function VarAndPrice({
                                 </select>
                               </div>
 
-                              <span className={styles.fieldLabel}>Dimensions</span>
+                              <span className={styles.fieldLabel}>Package Dimensions</span>
                               <div className={styles.dimensionInline}>
                                 {[
                                   ['lengthValue', 'l'],
@@ -2652,7 +2744,7 @@ export default function VarAndPrice({
                                 />
                             </label>
 
-                            <label className={styles.fieldGroup}>
+                            <div className={styles.fieldGroup}>
                                 <span className={styles.fieldLabel}>Status</span>
                                 <select
                                   className={styles.select}
@@ -2665,7 +2757,6 @@ export default function VarAndPrice({
                                           ? {
                                               ...item,
                                               status: nextStatus,
-                                              isOrderable: nextStatus === 'Active',
                                             }
                                           : item,
                                       ),
@@ -2675,7 +2766,26 @@ export default function VarAndPrice({
                                   <option value="Active">Active</option>
                                   <option value="Inactive">Inactive</option>
                                 </select>
-                            </label>
+                                <label className={styles.toggleField}>
+                                  <span className={styles.fieldLabel}>Orderable</span>
+                                  <input
+                                    type="checkbox"
+                                    checked={option.isOrderable}
+                                    onChange={(event) =>
+                                      updateCardUnitOptions(card.id, (currentOptions) =>
+                                        currentOptions.map((item) =>
+                                          item.id === option.id
+                                            ? {
+                                                ...item,
+                                                isOrderable: event.target.checked,
+                                              }
+                                            : item,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                </label>
+                            </div>
 
                             <div className={styles.unitOptionActions}>
                               <button
@@ -2728,6 +2838,18 @@ export default function VarAndPrice({
                         (item) =>
                           item.hasPromo,
                       ));
+                      const discountBadges = getDiscountRuleGroups(
+                        matchingDiscounts.map((item) => ({
+                          ...createEmptyDiscountDraft(),
+                          id: item.id,
+                          discountKind: item.discountKind,
+                          discountName: item.discountName,
+                          discountGroup: item.discountGroup,
+                          status: item.status,
+                          startsAt: item.startsAt,
+                          endsAt: item.endsAt,
+                        })),
+                      ).map((group) => group.rows[0]).filter(Boolean);
                       return (
                         <div key={entry.code} className={styles.priceCell}>
                           <div className={styles.priceTop}>
@@ -2749,6 +2871,17 @@ export default function VarAndPrice({
                           {discountWithPromoCount > 0 ? (
                             <p className={styles.priceHint}>
                               {adjustmentCount} adjustments, {discountWithPromoCount} with promo
+                            </p>
+                          ) : null}
+                          {discountBadges.length > 0 ? (
+                            <p className={styles.priceHint}>
+                              {discountBadges.map((item) =>
+                                `${getDiscountKindLabel(item.discountKind)} / ${getDiscountDerivedState({
+                                  status: item.status,
+                                  startsAt: item.startsAt,
+                                  endsAt: item.endsAt,
+                                })}${item.discountKind === 'Promo' ? ` (${formatDiscountDateRange(item.startsAt, item.endsAt)})` : ''}`,
+                              ).join(' | ')}
                             </p>
                           ) : null}
                         </div>
@@ -3105,6 +3238,21 @@ export default function VarAndPrice({
                           selectedOption,
                         );
                         const promoValidationMessage = getPromoValidationMessage(rule, orderableOptions);
+                        const activationMode = getActivationMode({
+                          status: rule.status,
+                          startsAt: rule.startsAt,
+                        });
+                        const derivedState = getDiscountDerivedState({
+                          status: rule.status,
+                          startsAt: rule.startsAt,
+                          endsAt: rule.endsAt,
+                        });
+                        const timingValidationMessage = validateDiscountTiming({
+                          discountKind: rule.discountKind,
+                          activationMode,
+                          startsAt: rule.startsAt,
+                          endsAt: rule.endsAt,
+                        });
 
                         return (
                           <div key={ruleGroup.groupKey} className={styles.ruleCard}>
@@ -3112,6 +3260,9 @@ export default function VarAndPrice({
                               <span className={styles.rowIndex}>{ruleIndex + 1}</span>
                               <span className={styles.ruleSummary}>
                                 Adjustment {ruleIndex + 1} - minimum {rule.minOrderQuantity || '1'} {getUnitOptionLabel(selectedOption)}
+                              </span>
+                              <span className={styles.readOnlyValue}>
+                                {getDiscountKindLabel(rule.discountKind)} / {derivedState}
                               </span>
                               <button
                                 type="button"
@@ -3192,21 +3343,118 @@ export default function VarAndPrice({
                                 />
                               </label>
                               <label className={styles.fieldGroup}>
+                                <span className={styles.fieldLabel}>Discount Type</span>
+                                <select
+                                  className={styles.select}
+                                  value={rule.discountKind}
+                                  onChange={(event) =>
+                                    updateDiscountKind(ruleGroup.groupKey, event.target.value as DiscountKind)
+                                  }
+                                >
+                                  <option value="">Legacy / Unclassified</option>
+                                  <option value="Base">Base / Regular Discount</option>
+                                  <option value="Promo">Promotional Discount</option>
+                                </select>
+                              </label>
+                              <label className={styles.fieldGroup}>
                                 <span className={styles.fieldLabel}>Status</span>
                                 <select
                                   className={styles.select}
-                                  value={rule.status}
+                                  value={activationMode}
                                   onChange={(event) =>
-                                    updateDiscountRule(ruleGroup.groupKey, {
-                                      status: event.target.value as DiscountItem['status'],
-                                    })
+                                    updateDiscountActivation(
+                                      ruleGroup.groupKey,
+                                      event.target.value as DiscountActivationMode,
+                                    )
                                   }
                                 >
-                                  <option value="Active">Active</option>
-                                  <option value="Inactive">Inactive</option>
+                                  <option value="Inactive">Save Inactive</option>
+                                  <option value="Now">Activate Now</option>
+                                  <option value="Scheduled">Schedule</option>
                                 </select>
                               </label>
+                              {activationMode === 'Scheduled' || rule.startsAt ? (
+                                <label className={styles.fieldGroup}>
+                                  <span className={styles.fieldLabel}>Start Date/Time</span>
+                                  <input
+                                    className={styles.input}
+                                    type="datetime-local"
+                                    value={toDatetimeLocalValue(rule.startsAt)}
+                                    onChange={(event) =>
+                                      updateDiscountStart(
+                                        ruleGroup.groupKey,
+                                        datetimeLocalToIso(event.target.value),
+                                      )
+                                    }
+                                  />
+                                </label>
+                              ) : null}
+                              {rule.discountKind === 'Promo' ? (
+                                <>
+                                  <label className={styles.fieldGroup}>
+                                    <span className={styles.fieldLabel}>Promo Validity</span>
+                                    <select
+                                      className={styles.select}
+                                      value={rule.promoValidityMode}
+                                      onChange={(event) =>
+                                        updatePromoValidityMode(
+                                          ruleGroup.groupKey,
+                                          event.target.value as PromoValidityMode,
+                                        )
+                                      }
+                                    >
+                                      <option value="Fixed">Fixed Dates</option>
+                                      <option value="Duration">Duration</option>
+                                    </select>
+                                  </label>
+                                  {rule.promoValidityMode === 'Duration' ? (
+                                    <label className={styles.fieldGroup}>
+                                      <span className={styles.fieldLabel}>Duration</span>
+                                      <select
+                                        className={styles.select}
+                                        value={rule.promoDurationPreset}
+                                        onChange={(event) =>
+                                          updatePromoDurationPreset(
+                                            ruleGroup.groupKey,
+                                            event.target.value as PromoDurationPreset,
+                                          )
+                                        }
+                                      >
+                                        {(['7d', '14d', '30d', '1m', '3m', 'custom'] as PromoDurationPreset[]).map(
+                                          (preset) => (
+                                            <option key={preset} value={preset}>
+                                              {getDurationLabel(preset)}
+                                            </option>
+                                          ),
+                                        )}
+                                      </select>
+                                    </label>
+                                  ) : null}
+                                  <label className={styles.fieldGroup}>
+                                    <span className={styles.fieldLabel}>End Date/Time</span>
+                                    <input
+                                      className={styles.input}
+                                      type="datetime-local"
+                                      value={toDatetimeLocalValue(rule.endsAt)}
+                                      onChange={(event) =>
+                                        updateDiscountRule(ruleGroup.groupKey, {
+                                          endsAt: datetimeLocalToIso(event.target.value),
+                                          promoValidityMode: 'Fixed',
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                </>
+                              ) : null}
                             </div>
+                            <p className={styles.ruleNote}>
+                              {rule.discountKind === 'Base'
+                                ? `Base / Regular Discount. ${formatDiscountDateRange(rule.startsAt, '')}`
+                                : rule.discountKind === 'Promo'
+                                  ? `Promo validity: ${formatDiscountDateRange(rule.startsAt, rule.endsAt)}`
+                                  : 'Legacy / Unclassified discount. Choose Base or Promo before saving changes.'}
+                              {timingValidationMessage ? ` ${timingValidationMessage}` : ''}
+                            </p>
 
                             <h5 className={styles.modalSectionTitle}>Price Adjustment Stack</h5>
                             <div className={styles.stackList}>
@@ -3412,6 +3660,21 @@ export default function VarAndPrice({
                                       >
                                         <option value="same_item">Same item</option>
                                         <option value="different_item">Different item</option>
+                                      </select>
+                                    </label>
+                                    <label className={styles.fieldGroup}>
+                                      <span className={styles.fieldLabel}>Qualification Scope</span>
+                                      <select
+                                        className={styles.select}
+                                        value={rule.promoQualificationScope || 'line'}
+                                        onChange={(event) =>
+                                          updateDiscountPromo(ruleGroup.groupKey, {
+                                            promoQualificationScope: event.target.value as QualificationScope,
+                                          })
+                                        }
+                                      >
+                                        <option value="line">Per Line</option>
+                                        <option value="assorted_same_product">Assorted Across Variations</option>
                                       </select>
                                     </label>
                                     <label className={styles.fieldGroup}>
@@ -3722,6 +3985,7 @@ export default function VarAndPrice({
                                 discountRecordId: '',
                                 discountClassId: '',
                                 variationId: discountContext.variationId,
+                                discountKind: tier.discountKind,
                                 discountName: tier.discountName,
                                 discountType: tier.discountType,
                                 amount: tier.amount,
@@ -3738,8 +4002,8 @@ export default function VarAndPrice({
                                 description: '',
                                 status: tier.status,
                                 priority: String(index),
-                                startsAt: '',
-                                endsAt: '',
+                                startsAt: tier.startsAt,
+                                endsAt: tier.endsAt,
                                 unitOptionId: tier.unitOptionId,
                                 orderUnitCode: selectedOption?.unitCode ?? '',
                                 unitCondition: tier.unitCondition,
@@ -3763,6 +4027,7 @@ export default function VarAndPrice({
                                 promoRewardUnitOptionId: tier.promoRewardUnitOptionId,
                                 promoRewardRepeatMode: tier.promoRewardRepeatMode,
                                 promoRewardEveryQuantity: tier.promoRewardEveryQuantity,
+                                promoQualificationScope: tier.promoQualificationScope || 'line',
                               })}</span>
                               <button
                                 type="button"
@@ -4034,6 +4299,25 @@ export default function VarAndPrice({
                                 >
                                   <option value="Freebie">Freebie</option>
                                   <option value="BonusQty">BonusQty</option>
+                                </select>
+                                <select
+                                  className={styles.select}
+                                  value={tier.promoQualificationScope}
+                                  onChange={(event) =>
+                                    setDiscountDraft((current) =>
+                                      current.map((item) =>
+                                        item.id === tier.id
+                                          ? {
+                                              ...item,
+                                              promoQualificationScope: event.target.value as QualificationScope,
+                                            }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                >
+                                  <option value="line">Per Line</option>
+                                  <option value="assorted_same_product">Assorted Across Variations</option>
                                 </select>
                                 <select
                                   className={styles.select}
@@ -4452,6 +4736,7 @@ export default function VarAndPrice({
               );
             })()}
             <div className={styles.modalFooterActions}>
+              {discountModalError ? <p className={styles.modalAlert}>{discountModalError}</p> : null}
               <button type="button" className={styles.cancelButton} onClick={() => {
                 setDiscountContext(null);
                 setDiscountDraft([]);
