@@ -177,10 +177,13 @@ function toSkuToken(value: string) {
 function buildGroupKeyFromRow(item: VariationItem) {
   const normalizedVariationName = (item.variationName || item.className || '').trim().toLowerCase();
   const normalizedSku = item.skuCode.trim().toLowerCase();
-  if (normalizedVariationName) {
-    return `name::${normalizedVariationName}`;
+  if (normalizedVariationName && normalizedSku) {
+    return `${normalizedVariationName}::${normalizedSku}`;
   }
-  return `sku::${normalizedSku}`;
+  if (normalizedVariationName) {
+    return `${normalizedVariationName}::`;
+  }
+  return `::${normalizedSku}`;
 }
 
 function formatPriceInput(value: string) {
@@ -895,19 +898,55 @@ export default function VarAndPrice({
         sortOrder: String(index),
       };
     });
+    const copyScopedAdjustmentGroup = (() => {
+      const groupMap = new Map<string, string>();
+      return (groupKey: string, priceCode: string, fallbackId: string) => {
+        const sourceGroupKey = groupKey || fallbackId;
+        if (!sourceGroupKey) {
+          return '';
+        }
+        const scopedKey = `${priceCode}::${sourceGroupKey}`;
+        const existingGroup = groupMap.get(scopedKey);
+        if (existingGroup) {
+          return existingGroup;
+        }
+        const nextGroup = `${nextId}-${priceCode}-${crypto.randomUUID()}`;
+        groupMap.set(scopedKey, nextGroup);
+        return nextGroup;
+      };
+    })();
     const copiedDiscounts = discounts
+      .filter((item) => matchesVariation(card.id, card.rowIds[item.priceCode as PriceCode]))
+      .map((item, index) => {
+        const copiedId = crypto.randomUUID();
+        return {
+          ...item,
+          id: copiedId,
+          discountRecordId: '',
+          discountClassId: '',
+          variationId: nextId,
+          unitOptionId: unitIdMap.get(item.unitOptionId) ?? item.unitOptionId,
+          promoRewardUnitOptionId: unitIdMap.get(item.promoRewardUnitOptionId) ?? item.promoRewardUnitOptionId,
+          promoSourceSurchargeId: '',
+          discountGroup: copyScopedAdjustmentGroup(item.discountGroup, item.priceCode, item.id || copiedId),
+          applySequence: item.applySequence || String(index + 1),
+        };
+      });
+    const copiedSurcharges = surcharges
       .filter((item) => matchesVariation(card.id, card.rowIds[item.priceCode as PriceCode]))
       .map((item, index) => ({
         ...item,
         id: crypto.randomUUID(),
-        discountRecordId: '',
-        discountClassId: '',
+        linkedDiscountId: '',
+        linkedDiscountClassId: '',
         variationId: nextId,
         unitOptionId: unitIdMap.get(item.unitOptionId) ?? item.unitOptionId,
-        promoRewardUnitOptionId: unitIdMap.get(item.promoRewardUnitOptionId) ?? item.promoRewardUnitOptionId,
-        promoSourceSurchargeId: '',
-        discountGroup: `${nextId}-${item.priceCode}`,
-        applySequence: item.applySequence || String(index + 1),
+        rewardVariationId:
+          item.rewardTargetType === 'same_item' && matchesVariation(item.rewardVariationId)
+            ? nextId
+            : item.rewardVariationId,
+        rewardUnitOptionId: unitIdMap.get(item.rewardUnitOptionId) ?? item.rewardUnitOptionId,
+        priority: item.priority || String(index + 1),
       }));
     const nextCard = {
       ...card,
@@ -919,9 +958,8 @@ export default function VarAndPrice({
 
     pushCards([...cards, nextCard]);
     onUnitOptionsChange([...unitOptions, ...copiedUnitOptions]);
-    if (copiedDiscounts.length > 0) {
-      onDiscountsChange([...discounts, ...copiedDiscounts]);
-    }
+    onDiscountsChange([...discounts, ...copiedDiscounts]);
+    onSurchargesChange([...surcharges, ...copiedSurcharges]);
     clearVariationPreviewMedia(nextId);
     setActiveVariationTabId(nextId);
     setActiveCard(nextCard);
