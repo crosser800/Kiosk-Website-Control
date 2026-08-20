@@ -11,7 +11,7 @@
 }
 
 .panel {
-  width: min(76rem, 100%);
+  width: min(96rem, 100%);
   max-height: calc(100vh - 5.75rem);
   display: flex;
   flex-direction: column;
@@ -153,6 +153,11 @@
   display: grid;
   grid-template-columns: 13.5rem minmax(0, 1fr);
   overflow: hidden;
+  transition: grid-template-columns 180ms ease;
+}
+
+.bodySidebarCollapsed {
+  grid-template-columns: 4.5rem minmax(0, 1fr);
 }
 
 .sidebar {
@@ -162,6 +167,50 @@
   padding: 1rem;
   border-right: 1px solid var(--card-border);
   background: color-mix(in srgb, var(--surface) 58%, transparent);
+  overflow: hidden;
+}
+
+.sidebarToggle {
+  min-height: 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  padding: 0 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 0.45rem;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.sidebarToggle:hover {
+  background: var(--surface);
+  color: var(--yellow);
+}
+
+.bodySidebarCollapsed .sidebar {
+  align-items: center;
+  padding: 1rem 0.65rem;
+}
+
+.bodySidebarCollapsed .sidebarToggle {
+  width: 100%;
+  justify-content: center;
+}
+
+.bodySidebarCollapsed .sidebarToggle span,
+.bodySidebarCollapsed .navLabel {
+  display: none;
+}
+
+.bodySidebarCollapsed .navButton {
+  width: 2.9rem;
+  justify-content: center;
+  padding: 0;
 }
 
 .navButton {
@@ -411,7 +460,7 @@
 }
 
 .tableShell {
-  overflow-x: auto;
+  overflow-x: hidden;
 }
 
 .tableHeader,
@@ -630,11 +679,36 @@
     grid-template-columns: 1fr;
   }
 
+  .body.bodySidebarCollapsed {
+    grid-template-columns: 1fr;
+  }
+
   .sidebar {
     flex-direction: row;
     overflow-x: auto;
     border-right: 0;
     border-bottom: 1px solid var(--card-border);
+  }
+
+  .bodySidebarCollapsed .sidebar {
+    align-items: stretch;
+    padding: 1rem;
+  }
+
+  .bodySidebarCollapsed .sidebarToggle {
+    width: auto;
+    justify-content: flex-end;
+  }
+
+  .bodySidebarCollapsed .sidebarToggle span,
+  .bodySidebarCollapsed .navLabel {
+    display: inline;
+  }
+
+  .bodySidebarCollapsed .navButton {
+    width: auto;
+    justify-content: flex-start;
+    padding: 0 0.8rem;
   }
 
   .navButton {
@@ -752,8 +826,8 @@
 
 .clientTableHeader,
 .clientRow {
-  grid-template-columns: 0.9fr 1.2fr 1.1fr 1fr 1fr 1.2fr 0.8fr 0.8fr;
-  min-width: 68rem;
+  grid-template-columns: minmax(4.7rem, 0.9fr) minmax(5.5rem, 1.2fr) minmax(6.5rem, 1.1fr) minmax(6.5rem, 1fr) minmax(5.5rem, 1fr) minmax(7rem, 1.2fr) minmax(4.5rem, 0.8fr) minmax(4.5rem, 0.8fr);
+  min-width: 0;
 }
 
 .clientRow {
@@ -766,6 +840,13 @@
   font-family: 'Montserrat', sans-serif;
   font-size: 0.78rem;
   font-weight: 650;
+}
+
+.clientTableHeader > span,
+.clientRow > span,
+.clientRow > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .clientRow:last-child {

@@ -464,6 +464,7 @@ function getFriendlySaveError(error: unknown) {
 
 export default function AgentProfilePanel({ account, onSave, onClose }: AgentProfilePanelProps) {
   const [activeSection, setActiveSection] = useState<PanelSection>('info');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [agentDraft, setAgentDraft] = useState<AgentDraft>(() => mapAccountToAgentDraft(account));
   const [originalAgent, setOriginalAgent] = useState<AgentDraft>(() => mapAccountToAgentDraft(account));
   const [clientDrafts, setClientDrafts] = useState<ClientDraft[]>([]);
@@ -1121,8 +1122,19 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
           </button>
         </header>
 
-        <div className={styles.body}>
+        <div className={`${styles.body} ${isSidebarCollapsed ? styles.bodySidebarCollapsed : ''}`}>
           <nav className={styles.sidebar} aria-label="Agent profile sections">
+            <button
+              type="button"
+              className={styles.sidebarToggle}
+              onClick={() => setIsSidebarCollapsed((isCollapsed) => !isCollapsed)}
+              aria-expanded={!isSidebarCollapsed}
+              aria-label={isSidebarCollapsed ? 'Expand profile navigation' : 'Collapse profile navigation'}
+              title={isSidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            >
+              <i className={`fa-solid ${isSidebarCollapsed ? 'fa-chevron-right' : 'fa-chevron-left'}`} aria-hidden="true"></i>
+              <span>Collapse</span>
+            </button>
             {sections.map((section) => (
               <button
                 key={section.id}
@@ -1131,7 +1143,7 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
                 onClick={() => setActiveSection(section.id)}
               >
                 <i className={`fa-solid ${section.icon}`} aria-hidden="true"></i>
-                <span>{section.label}</span>
+                <span className={styles.navLabel}>{section.label}</span>
               </button>
             ))}
           </nav>
