@@ -392,6 +392,140 @@ function countDiscountGroups(items: DiscountItem[]) {
   return new Set(items.map((item) => item.discountGroup?.trim() || item.id)).size;
 }
 
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string | null | undefined) {
+  return Boolean(value && uuidPattern.test(String(value).trim()));
+}
+
+function getSyntheticParentUuid(value: string | null | undefined) {
+  const text = String(value ?? '').trim();
+  if (isUuid(text)) return text;
+  const possibleUuid = text.slice(0, 36);
+  return isUuid(possibleUuid) ? possibleUuid : '';
+}
+
+function getDiscountParentKey(item: DiscountItem) {
+  return item.discountRecordId || item.id;
+}
+
+function getSurchargeParentKey(item: SurchargeItem) {
+  return getSyntheticParentUuid(item.id) || item.id;
+}
+
+function normalizeCloneValue(value: string | number | boolean | null | undefined) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function getUnitCodeForCloneFingerprint(
+  unitOptions: VariationUnitOptionItem[],
+  unitOptionId: string,
+  fallbackCode: string,
+) {
+  const option = unitOptions.find((entry) => entry.id === unitOptionId);
+  return option?.unitCode || fallbackCode;
+}
+
+function getRewardUnitCodeForCloneFingerprint(
+  unitOptions: VariationUnitOptionItem[],
+  unitOptionId: string,
+  fallbackCode: string,
+) {
+  const option = unitOptions.find((entry) => entry.id === unitOptionId);
+  return option?.unitCode || fallbackCode;
+}
+
+function getDiscountCloneFingerprint(item: DiscountItem, unitOptions: VariationUnitOptionItem[] = []) {
+  const orderUnitCode = getUnitCodeForCloneFingerprint(
+    unitOptions,
+    item.unitOptionId,
+    item.orderUnitCode,
+  );
+  const rewardUnitCode = getRewardUnitCodeForCloneFingerprint(
+    unitOptions,
+    item.promoRewardUnitOptionId,
+    item.promoRewardUnitCode,
+  );
+
+  return [
+    item.priceCode,
+    item.discountKind,
+    item.discountName,
+    item.discountType,
+    item.amount,
+    item.calculationMethod,
+    item.unitCondition,
+    item.unitCondition === 'selected_unit' ? orderUnitCode : '',
+    item.minOrderQuantity || item.minQuantity,
+    item.maxOrderQuantity || item.maxQuantity,
+    item.status,
+    item.startsAt,
+    item.endsAt,
+    item.hasPromo,
+    item.promoType,
+    rewardUnitCode,
+    item.promoRewardQuantity,
+    item.promoRewardTargetType,
+    item.promoRewardProductId,
+    item.promoRewardVariationId,
+    item.promoRewardRepeatMode,
+    item.promoRewardEveryQuantity,
+    item.promoQualificationScope,
+  ].map(normalizeCloneValue).join('|');
+}
+
+function getSurchargeCloneFingerprint(item: SurchargeItem, unitOptions: VariationUnitOptionItem[] = []) {
+  const orderUnitCode = getUnitCodeForCloneFingerprint(
+    unitOptions,
+    item.unitOptionId,
+    item.orderUnitCode,
+  );
+  const rewardUnitCode = getRewardUnitCodeForCloneFingerprint(
+    unitOptions,
+    item.rewardUnitOptionId,
+    item.rewardUnitCode,
+  );
+
+  return [
+    item.priceCode,
+    item.surchargeName,
+    item.surchargeType,
+    item.amount,
+    item.freeQuantity,
+    item.unitCondition,
+    item.unitCondition === 'selected_unit' ? orderUnitCode : '',
+    item.minOrderQuantity || item.minQuantity,
+    item.maxOrderQuantity || item.maxQuantity,
+    item.status,
+    item.startsAt,
+    item.endsAt,
+    rewardUnitCode,
+    item.rewardQuantity,
+    item.rewardTargetType,
+    item.rewardProductId,
+    item.rewardVariationId,
+    item.rewardRepeatMode,
+    item.rewardEveryQuantity,
+    item.qualificationScope,
+  ].map(normalizeCloneValue).join('|');
+}
+
+function uniqueByCloneFingerprint<Item>(
+  items: Item[],
+  getFingerprint: (item: Item) => string,
+) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const fingerprint = getFingerprint(item);
+    if (seen.has(fingerprint)) {
+      return false;
+    }
+    seen.add(fingerprint);
+    return true;
+  });
+}
+
 function inferPromoValidityMode(startsAt: string, endsAt: string): PromoValidityMode {
   return startsAt || endsAt ? 'Fixed' : 'Duration';
 }
@@ -900,43 +1034,77 @@ export default function VarAndPrice({
     });
     const copyScopedAdjustmentGroup = (() => {
       const groupMap = new Map<string, string>();
-      return (groupKey: string, priceCode: string, fallbackId: string) => {
+      return (groupKey: string, fallbackId: string) => {
         const sourceGroupKey = groupKey || fallbackId;
         if (!sourceGroupKey) {
           return '';
         }
-        const scopedKey = `${priceCode}::${sourceGroupKey}`;
-        const existingGroup = groupMap.get(scopedKey);
+        const existingGroup = groupMap.get(sourceGroupKey);
         if (existingGroup) {
           return existingGroup;
         }
-        const nextGroup = `${nextId}-${priceCode}-${crypto.randomUUID()}`;
-        groupMap.set(scopedKey, nextGroup);
+        const nextGroup = `${nextId}-${crypto.randomUUID()}`;
+        groupMap.set(sourceGroupKey, nextGroup);
         return nextGroup;
       };
     })();
-    const copiedDiscounts = discounts
-      .filter((item) => matchesVariation(card.id, card.rowIds[item.priceCode as PriceCode]))
+    const copyDiscountRecordId = (() => {
+      const parentIdMap = new Map<string, string>();
+      return (item: DiscountItem) => {
+        const sourceParentKey = getDiscountParentKey(item);
+        const existingParentId = parentIdMap.get(sourceParentKey);
+        if (existingParentId) {
+          return existingParentId;
+        }
+        const nextParentId = crypto.randomUUID();
+        parentIdMap.set(sourceParentKey, nextParentId);
+        return nextParentId;
+      };
+    })();
+    const copySurchargeId = (() => {
+      const parentIdMap = new Map<string, string>();
+      const classIndexMap = new Map<string, number>();
+      return (item: SurchargeItem) => {
+        const sourceParentKey = getSurchargeParentKey(item);
+        let nextParentId = parentIdMap.get(sourceParentKey);
+        if (!nextParentId) {
+          nextParentId = crypto.randomUUID();
+          parentIdMap.set(sourceParentKey, nextParentId);
+        }
+        const classIndex = classIndexMap.get(sourceParentKey) ?? 0;
+        classIndexMap.set(sourceParentKey, classIndex + 1);
+        return classIndex === 0 ? nextParentId : `${nextParentId}-${classIndex}`;
+      };
+    })();
+    const sourceDiscounts = uniqueByCloneFingerprint(
+      discounts.filter((item) => matchesVariation(card.id, card.rowIds[item.priceCode as PriceCode])),
+      (item) => getDiscountCloneFingerprint(item, unitOptions),
+    );
+    const sourceSurcharges = uniqueByCloneFingerprint(
+      surcharges.filter((item) => matchesVariation(card.id, card.rowIds[item.priceCode as PriceCode])),
+      (item) => getSurchargeCloneFingerprint(item, unitOptions),
+    );
+    const copiedDiscounts = sourceDiscounts
       .map((item, index) => {
         const copiedId = crypto.randomUUID();
+        const copiedParentId = copyDiscountRecordId(item);
         return {
           ...item,
           id: copiedId,
-          discountRecordId: '',
+          discountRecordId: copiedParentId,
           discountClassId: '',
           variationId: nextId,
           unitOptionId: unitIdMap.get(item.unitOptionId) ?? item.unitOptionId,
           promoRewardUnitOptionId: unitIdMap.get(item.promoRewardUnitOptionId) ?? item.promoRewardUnitOptionId,
           promoSourceSurchargeId: '',
-          discountGroup: copyScopedAdjustmentGroup(item.discountGroup, item.priceCode, item.id || copiedId),
+          discountGroup: copyScopedAdjustmentGroup(item.discountGroup, item.id || copiedId),
           applySequence: item.applySequence || String(index + 1),
         };
       });
-    const copiedSurcharges = surcharges
-      .filter((item) => matchesVariation(card.id, card.rowIds[item.priceCode as PriceCode]))
+    const copiedSurcharges = sourceSurcharges
       .map((item, index) => ({
         ...item,
-        id: crypto.randomUUID(),
+        id: copySurchargeId(item),
         linkedDiscountId: '',
         linkedDiscountClassId: '',
         variationId: nextId,
@@ -1757,7 +1925,7 @@ export default function VarAndPrice({
       id: nextId,
       variationName: '',
       baseSku: defaultBaseSku,
-      stockQuantity: '0',
+      stockQuantity: '9999',
       availability: 'Available',
       rowIds: {},
       prices: { R1: '', R2: '', W1: '', W2: '', SP: '', CP: '' },
@@ -1834,9 +2002,13 @@ export default function VarAndPrice({
     setDiscountContext({ variationId, code });
     setDiscountModalError('');
     const matchVariation = matchesVariation(variationId, fallbackRowId);
-    const existingDiscounts = discounts
+    const rawExistingDiscounts = discounts
       .filter((item) => matchVariation(item.variationId) && item.priceCode === code)
-      .sort((a, b) => Number(a.applySequence || '1') - Number(b.applySequence || '1'))
+      .sort((a, b) => Number(a.applySequence || '1') - Number(b.applySequence || '1'));
+    const existingDiscounts = uniqueByCloneFingerprint(
+      rawExistingDiscounts,
+      (item) => getDiscountCloneFingerprint(item, unitOptions),
+    )
       .map((item) => ({
         id: item.id,
         adjustmentKind: 'Discount' as const,
@@ -1873,14 +2045,18 @@ export default function VarAndPrice({
         promoQualificationScope: item.promoQualificationScope || 'line',
         promoRewardSearchQuery: '',
       }));
-    const existingSurcharges = surcharges
+    const rawExistingSurcharges = surcharges
       .filter(
         (item) =>
           matchVariation(item.variationId) &&
           item.priceCode === code &&
           (item.surchargeType === 'Percent' || item.surchargeType === 'Amount'),
       )
-      .sort((a, b) => Number(a.priority || '0') - Number(b.priority || '0'))
+      .sort((a, b) => Number(a.priority || '0') - Number(b.priority || '0'));
+    const existingSurcharges = uniqueByCloneFingerprint(
+      rawExistingSurcharges,
+      (item) => getSurchargeCloneFingerprint(item, unitOptions),
+    )
       .map((item) => ({
         id: item.id,
         adjustmentKind: 'Surcharge' as const,
@@ -1927,8 +2103,8 @@ export default function VarAndPrice({
         ? normalizeAllDiscountRules(visibleExisting)
         : [],
     );
-    setDiscountManagedIds(new Set(existingDiscounts.map((item) => item.id)));
-    setSurchargeManagedIds(new Set(existingSurcharges.map((item) => item.id)));
+    setDiscountManagedIds(new Set(rawExistingDiscounts.map((item) => item.id)));
+    setSurchargeManagedIds(new Set(rawExistingSurcharges.map((item) => item.id)));
     setActiveDiscountTabId(
       visibleExisting.length > 0
         ? getDraftRuleKey(visibleExisting[0])
@@ -2862,14 +3038,20 @@ export default function VarAndPrice({
                     {PRICE_CODES.map((entry) => {
                       const fallbackRowId = card.rowIds[entry.code];
                       const matchVariation = matchesVariation(card.id, fallbackRowId);
-                      const matchingDiscounts = discounts.filter(
-                        (item) => matchVariation(item.variationId) && item.priceCode === entry.code,
+                      const matchingDiscounts = uniqueByCloneFingerprint(
+                        discounts.filter(
+                          (item) => matchVariation(item.variationId) && item.priceCode === entry.code,
+                        ),
+                        (item) => getDiscountCloneFingerprint(item, unitOptions),
                       );
-                      const matchingSurcharges = surcharges.filter(
-                        (item) =>
-                          matchVariation(item.variationId) &&
-                          item.priceCode === entry.code &&
-                          (item.surchargeType === 'Percent' || item.surchargeType === 'Amount'),
+                      const matchingSurcharges = uniqueByCloneFingerprint(
+                        surcharges.filter(
+                          (item) =>
+                            matchVariation(item.variationId) &&
+                            item.priceCode === entry.code &&
+                            (item.surchargeType === 'Percent' || item.surchargeType === 'Amount'),
+                        ),
+                        (item) => getSurchargeCloneFingerprint(item, unitOptions),
                       );
                       const adjustmentCount = countDiscountGroups(matchingDiscounts) + matchingSurcharges.length;
                       const discountWithPromoCount = countDiscountGroups(matchingDiscounts.filter(
@@ -3550,15 +3732,15 @@ export default function VarAndPrice({
                                           })
                                         }
                                       >
-                                        <option value="Percent">Percent</option>
-                                        <option value="Amount">Amount</option>
+                                        <option value="Percent">Percent (%)</option>
+                                        <option value="Amount">Amount (Net)</option>
                                       </select>
                                     </label>
                                     <label className={`${styles.stackField} ${styles.stackValueInput}`}>
                                       <span className={styles.fieldLabel}>Value</span>
                                       <input
                                         className={styles.input}
-                                        placeholder={stackItem.discountType === 'Percent' ? 'Percent' : 'Amount'}
+                                        placeholder={stackItem.discountType === 'Percent' ? 'Percent (%)' : 'Amount (Net)'}
                                         value={stackItem.amount}
                                         onChange={(event) => updateDiscountStack(stackItem.id, { amount: event.target.value })}
                                       />
@@ -4151,8 +4333,8 @@ export default function VarAndPrice({
                                   )
                                 }
                               >
-                                <option value="Percent">Percent</option>
-                                <option value="Amount">Amount</option>
+                                <option value="Percent">Percent (%)</option>
+                                <option value="Amount">Amount (Net)</option>
                               </select>
                               <input
                                 className={styles.input}

@@ -265,6 +265,7 @@ export default function AccountsSummary({
   const [agentGroupFilter, setAgentGroupFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [accessDetailsAccount, setAccessDetailsAccount] = useState<AccountSummaryItem | null>(null);
+  const [profileImageViewer, setProfileImageViewer] = useState<{ url: string; name: string } | null>(null);
 
   const agentGroupOptions = useMemo(() => {
     const groups = new Map<string, { id: string; label: string }>();
@@ -347,17 +348,18 @@ export default function AccountsSummary({
   }, [totalPages]);
 
   useEffect(() => {
-    if (!accessDetailsAccount) return undefined;
+    if (!accessDetailsAccount && !profileImageViewer) return undefined;
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         setAccessDetailsAccount(null);
+        setProfileImageViewer(null);
       }
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [accessDetailsAccount]);
+  }, [accessDetailsAccount, profileImageViewer]);
 
   function handlePageInputChange(value: string) {
     if (value === '') {
@@ -483,11 +485,18 @@ export default function AccountsSummary({
             <div key={account.id} className={styles.tableRow}>
               <span className={styles.profileCell}>
                 {account.profileImage ? (
-                  <img
-                    src={account.profileImage}
-                    alt=""
-                    className={styles.profileImage}
-                  />
+                  <button
+                    type="button"
+                    className={styles.profileImageButton}
+                    onClick={() => setProfileImageViewer({ url: account.profileImage ?? '', name: account.name })}
+                    aria-label={`View profile image for ${account.name}`}
+                  >
+                    <img
+                      src={account.profileImage}
+                      alt=""
+                      className={styles.profileImage}
+                    />
+                  </button>
                 ) : (
                   <span className={styles.profileBlank} aria-hidden="true">
                     <i className="fa-solid fa-user"></i>
@@ -568,7 +577,14 @@ export default function AccountsSummary({
                 <div className={styles.mobileAccountIdentity}>
                   <div className={styles.mobileProfileRow}>
                     {account.profileImage ? (
-                      <img src={account.profileImage} alt="" className={styles.mobileProfileImage} />
+                      <button
+                        type="button"
+                        className={styles.mobileProfileImageButton}
+                        onClick={() => setProfileImageViewer({ url: account.profileImage ?? '', name: account.name })}
+                        aria-label={`View profile image for ${account.name}`}
+                      >
+                        <img src={account.profileImage} alt="" className={styles.mobileProfileImage} />
+                      </button>
                     ) : (
                       <span className={styles.mobileProfileBlank} aria-hidden="true">
                         <i className="fa-solid fa-user"></i>
@@ -692,7 +708,42 @@ export default function AccountsSummary({
           onClose={() => setAccessDetailsAccount(null)}
         />
       ) : null}
+
+      {profileImageViewer ? (
+        <ProfileImageViewer
+          imageUrl={profileImageViewer.url}
+          name={profileImageViewer.name}
+          onClose={() => setProfileImageViewer(null)}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function ProfileImageViewer({
+  imageUrl,
+  name,
+  onClose,
+}: {
+  imageUrl: string;
+  name: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className={styles.modalBackdrop} role="presentation" onMouseDown={onClose}>
+      <section
+        className={styles.imageViewer}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Profile image for ${name}`}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <button type="button" className={styles.imageViewerClose} onClick={onClose} aria-label="Close profile image">
+          <i className="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+        <img src={imageUrl} alt="" className={styles.imageViewerAsset} />
+      </section>
+    </div>
   );
 }
 

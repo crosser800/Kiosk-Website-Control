@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { supabase } from '../../lib/supabase';
 import SupabaseSettingsSection from './SupabaseSettingsSection';
 import sectionStyles from './SupabaseSettingsSection.module.css';
 import SettingsAccordionItem from './SettingsAccordionItem';
@@ -20,7 +19,6 @@ type DeliveryTermRecord = {
   term_name: string;
   term_code: string;
   description: string;
-  is_default: boolean;
   status: StatusValue;
   sort_order: number;
 };
@@ -29,7 +27,6 @@ type DeliveryTermForm = {
   term_name: string;
   term_code: string;
   description: string;
-  is_default: boolean;
   status: StatusValue;
   sort_order: string;
 };
@@ -43,12 +40,11 @@ export default function DeliveryTermsSettingsSection({ activePanel, onToggle }: 
   const deliveryTerms = useSupabaseSettingsSection<DeliveryTermRecord, DeliveryTermForm>({
     table: 'delivery_terms',
     selectQuery:
-      'id, term_name, term_code, description, is_default, status, sort_order, created_at, updated_at',
+      'id, term_name, term_code, description, status, sort_order, created_at, updated_at',
     emptyForm: {
       term_name: '',
       term_code: '',
       description: '',
-      is_default: false,
       status: 'Active',
       sort_order: '0',
     },
@@ -57,7 +53,6 @@ export default function DeliveryTermsSettingsSection({ activePanel, onToggle }: 
       term_name: String(row.term_name ?? ''),
       term_code: String(row.term_code ?? ''),
       description: String(row.description ?? ''),
-      is_default: Boolean(row.is_default),
       status: normalizeStatus(row.status),
       sort_order: toNumber(row.sort_order),
     }),
@@ -65,7 +60,6 @@ export default function DeliveryTermsSettingsSection({ activePanel, onToggle }: 
       term_name: record.term_name,
       term_code: record.term_code,
       description: record.description,
-      is_default: record.is_default,
       status: record.status,
       sort_order: String(record.sort_order),
     }),
@@ -73,7 +67,6 @@ export default function DeliveryTermsSettingsSection({ activePanel, onToggle }: 
       term_name: form.term_name.trim(),
       term_code: form.term_code.trim().toUpperCase(),
       description: form.description.trim() || null,
-      is_default: Boolean(form.is_default),
       status: form.status,
       sort_order: toNumber(form.sort_order),
     }),
@@ -90,21 +83,6 @@ export default function DeliveryTermsSettingsSection({ activePanel, onToggle }: 
       );
 
       return duplicate ? 'Delivery term name or code already exists.' : null;
-    },
-    beforeSave: async ({ editingId, form }) => {
-      if (!form.is_default) {
-        return;
-      }
-
-      let query = supabase.from('delivery_terms').update({ is_default: false });
-      if (editingId) {
-        query = query.neq('id', editingId);
-      }
-
-      const { error } = await query.eq('is_default', true);
-      if (error) {
-        throw new Error(`Failed to update other default delivery terms: ${error.message}`);
-      }
     },
     orderBy: [
       { column: 'sort_order', ascending: true },
@@ -153,7 +131,6 @@ function DeliveryTermsSectionContent({
           { key: 'term_name', label: 'Term name', type: 'text', required: true, placeholder: 'Cash on Delivery' },
           { key: 'term_code', label: 'Term code', type: 'text', required: true, placeholder: 'COD' },
           { key: 'status', label: 'Status', type: 'select', required: true, options: STATUS_OPTIONS },
-          { key: 'is_default', label: 'Default term', type: 'checkbox' },
           { key: 'description', label: 'Description', type: 'textarea', wide: true, placeholder: 'Optional delivery term description' },
         ]}
         formValues={deliveryTerms.formValues}
@@ -166,12 +143,11 @@ function DeliveryTermsSectionContent({
         loadError={deliveryTerms.loadError}
         saveError={deliveryTerms.saveError}
         items={filteredItems}
-        rowTemplateColumns="1.2fr 0.8fr 1.4fr 0.8fr 0.8fr 0.7fr auto"
+        rowTemplateColumns="1.2fr 0.8fr 1.6fr 0.8fr 0.7fr auto"
         columns={[
           { label: 'Term', render: (item) => item.term_name },
           { label: 'Code', render: (item) => item.term_code },
           { label: 'Description', render: (item) => item.description || '-', className: sectionStyles.cellMuted },
-          { label: 'Default', render: (item) => (item.is_default ? 'Yes' : 'No') },
           { label: 'Status', render: (item) => statusBadge(item.status) },
           { label: 'Sort', render: (item) => sortOrderBadge(item.sort_order) },
         ]}

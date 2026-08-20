@@ -131,6 +131,7 @@ as $$
     'profile_image_path', p_internal_admin.profile_image_path,
     'profile_image_url', p_internal_admin.profile_image_url,
     'updated_at', p_internal_admin.updated_at,
+    'theme_preference', coalesce(p_internal_admin.theme_preference, 'light'),
     'full_name', p_internal_admin.full_name,
     'username', p_internal_admin.username,
     'birthdate', p_internal_admin.birthdate,

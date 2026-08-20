@@ -319,6 +319,24 @@
   border-radius: 50%;
 }
 
+.profileImageButton,
+.mobileProfileImageButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.profileImageButton:focus-visible,
+.mobileProfileImageButton:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--yellow) 60%, transparent);
+  outline-offset: 3px;
+}
+
 .profileImage {
   object-fit: cover;
   border: 1px solid var(--card-border);
@@ -623,6 +641,43 @@
     radial-gradient(circle at top right, rgba(250, 204, 21, 0.16), transparent 32%),
     var(--card-bg);
   box-shadow: 0 24px 64px rgba(17, 24, 39, 0.24);
+}
+
+.imageViewer {
+  position: relative;
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3.25rem 1rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 28%, var(--card-border));
+  border-radius: 1rem;
+  background: var(--card-bg);
+  box-shadow: 0 24px 64px rgba(17, 24, 39, 0.28);
+}
+
+.imageViewerClose {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.85rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--card-border);
+  border-radius: 0.65rem;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.imageViewerAsset {
+  max-width: 100%;
+  max-height: min(70vh, 30rem);
+  border-radius: 0.75rem;
+  object-fit: contain;
 }
 
 .accessModalHeader,

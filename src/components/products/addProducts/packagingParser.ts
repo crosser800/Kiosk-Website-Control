@@ -60,6 +60,20 @@ function formatQuantity(value: number) {
   return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
 }
 
+function formatCompactUnit(unit: string, quantity: number) {
+  const normalizedUnit = normalizeRawUnit(unit);
+  if (Math.abs(quantity - 1) < Number.EPSILON) {
+    return normalizedUnit;
+  }
+  if (normalizedUnit === 'pc') return 'pcs';
+  if (normalizedUnit === 'set') return 'sets';
+  if (normalizedUnit === 'pack') return 'packs';
+  if (normalizedUnit === 'pair') return 'pairs';
+  if (normalizedUnit === 'roll') return 'rolls';
+  if (normalizedUnit === 'tube') return 'tubes';
+  return normalizedUnit;
+}
+
 function buildUnitLookup(
   unitDefinitions: ProductUnitDefinition[],
   unitAliases: ProductUnitAliasDefinition[],
@@ -397,36 +411,26 @@ export function generatePackagingSummary(
     );
   }
 
-  const baseRow = {
-    unitCode: normalizedBaseUnitCode,
-    quantityInBaseUnit: 1,
-  };
   const rowsByCode = new Map(validRows.map((row) => [row.unitCode, row] as const));
   if (!rowsByCode.has(normalizedBaseUnitCode)) {
-    validRows.unshift(baseRow);
+    validRows.unshift({
+      unitCode: normalizedBaseUnitCode,
+      quantityInBaseUnit: 1,
+    });
   }
 
   const summaryParts = validRows
     .filter((row) => row.unitCode !== normalizedBaseUnitCode && row.quantityInBaseUnit !== 1)
-    .map((row) => {
-      const parent =
-        validRows
-          .filter((candidate) => candidate.unitCode !== row.unitCode && candidate.quantityInBaseUnit < row.quantityInBaseUnit)
-          .sort((left, right) => right.quantityInBaseUnit - left.quantityInBaseUnit)
-          .find((candidate) => {
-            const ratio = row.quantityInBaseUnit / candidate.quantityInBaseUnit;
-            return Number.isInteger(ratio) && ratio > 0;
-          }) ?? baseRow;
-
-      const ratio = row.quantityInBaseUnit / parent.quantityInBaseUnit;
-      if (!Number.isInteger(ratio)) {
-        return `1 ${formatUnitForMessage(row.unitCode)} = ${formatQuantity(row.quantityInBaseUnit)} ${formatUnitForMessage(normalizedBaseUnitCode)}`;
-      }
-      return `1 ${formatUnitForMessage(row.unitCode)} = ${formatQuantity(ratio)} ${formatUnitForMessage(parent.unitCode)}`;
-    });
+    .map(
+      (row) =>
+        `${formatQuantity(row.quantityInBaseUnit)}${formatCompactUnit(
+          normalizedBaseUnitCode,
+          row.quantityInBaseUnit,
+        )}/${row.unitCode}`,
+    );
 
   return {
-    summary: summaryParts.join(' • '),
+    summary: summaryParts.join(':'),
     warnings,
   };
 }

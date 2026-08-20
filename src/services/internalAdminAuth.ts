@@ -4,6 +4,8 @@ import { validateAdminPassword } from './adminActivation';
 const internalSessionStorageKey = '2b_internal_admin_session_token';
 const internalNoticeStorageKey = '2b_internal_admin_notice';
 
+export type InternalThemePreference = 'light' | 'dark';
+
 export type InternalPermission = {
   id: string;
   moduleCode: string;
@@ -19,6 +21,7 @@ export type InternalAdminProfile = {
   profileImagePath: string;
   profileImageUrl: string;
   updatedAt: string;
+  themePreference: InternalThemePreference;
   fullName: string;
   username: string;
   birthdate: string;
@@ -74,6 +77,7 @@ type RawAccount = {
   profile_image_path?: unknown;
   profile_image_url?: unknown;
   updated_at?: unknown;
+  theme_preference?: unknown;
   full_name?: unknown;
   username?: unknown;
   birthdate?: unknown;
@@ -121,6 +125,10 @@ function text(value: unknown) {
   return String(value ?? '').trim();
 }
 
+function themePreference(value: unknown): InternalThemePreference {
+  return text(value).toLowerCase() === 'dark' ? 'dark' : 'light';
+}
+
 function mapPermissions(value: unknown): InternalPermission[] {
   if (!Array.isArray(value)) return [];
 
@@ -145,6 +153,7 @@ function mapAccount(value: unknown): InternalAdminProfile {
     profileImagePath: text(account.profile_image_path),
     profileImageUrl: text(account.profile_image_url),
     updatedAt: text(account.updated_at),
+    themePreference: themePreference(account.theme_preference),
     fullName: text(account.full_name),
     username: text(account.username),
     birthdate: text(account.birthdate),
@@ -302,6 +311,36 @@ export async function logoutInternalAdmin(options: { revokeGateway?: boolean; re
   });
 
   if (error) throw new Error(error.message);
+}
+
+export async function updateInternalAdminThemePreference(
+  internalAdminId: string,
+  preference: InternalThemePreference,
+) {
+  const { error } = await supabase
+    .from('internal_admin_accounts')
+    .update({ theme_preference: preference })
+    .eq('id', internalAdminId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function loadInternalAdminThemePreference(
+  internalAdminId: string,
+): Promise<InternalThemePreference> {
+  const { data, error } = await supabase
+    .from('internal_admin_accounts')
+    .select('theme_preference')
+    .eq('id', internalAdminId)
+    .maybeSingle<{ theme_preference: string | null }>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return themePreference(data?.theme_preference);
 }
 
 export function hasModulePermission(permissions: InternalPermission[], pageName: string) {

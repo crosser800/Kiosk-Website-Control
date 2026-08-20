@@ -90,6 +90,9 @@ type DeliveryTermOption = {
   termCode: string;
 };
 
+const CLIENT_SELECT_QUERY =
+  'id, agent_id, client_code, client_name, company_name, contact_person, contact_number, email, address, tin, status, notes, custom_client_code, default_price_code, default_delivery_term_id, region, province, city_municipality, district_area, barangay, region_psgc_code, province_psgc_code, city_municipality_psgc_code, barangay_psgc_code, created_at';
+
 type PsgcOption = {
   code: string;
   name: string;
@@ -412,13 +415,26 @@ function StatusBadge({ status }: { status: AgentStatus }) {
   return <span className={`${styles.statusBadge} ${styles[`status${status}`]}`}>{status}</span>;
 }
 
-function getClientDisplayName(client: Pick<ClientDraft, 'companyName' | 'clientName'>) {
-  return client.companyName.trim() || client.clientName.trim() || 'Unnamed Client';
+function normalizeDisplayText(value: string) {
+  return value.replace(/\s+/g, ' ').trim();
 }
 
-function getClientSecondaryName(client: Pick<ClientDraft, 'companyName' | 'clientName' | 'contactPerson'>) {
-  if (client.companyName.trim() && client.clientName.trim()) return client.clientName.trim();
-  return client.contactPerson.trim();
+function removeDuplicateClientSuffix(companyName: string, duplicateName: string) {
+  const company = normalizeDisplayText(companyName);
+  const duplicate = normalizeDisplayText(duplicateName);
+  if (!company || !duplicate) return company;
+
+  const normalizedCompany = company.toLowerCase();
+  const normalizedDuplicate = duplicate.toLowerCase();
+  if (!normalizedCompany.endsWith(normalizedDuplicate)) return company;
+
+  return company.slice(0, company.length - duplicate.length).replace(/[\s,/&-]+$/, '').trim();
+}
+
+function getClientDisplayName(client: Pick<ClientDraft, 'companyName' | 'clientName' | 'contactPerson'>) {
+  const contactName = client.contactPerson.trim() || client.clientName.trim();
+  const companyName = removeDuplicateClientSuffix(client.companyName, contactName);
+  return companyName || client.clientName.trim() || 'Unnamed Client';
 }
 
 function normalizePsgcStatus(row: Record<string, unknown>) {
@@ -574,7 +590,7 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
           .maybeSingle(),
         supabase
           .from('agent_clients')
-          .select('id, agent_id, client_code, client_name, company_name, contact_person, contact_number, email, address, tin, status, notes, custom_client_code, default_price_code, default_delivery_term_id, region, province, city_municipality, district_area, barangay, region_psgc_code, province_psgc_code, city_municipality_psgc_code, barangay_psgc_code, created_at')
+          .select(CLIENT_SELECT_QUERY)
           .eq('agent_id', account.id)
           .order('company_name', { ascending: true }),
         supabase
@@ -897,7 +913,7 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
                 notes: client.notes || null,
               })),
             )
-            .select('id, agent_id, client_code, client_name, company_name, contact_person, contact_number, email, address, tin, status, notes, custom_client_code, default_price_code, default_delivery_term_id, region, province, city_municipality, district_area, barangay, region_psgc_code, province_psgc_code, city_municipality_psgc_code, barangay_psgc_code, created_at')
+            .select(CLIENT_SELECT_QUERY)
             .then(({ data, error }) => {
               if (error) throw new Error(error.message);
               const insertedClients = ((data ?? []) as ClientRow[]).map(mapClientRow);
@@ -937,8 +953,20 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
               notes: client.notes || null,
             })
             .eq('id', client.id)
-            .then(({ error }) => {
+            .select(CLIENT_SELECT_QUERY)
+            .maybeSingle()
+            .then(({ data, error }) => {
               if (error) throw new Error(error.message);
+              if (!data) {
+                throw new Error(`Client update returned no row for ${getClientDisplayName(client)}.`);
+              }
+
+              const persistedClient = mapClientRow(data as ClientRow);
+              if (persistedClient.defaultDeliveryTermId !== client.defaultDeliveryTermId) {
+                throw new Error(
+                  `Default payment terms did not persist for ${getClientDisplayName(client)}.`,
+                );
+              }
             }),
         );
       });
@@ -1328,15 +1356,11 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
                       ) : (
                         visibleClients.map((client) => {
                           const displayName = getClientDisplayName(client);
-                          const secondaryName = getClientSecondaryName(client);
                           return (
                             <div key={client.id} className={styles.clientRow}>
                               <span>{client.clientCode || '-'}</span>
                               <span>{client.customClientCode || '-'}</span>
-                              <strong>
-                                {displayName}
-                                {secondaryName ? <small className={styles.metaText}>{secondaryName}</small> : null}
-                              </strong>
+                              <strong>{displayName}</strong>
                               <span>{client.contactPerson || client.clientName || '-'}</span>
                               <span>{client.contactNumber || '-'}</span>
                               <span>{client.email || '-'}</span>

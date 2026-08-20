@@ -25,7 +25,12 @@ import {
   signOutOperationsGateway,
   type AuthAccessState,
 } from './services/auth';
-import { hasModulePermission } from './services/internalAdminAuth';
+import {
+  hasModulePermission,
+  loadInternalAdminThemePreference,
+  updateInternalAdminThemePreference,
+  type InternalThemePreference,
+} from './services/internalAdminAuth';
 import { useCurrentAdminProfile } from './hooks/useCurrentAdminProfile';
 import { resolveAdminProfileImageUrl } from './utils/profileImages';
 
@@ -92,6 +97,7 @@ export default function App() {
     useRef<HTMLInputElement | null>(null);
   const internalBackConfirmButtonRef =
     useRef<HTMLButtonElement | null>(null);
+  const themeLoadRequestRef = useRef(0);
 
   const currentAdminProfile = useCurrentAdminProfile(
     authAccessState.kind === 'admin' && !authAccessState.internalSession,
@@ -231,23 +237,99 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isInternalBackConfirmOpen, isInternalBackLoggingOut]);
 
-  const toggleTheme = () => {
-    setIsDark((current) => {
-      const next = !current;
+  const applyTheme = (preference: InternalThemePreference) => {
+    const nextIsDark = preference === 'dark';
+    setIsDark(nextIsDark);
+    document.documentElement.classList.toggle('dark', nextIsDark);
+  };
 
-      document.documentElement.classList.toggle(
-        'dark',
-        next,
-      );
+  const applyDefaultLoginTheme = () => {
+    themeLoadRequestRef.current += 1;
+    applyTheme('light');
+  };
 
-      return next;
+  const syncInternalSessionTheme = (
+    preference: InternalThemePreference,
+  ) => {
+    setAuthAccessState((current) => {
+      if (current.kind !== 'admin' || !current.internalSession) {
+        return current;
+      }
+
+      return {
+        ...current,
+        internalSession: {
+          ...current.internalSession,
+          account: {
+            ...current.internalSession.account,
+            themePreference: preference,
+          },
+        },
+      };
     });
+  };
+
+  const refreshInternalThemePreference = (
+    internalAccountId: string,
+    fallbackPreference: InternalThemePreference,
+  ) => {
+    const requestId = themeLoadRequestRef.current + 1;
+    themeLoadRequestRef.current = requestId;
+    applyTheme(fallbackPreference);
+
+    void loadInternalAdminThemePreference(internalAccountId)
+      .then((savedPreference) => {
+        if (themeLoadRequestRef.current !== requestId) {
+          return;
+        }
+
+        applyTheme(savedPreference);
+        syncInternalSessionTheme(savedPreference);
+      })
+      .catch((error) => {
+        console.error('Failed to load internal admin theme preference:', error);
+      });
+  };
+
+  const toggleTheme = () => {
+    const nextPreference: InternalThemePreference = isDark ? 'light' : 'dark';
+    const internalAccountId =
+      authAccessStateRef.current.kind === 'admin'
+        ? authAccessStateRef.current.internalSession?.account.id ?? ''
+        : '';
+
+    applyTheme(nextPreference);
+
+    if (!internalAccountId) {
+      return;
+    }
+
+    void updateInternalAdminThemePreference(internalAccountId, nextPreference)
+      .then(() => {
+        syncInternalSessionTheme(nextPreference);
+      })
+      .catch((error) => {
+        console.error('Failed to save internal admin theme preference:', error);
+      });
   };
 
   const applyAccessState = (
     accessState: AuthAccessState,
     options: { resetNavigation?: boolean; reason?: string } = {},
   ) => {
+    if (
+      (accessState.kind === 'admin' ||
+        accessState.kind === 'internal_password_change') &&
+      accessState.internalSession
+    ) {
+      refreshInternalThemePreference(
+        accessState.internalSession.account.id,
+        accessState.internalSession.account.themePreference,
+      );
+    } else if (accessState.kind === 'internal_login_required') {
+      applyDefaultLoginTheme();
+    }
+
     setAuthAccessState(accessState);
 
     if (options.resetNavigation && accessState.kind === 'admin') {
@@ -534,6 +616,7 @@ export default function App() {
     } catch (error) {
       console.error('Internal password-change back logout failed', error);
     } finally {
+      applyDefaultLoginTheme();
       setAuthAccessState({
         kind: 'internal_login_required',
         email,
@@ -592,6 +675,9 @@ export default function App() {
         authAccessStateRef.current.kind === 'admin' && authAccessStateRef.current.internalSession
           ? ({ kind: 'internal_login_required', email: authAccessStateRef.current.email } as AuthAccessState)
           : ({ kind: 'none' } as AuthAccessState);
+      if (nextAccessState.kind === 'internal_login_required') {
+        applyDefaultLoginTheme();
+      }
       setAuthAccessState(nextAccessState);
       setIsLogoutConfirmOpen(false);
       setIsLoggingOut(false);
