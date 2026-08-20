@@ -53,6 +53,19 @@ type StatusHistoryRow = {
   changed_at: string | null;
 };
 
+type SummaryPeriod = 'day' | 'week' | 'month' | 'year';
+type SummarySort = 'alphabetical' | 'sales';
+type SortDirection = 'ascending' | 'descending';
+
+const SUMMARY_PAGE_SIZE = 10;
+
+const summaryPeriodLabels: Record<SummaryPeriod, string> = {
+  day: 'Today',
+  week: 'This week',
+  month: 'This month',
+  year: 'This year',
+};
+
 function safeText(value: string | null | undefined) {
   const normalized = String(value ?? '').trim();
   return normalized || '-';
@@ -87,10 +100,21 @@ function isCreatedInRange(row: OrderRow, start: Date, end: Date) {
 export default function AgentSummary() {
   const [agents, setAgents] = useState<AgentSummaryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [period, setPeriod] = useState<SummaryPeriod>('month');
+  const [sortBy, setSortBy] = useState<SummarySort>('alphabetical');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('ascending');
+  const [currentPage, setCurrentPage] = useState(1);
 
   const loadAgentSummary = useCallback(async () => {
       setIsLoading(true);
       const ranges = getBusinessDateRanges();
+      const selectedRange = period === 'day'
+        ? ranges.today
+        : period === 'week'
+          ? ranges.currentWeek
+          : period === 'year'
+            ? ranges.currentYear
+            : ranges.currentMonth;
 
       const [
         { data: agentRows, error: agentError },
@@ -193,10 +217,10 @@ export default function AgentSummary() {
         const agentCompletedOrders = completedByAgentId.get(agentId) ?? [];
         const priceAccess = Array.from(priceAccessByAgentId.get(agentId) ?? []).sort();
         const undelivered = agentOrders.filter((row) =>
-          isCreatedInRange(row, ranges.currentMonth.start, ranges.currentMonth.end) && isUndeliveredStatus(row.order_status),
+          isCreatedInRange(row, selectedRange.start, selectedRange.end) && isUndeliveredStatus(row.order_status),
         ).length;
         const sales = agentCompletedOrders
-          .filter((row) => isCompletedAtInRange(row.completed_at, ranges.currentMonth))
+          .filter((row) => isCompletedAtInRange(row.completed_at, selectedRange))
           .reduce(
           (total, row) => total + Number(row.grand_total ?? 0),
           0,
@@ -216,7 +240,7 @@ export default function AgentSummary() {
 
       setAgents(mappedAgents);
       setIsLoading(false);
-  }, []);
+  }, [period]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -245,9 +269,24 @@ export default function AgentSummary() {
     };
   }, [loadAgentSummary]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [period, sortBy, sortDirection]);
+
+  const sortedAgents = useMemo(() => {
+    const multiplier = sortDirection === 'ascending' ? 1 : -1;
+    return [...agents].sort((left, right) => {
+      if (sortBy === 'sales') {
+        const difference = (left.sales ?? 0) - (right.sales ?? 0);
+        return difference === 0 ? left.name.localeCompare(right.name) * multiplier : difference * multiplier;
+      }
+      return left.name.localeCompare(right.name) * multiplier;
+    });
+  }, [agents, sortBy, sortDirection]);
+
   const visibleAgents = useMemo(() => {
-    if (agents.length > 0) {
-      return agents;
+    if (sortedAgents.length > 0) {
+      return sortedAgents;
     }
     return Array.from({ length: 3 }).map((_, index) => ({
       id: `empty-${index}`,
@@ -259,7 +298,14 @@ export default function AgentSummary() {
       sales: null,
       status: 'Inactive' as const,
     }));
-  }, [agents]);
+  }, [sortedAgents]);
+
+  const totalPages = Math.max(1, Math.ceil(visibleAgents.length / SUMMARY_PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pagedAgents = useMemo(
+    () => visibleAgents.slice((safeCurrentPage - 1) * SUMMARY_PAGE_SIZE, safeCurrentPage * SUMMARY_PAGE_SIZE),
+    [safeCurrentPage, visibleAgents],
+  );
 
   return (
     <div className={styles.container}>
@@ -268,9 +314,30 @@ export default function AgentSummary() {
           <h2 className={styles.title}>Agent Summary</h2>
           <p className={styles.subtitle}>Live overview of agent profile details and order performance.</p>
         </div>
-        <div className={styles.filter}>
-          <span>{isLoading ? 'loading...' : 'this month'}</span>
-          <i className="fa-solid fa-chevron-down"></i>
+        <div className={styles.filters}>
+          <label className={styles.filter}>
+            <span className={styles.srOnly}>Sales period</span>
+            <i className="fa-solid fa-calendar-days" aria-hidden="true"></i>
+            <select value={period} onChange={(event) => setPeriod(event.target.value as SummaryPeriod)} disabled={isLoading}>
+              {Object.entries(summaryPeriodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label className={styles.filter}>
+            <span className={styles.srOnly}>Sort agents by</span>
+            <i className="fa-solid fa-filter" aria-hidden="true"></i>
+            <select value={sortBy} onChange={(event) => setSortBy(event.target.value as SummarySort)}>
+              <option value="alphabetical">Alphabetical</option>
+              <option value="sales">Sales</option>
+            </select>
+          </label>
+          <label className={styles.filter}>
+            <span className={styles.srOnly}>Sort direction</span>
+            <i className="fa-solid fa-arrow-down-a-z" aria-hidden="true"></i>
+            <select value={sortDirection} onChange={(event) => setSortDirection(event.target.value as SortDirection)}>
+              <option value="ascending">Ascending</option>
+              <option value="descending">Descending</option>
+            </select>
+          </label>
         </div>
       </div>
 
@@ -299,7 +366,7 @@ export default function AgentSummary() {
                   <td className={styles.tdStatus}><div className={`${styles.skeletonBlock} ${styles.skeletonBadge}`}></div></td>
                 </tr>
               ))
-            : visibleAgents.map((agent) => (
+            : pagedAgents.map((agent) => (
                 <tr key={agent.id} className={styles.row}>
                   <td className={styles.tdName}>{agent.name}</td>
                   <td className={styles.td}>{agent.location}</td>
@@ -340,7 +407,7 @@ export default function AgentSummary() {
                 </div>
               </article>
             ))
-          : visibleAgents.map((agent) => (
+          : pagedAgents.map((agent) => (
               <article key={`agent-card-${agent.id}`} className={styles.agentCard}>
                 <div className={styles.cardStatus}>
                   {agent.name === '-' ? (
@@ -374,7 +441,31 @@ export default function AgentSummary() {
       </div>
 
       <div className={styles.footer}>
-        <span className={styles.viewAll}>view all</span>
+        <span className={styles.viewAll}>
+          Showing {(safeCurrentPage - 1) * SUMMARY_PAGE_SIZE + 1}-{Math.min(safeCurrentPage * SUMMARY_PAGE_SIZE, visibleAgents.length)} of {visibleAgents.length}
+        </span>
+        <div className={styles.pagination} aria-label="Agent summary pages">
+          <button type="button" onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={safeCurrentPage === 1} aria-label="Previous page">
+            <i className="fa-solid fa-chevron-left" aria-hidden="true"></i>
+          </button>
+          <button type="button" className={styles.currentPage} onClick={() => setCurrentPage(safeCurrentPage)} aria-current="page">
+            {safeCurrentPage}
+          </button>
+          <input
+            type="number"
+            min={1}
+            max={totalPages}
+            value={safeCurrentPage}
+            onChange={(event) => {
+              const nextPage = Number.parseInt(event.target.value, 10);
+              if (Number.isFinite(nextPage)) setCurrentPage(Math.min(totalPages, Math.max(1, nextPage)));
+            }}
+            aria-label={`Go to page, out of ${totalPages}`}
+          />
+          <button type="button" onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={safeCurrentPage === totalPages} aria-label="Next page">
+            <i className="fa-solid fa-chevron-right" aria-hidden="true"></i>
+          </button>
+        </div>
       </div>
     </div>
   );
