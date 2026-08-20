@@ -1,4 +1,7 @@
+import { supabase } from '../lib/supabase';
+
 export const PROFILE_IMAGE_BUCKET = 'agent-profiles';
+export const ADMIN_PROFILE_BUCKET = 'admin-profiles';
 export const MAX_PROFILE_IMAGE_BYTES = 5 * 1024 * 1024;
 export const MAX_PROFILE_IMAGE_DIMENSION = 720;
 export const PROFILE_IMAGE_QUALITY = 0.82;
@@ -23,10 +26,67 @@ export function getAdminProfilePath(adminId: string) {
   return `admins/${adminId}/profile.webp`;
 }
 
+export function gatewayAdminProfilePath(adminId: string) {
+  return `gateway/${adminId}/profile.webp`;
+}
+
+export function internalAdminProfilePath(adminId: string) {
+  return `internal/${adminId}/profile.webp`;
+}
+
+export function getAdminProfilePublicUrl(path: string) {
+  const normalizedPath = path.trim();
+  if (!normalizedPath) return '';
+  const { data } = supabase.storage
+    .from(ADMIN_PROFILE_BUCKET)
+    .getPublicUrl(normalizedPath);
+  return data.publicUrl;
+}
+
 export function getVersionedImageUrl(url: string, version: string) {
   if (!url) return '';
   const separator = url.includes('?') ? '&' : '?';
   return `${url}${separator}v=${encodeURIComponent(version || String(Date.now()))}`;
+}
+
+export function resolveAdminProfileImageUrl({
+  profileImagePath,
+  profileImageUrl,
+  updatedAt,
+}: {
+  profileImagePath?: string | null;
+  profileImageUrl?: string | null;
+  updatedAt?: string | null;
+}) {
+  const path = String(profileImagePath ?? '').trim();
+  const legacyUrl = String(profileImageUrl ?? '').trim();
+  const resolvedUrl = path ? getAdminProfilePublicUrl(path) : legacyUrl;
+  return resolvedUrl && updatedAt ? getVersionedImageUrl(resolvedUrl, updatedAt) : resolvedUrl;
+}
+
+export async function uploadAdminProfileImage(path: string, imageBlob: Blob) {
+  const webpFile = new File([imageBlob], 'profile.webp', { type: 'image/webp' });
+  const options = {
+    cacheControl: '3600',
+    contentType: 'image/webp',
+    upsert: true,
+  };
+
+  const { error } = await supabase.storage
+    .from(ADMIN_PROFILE_BUCKET)
+    .upload(path, webpFile, options);
+
+  if (!error) return;
+
+  await supabase.storage.from(ADMIN_PROFILE_BUCKET).remove([path]);
+
+  const retry = await supabase.storage
+    .from(ADMIN_PROFILE_BUCKET)
+    .upload(path, webpFile, options);
+
+  if (retry.error) {
+    throw new Error(`Profile image upload failed: ${retry.error.message || error.message}`);
+  }
 }
 
 export async function convertImageToWebp(

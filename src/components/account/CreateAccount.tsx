@@ -31,6 +31,17 @@ type AccountForm = {
   permissionIds: string[];
   temporaryPassword: string;
   priceAccess: OrderPriceCode[];
+  profileImageFile: File | null;
+  profileImagePreviewUrl: string;
+  birthdate: string;
+  gender: string;
+  addressLine: string;
+  city: string;
+  province: string;
+  postalCode: string;
+  emergencyContactName: string;
+  emergencyContactRelationship: string;
+  emergencyContactNumber: string;
 };
 
 const priceOptions: OrderPriceCode[] = ['R1', 'R2', 'W1', 'W2', 'SP', 'CP'];
@@ -51,11 +62,30 @@ function getInitialForm(): AccountForm {
     permissionIds: [],
     temporaryPassword: '',
     priceAccess: [],
+    profileImageFile: null,
+    profileImagePreviewUrl: '',
+    birthdate: '',
+    gender: '',
+    addressLine: '',
+    city: '',
+    province: '',
+    postalCode: '',
+    emergencyContactName: '',
+    emergencyContactRelationship: '',
+    emergencyContactNumber: '',
   };
 }
 
 function isValidEmail(email: string) {
   return !email.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
+function isValidBirthdate(value: string) {
+  if (!value) return true;
+  const parsed = new Date(`${value}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return !Number.isNaN(parsed.getTime()) && parsed <= today;
 }
 
 function formatContactInput(value: string) {
@@ -103,9 +133,33 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
       .finally(() => setIsLoadingOptions(false));
   }, [accountType]);
 
+  useEffect(
+    () => () => {
+      if (form.profileImagePreviewUrl) {
+        URL.revokeObjectURL(form.profileImagePreviewUrl);
+      }
+    },
+    [form.profileImagePreviewUrl],
+  );
+
   function updateField<Field extends keyof AccountForm>(field: Field, value: AccountForm[Field]) {
     setValidationError('');
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function handleProfileImageChange(file: File | undefined) {
+    setValidationError('');
+    setForm((current) => {
+      if (current.profileImagePreviewUrl) {
+        URL.revokeObjectURL(current.profileImagePreviewUrl);
+      }
+
+      return {
+        ...current,
+        profileImageFile: file ?? null,
+        profileImagePreviewUrl: file ? URL.createObjectURL(file) : '',
+      };
+    });
   }
 
   function togglePermission(permissionId: string) {
@@ -150,6 +204,14 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
       setValidationError('Username is required.');
       return false;
     }
+    if (!isValidEmail(form.email)) {
+      setValidationError('Enter a valid email address.');
+      return false;
+    }
+    if (!isValidBirthdate(form.birthdate)) {
+      setValidationError('Birthdate cannot be in the future.');
+      return false;
+    }
     if (!form.parentAdminAccountId) {
       setValidationError('Select a parent gateway account.');
       return false;
@@ -173,7 +235,7 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
     try {
       const nextAccounts = await addAccountItem({
         name: form.name,
-        email: accountType === 'agents' ? form.email : '',
+        email: form.email,
         contact: form.contact,
         role: accountType,
         handle: '',
@@ -189,6 +251,16 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
         parentAdminAccountId: accountType === 'admins' ? form.parentAdminAccountId : undefined,
         permissionIds: accountType === 'admins' ? form.permissionIds : undefined,
         temporaryPassword: accountType === 'admins' ? form.temporaryPassword : undefined,
+        profileImageFile: accountType === 'admins' ? form.profileImageFile ?? undefined : undefined,
+        birthdate: accountType === 'admins' ? form.birthdate : undefined,
+        gender: accountType === 'admins' ? form.gender : undefined,
+        addressLine: accountType === 'admins' ? form.addressLine : undefined,
+        city: accountType === 'admins' ? form.city : undefined,
+        province: accountType === 'admins' ? form.province : undefined,
+        postalCode: accountType === 'admins' ? form.postalCode : undefined,
+        emergencyContactName: accountType === 'admins' ? form.emergencyContactName : undefined,
+        emergencyContactRelationship: accountType === 'admins' ? form.emergencyContactRelationship : undefined,
+        emergencyContactNumber: accountType === 'admins' ? form.emergencyContactNumber : undefined,
       });
       setForm(getInitialForm());
       onCreate(
@@ -223,7 +295,33 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
 
         <div className={styles.divider}></div>
 
-        <div className={styles.formContainer}>
+          <div className={styles.formContainer}>
+          {accountType === 'admins' ? (
+            <div className={styles.profilePicker}>
+              <div className={styles.profilePreview} aria-hidden="true">
+                {form.profileImagePreviewUrl ? (
+                  <img src={form.profileImagePreviewUrl} alt="" className={styles.profileImage} />
+                ) : (
+                  <i className="fa-solid fa-user"></i>
+                )}
+              </div>
+              <label className={styles.profileButton}>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className={styles.profileInput}
+                  onChange={(event) => handleProfileImageChange(event.target.files?.[0])}
+                />
+                {form.profileImageFile ? 'Replace Image' : 'Choose Image'}
+              </label>
+              {form.profileImageFile ? (
+                <button type="button" className={styles.profileButton} onClick={() => handleProfileImageChange(undefined)}>
+                  Remove Image
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className={styles.topGrid}>
             <label className={styles.field}>
               <span className={styles.label}>Full Name</span>
@@ -281,6 +379,71 @@ export default function CreateAccount({ accountType, onCreate, onClose }: Create
                   <input type="password" value={form.temporaryPassword} onChange={(event) => updateField('temporaryPassword', event.target.value)} className={styles.input} />
                   <span className={styles.fieldHelper}>Temporary password must be at least 8 characters.</span>
                 </label>
+                <div className={`${styles.sectionBlock} ${styles.wideField}`}>
+                  <h3>Personal Information</h3>
+                  <div className={styles.formGrid}>
+                    <label className={styles.field}>
+                      <span className={styles.label}>Birthdate</span>
+                      <input type="date" value={form.birthdate} onChange={(event) => updateField('birthdate', event.target.value)} className={styles.input} />
+                    </label>
+                    <label className={styles.field}>
+                      <span className={styles.label}>Gender</span>
+                      <select value={form.gender} onChange={(event) => updateField('gender', event.target.value)} className={styles.select}>
+                        <option value="">Select gender</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Prefer not to say">Prefer not to say</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </label>
+                    <label className={styles.field}>
+                      <span className={styles.label}>Email</span>
+                      <input type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} className={styles.input} />
+                    </label>
+                    <label className={styles.field}>
+                      <span className={styles.label}>Contact Number</span>
+                      <input value={form.contact} onChange={(event) => updateField('contact', event.target.value)} className={styles.input} />
+                    </label>
+                  </div>
+                </div>
+                <div className={`${styles.sectionBlock} ${styles.wideField}`}>
+                  <h3>Address</h3>
+                  <div className={styles.formGrid}>
+                    <label className={`${styles.field} ${styles.wideField}`}>
+                      <span className={styles.label}>Address Line</span>
+                      <input value={form.addressLine} onChange={(event) => updateField('addressLine', event.target.value)} className={styles.input} />
+                    </label>
+                    <label className={styles.field}>
+                      <span className={styles.label}>City</span>
+                      <input value={form.city} onChange={(event) => updateField('city', event.target.value)} className={styles.input} />
+                    </label>
+                    <label className={styles.field}>
+                      <span className={styles.label}>Province</span>
+                      <input value={form.province} onChange={(event) => updateField('province', event.target.value)} className={styles.input} />
+                    </label>
+                    <label className={styles.field}>
+                      <span className={styles.label}>Postal Code</span>
+                      <input value={form.postalCode} onChange={(event) => updateField('postalCode', event.target.value)} className={styles.input} />
+                    </label>
+                  </div>
+                </div>
+                <div className={`${styles.sectionBlock} ${styles.wideField}`}>
+                  <h3>Emergency Contact</h3>
+                  <div className={styles.formGrid}>
+                    <label className={styles.field}>
+                      <span className={styles.label}>Name</span>
+                      <input value={form.emergencyContactName} onChange={(event) => updateField('emergencyContactName', event.target.value)} className={styles.input} />
+                    </label>
+                    <label className={styles.field}>
+                      <span className={styles.label}>Relationship</span>
+                      <input value={form.emergencyContactRelationship} onChange={(event) => updateField('emergencyContactRelationship', event.target.value)} className={styles.input} />
+                    </label>
+                    <label className={styles.field}>
+                      <span className={styles.label}>Contact Number</span>
+                      <input value={form.emergencyContactNumber} onChange={(event) => updateField('emergencyContactNumber', event.target.value)} className={styles.input} />
+                    </label>
+                  </div>
+                </div>
                 <div className={styles.noticeCard}>
                   <span className={styles.label}>Password Backend</span>
                   <p>Creation will stay blocked until a secure RPC or Edge Function is available for password hashing.</p>

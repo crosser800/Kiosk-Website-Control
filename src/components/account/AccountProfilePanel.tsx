@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import type { CurrentAdminProfile } from '../../services/currentAdminProfile';
 import {
+  ADMIN_PROFILE_BUCKET,
   convertImageToWebp,
-  getAdminProfilePath,
-  getVersionedImageUrl,
+  gatewayAdminProfilePath,
   MAX_PROFILE_IMAGE_DIMENSION,
-  PROFILE_IMAGE_BUCKET,
   PROFILE_IMAGE_QUALITY,
+  resolveAdminProfileImageUrl,
+  uploadAdminProfileImage,
 } from '../../utils/profileImages';
 import styles from './AccountProfilePanel.module.css';
 
@@ -133,8 +134,12 @@ export default function AccountProfilePanel({
   const previewImageUrl = useMemo(() => {
     if (pendingImage) return pendingImage.previewUrl;
     if (isImageRemoved) return '';
-    return profile?.profileImageUrl
-      ? getVersionedImageUrl(profile.profileImageUrl, profile.updatedAt)
+    return profile
+      ? resolveAdminProfileImageUrl({
+          profileImagePath: profile.profileImagePath,
+          profileImageUrl: profile.profileImageUrl,
+          updatedAt: profile.updatedAt,
+        })
       : '';
   }, [isImageRemoved, pendingImage, profile]);
 
@@ -236,53 +241,54 @@ export default function AccountProfilePanel({
 
     try {
       let nextProfileImageUrl = profile.profileImageUrl;
-      const imagePath = getAdminProfilePath(profile.id);
+      let nextProfileImagePath = profile.profileImagePath;
+      const imagePath = gatewayAdminProfilePath(profile.id);
+      let uploadedImagePath = '';
 
       if (pendingImage) {
-        const { error: uploadError } = await supabase.storage
-          .from(PROFILE_IMAGE_BUCKET)
-          .upload(imagePath, pendingImage.blob, {
-            cacheControl: '3600',
-            contentType: 'image/webp',
-            upsert: true,
-          });
-
-        if (uploadError) {
-          throw new Error('Profile image upload failed.');
-        }
-
-        const { data } = supabase.storage
-          .from(PROFILE_IMAGE_BUCKET)
-          .getPublicUrl(imagePath);
-        nextProfileImageUrl = data.publicUrl;
-      } else if (isImageRemoved && profile.profileImageUrl) {
+        await uploadAdminProfileImage(imagePath, pendingImage.blob);
+        uploadedImagePath = imagePath;
+        nextProfileImagePath = imagePath;
+      } else if (isImageRemoved && profile.profileImagePath) {
         const { error: removeError } = await supabase.storage
-          .from(PROFILE_IMAGE_BUCKET)
+          .from(ADMIN_PROFILE_BUCKET)
           .remove([imagePath]);
 
         if (removeError) {
           throw new Error('Profile image removal failed.');
         }
 
+        nextProfileImagePath = '';
         nextProfileImageUrl = '';
+      } else if (isImageRemoved && profile.profileImageUrl) {
+        nextProfileImageUrl = '';
+      }
+
+      const updatePayload: Record<string, string | null> = {
+        full_name: trimmed.fullName,
+        email: trimmed.email || null,
+        contact_number: trimmed.contactNumber || null,
+        address: trimmed.address || null,
+        position: trimmed.position || null,
+        department: trimmed.department || null,
+        bio: trimmed.bio || null,
+        notes: trimmed.notes || null,
+        profile_image_path: nextProfileImagePath || null,
+      };
+
+      if (isImageRemoved && profile.profileImageUrl) {
+        updatePayload.profile_image_url = nextProfileImageUrl || null;
       }
 
       const { error: updateError } = await supabase
         .from('admin_accounts')
-        .update({
-          full_name: trimmed.fullName,
-          email: trimmed.email || null,
-          contact_number: trimmed.contactNumber || null,
-          address: trimmed.address || null,
-          position: trimmed.position || null,
-          department: trimmed.department || null,
-          bio: trimmed.bio || null,
-          notes: trimmed.notes || null,
-          profile_image_url: nextProfileImageUrl || null,
-        })
+        .update(updatePayload)
         .eq('id', profile.id);
 
       if (updateError) {
+        if (uploadedImagePath) {
+          await supabase.storage.from(ADMIN_PROFILE_BUCKET).remove([uploadedImagePath]);
+        }
         throw new Error('Unable to save your admin profile.');
       }
 
@@ -377,7 +383,7 @@ export default function AccountProfilePanel({
                   <button type="button" className={styles.secondaryButton} onClick={handleRemoveImage} disabled={!previewImageUrl}>
                     Remove Photo
                   </button>
-                  <p>JPG, PNG, or WEBP. Saved as WEBP in agent-profiles/admins/{profile.id}/profile.webp.</p>
+                  <p>JPG, PNG, or WEBP. Saved as WEBP in admin-profiles/gateway/{profile.id}/profile.webp.</p>
                   {imageError ? <p className={styles.validationError}>{imageError}</p> : null}
                 </div>
               </section>

@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { resolveAdminProfileImageUrl } from '../utils/profileImages';
 
 export type AdminProfileStatus = 'Active' | 'Inactive' | 'Blocked';
 
@@ -8,7 +9,9 @@ export type CurrentAdminProfile = {
   adminCode: string;
   fullName: string;
   email: string;
+  profileImagePath: string;
   profileImageUrl: string;
+  resolvedProfileImageUrl: string;
   position: string;
   department: string;
   contactNumber: string;
@@ -30,6 +33,7 @@ type AdminRow = {
   admin_code: string | null;
   full_name: string | null;
   email: string | null;
+  profile_image_path: string | null;
   profile_image_url: string | null;
   position: string | null;
   department: string | null;
@@ -77,7 +81,13 @@ function mapAdminRow(row: AdminRow, linkedRoleLabel: string): CurrentAdminProfil
     adminCode: text(row.admin_code),
     fullName: text(row.full_name),
     email: text(row.email),
+    profileImagePath: text(row.profile_image_path),
     profileImageUrl: text(row.profile_image_url),
+    resolvedProfileImageUrl: resolveAdminProfileImageUrl({
+      profileImagePath: row.profile_image_path,
+      profileImageUrl: row.profile_image_url,
+      updatedAt: row.updated_at,
+    }),
     position: text(row.position),
     department: text(row.department),
     contactNumber: text(row.contact_number),
@@ -128,6 +138,7 @@ export async function loadCurrentAdminProfile() {
         'admin_code',
         'full_name',
         'email',
+        'profile_image_path',
         'profile_image_url',
         'position',
         'department',

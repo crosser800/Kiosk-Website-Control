@@ -211,7 +211,8 @@
 }
 
 .field input,
-.field textarea {
+.field textarea,
+.field select {
   width: 100%;
   border: 1px solid var(--card-border);
   border-radius: 0.55rem;
@@ -223,7 +224,8 @@
   outline: none;
 }
 
-.field input {
+.field input,
+.field select {
   min-height: 2.65rem;
   padding: 0 0.85rem;
 }
@@ -235,7 +237,8 @@
 }
 
 .field input:focus,
-.field textarea:focus {
+.field textarea:focus,
+.field select:focus {
   border-color: var(--yellow);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--yellow) 24%, transparent);
 }

@@ -16,9 +16,22 @@ export type InternalPermission = {
 export type InternalAdminProfile = {
   id: string;
   parentAdminAccountId: string;
+  profileImagePath: string;
   profileImageUrl: string;
+  updatedAt: string;
   fullName: string;
   username: string;
+  birthdate: string;
+  gender: string;
+  email: string;
+  contactNumber: string;
+  addressLine: string;
+  city: string;
+  province: string;
+  postalCode: string;
+  emergencyContactName: string;
+  emergencyContactRelationship: string;
+  emergencyContactNumber: string;
   roleId: string;
   departmentId: string;
   mustChangePassword: boolean;
@@ -58,9 +71,22 @@ type RawPermission = {
 type RawAccount = {
   id?: unknown;
   parent_admin_account_id?: unknown;
+  profile_image_path?: unknown;
   profile_image_url?: unknown;
+  updated_at?: unknown;
   full_name?: unknown;
   username?: unknown;
+  birthdate?: unknown;
+  gender?: unknown;
+  email?: unknown;
+  contact_number?: unknown;
+  address_line?: unknown;
+  city?: unknown;
+  province?: unknown;
+  postal_code?: unknown;
+  emergency_contact_name?: unknown;
+  emergency_contact_relationship?: unknown;
+  emergency_contact_number?: unknown;
   role_id?: unknown;
   department_id?: unknown;
   must_change_password?: unknown;
@@ -116,9 +142,22 @@ function mapAccount(value: unknown): InternalAdminProfile {
   return {
     id: text(account.id),
     parentAdminAccountId: text(account.parent_admin_account_id),
+    profileImagePath: text(account.profile_image_path),
     profileImageUrl: text(account.profile_image_url),
+    updatedAt: text(account.updated_at),
     fullName: text(account.full_name),
     username: text(account.username),
+    birthdate: text(account.birthdate),
+    gender: text(account.gender),
+    email: text(account.email),
+    contactNumber: text(account.contact_number),
+    addressLine: text(account.address_line),
+    city: text(account.city),
+    province: text(account.province),
+    postalCode: text(account.postal_code),
+    emergencyContactName: text(account.emergency_contact_name),
+    emergencyContactRelationship: text(account.emergency_contact_relationship),
+    emergencyContactNumber: text(account.emergency_contact_number),
     roleId: text(account.role_id),
     departmentId: text(account.department_id),
     mustChangePassword: account.must_change_password === true,

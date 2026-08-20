@@ -32,9 +32,10 @@ type PreferenceTypeRecord = {
 type SettingsProps = {
   isDark: boolean;
   onToggleTheme: () => void;
+  onGatewayProfileChanged?: () => void;
 };
 
-export default function Settings({ isDark, onToggleTheme }: SettingsProps) {
+export default function Settings({ isDark, onToggleTheme, onGatewayProfileChanged }: SettingsProps) {
   const [activePanel, setActivePanel] = useState<SettingPanel | null>(null);
   const [preferenceTypeRecords, setPreferenceTypeRecords] = useState<PreferenceTypeRecord[]>([]);
 
@@ -97,7 +98,11 @@ export default function Settings({ isDark, onToggleTheme }: SettingsProps) {
         </div>
       </div>
 
-      <AdministrationSettingsSection activePanel={activePanel} onToggle={togglePanel} />
+      <AdministrationSettingsSection
+        activePanel={activePanel}
+        onToggle={togglePanel}
+        onGatewayProfileChanged={onGatewayProfileChanged}
+      />
       <InternalAdminRolesSettingsSection activePanel={activePanel} onToggle={togglePanel} />
       <AgentGroupsSettingsSection activePanel={activePanel} onToggle={togglePanel} />
       <BranchesSettingsSection activePanel={activePanel} onToggle={togglePanel} />

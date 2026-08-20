@@ -21,6 +21,17 @@ type AdminForm = {
   profileImage: string;
   name: string;
   username: string;
+  birthdate: string;
+  gender: string;
+  email: string;
+  contact: string;
+  addressLine: string;
+  city: string;
+  province: string;
+  postalCode: string;
+  emergencyContactName: string;
+  emergencyContactRelationship: string;
+  emergencyContactNumber: string;
   roleId: string;
   departmentId: string;
   parentAdminAccountId: string;
@@ -36,9 +47,20 @@ function formatDateTime(value: string | undefined) {
 
 function getInitialForm(account: AccountSummaryItem): AdminForm {
   return {
-    profileImage: account.profileImage ?? '',
+    profileImage: account.profileImageUrl ?? '',
     name: account.name,
     username: account.username ?? account.handle,
+    birthdate: account.birthdate ?? '',
+    gender: account.gender ?? '',
+    email: account.email ?? '',
+    contact: account.contact ?? '',
+    addressLine: account.addressLine ?? '',
+    city: account.city ?? '',
+    province: account.province ?? '',
+    postalCode: account.postalCode ?? '',
+    emergencyContactName: account.emergencyContactName ?? '',
+    emergencyContactRelationship: account.emergencyContactRelationship ?? '',
+    emergencyContactNumber: account.emergencyContactNumber ?? '',
     roleId: account.roleId ?? '',
     departmentId: account.departmentId ?? '',
     parentAdminAccountId: account.parentAdminAccountId ?? '',
@@ -68,12 +90,19 @@ function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps
   const [resetError, setResetError] = useState('');
   const [resetSuccess, setResetSuccess] = useState('');
   const [resetPassword, setResetPassword] = useState('');
+  const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
+  const [profileImagePreviewUrl, setProfileImagePreviewUrl] = useState('');
+  const [isProfileImageRemoved, setIsProfileImageRemoved] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const groupedPermissions = useMemo(() => {
     return groupPermissionsByModule(options.permissions);
   }, [options]);
+  const canRemoveProfileImage = Boolean(
+    profileImagePreviewUrl ||
+    (!isProfileImageRemoved && (form.profileImage || account.profileImagePath)),
+  );
 
   useEffect(() => {
     loadInternalAdminFormOptions()
@@ -83,6 +112,15 @@ function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps
       })
       .finally(() => setIsLoadingOptions(false));
   }, []);
+
+  useEffect(
+    () => () => {
+      if (profileImagePreviewUrl) {
+        URL.revokeObjectURL(profileImagePreviewUrl);
+      }
+    },
+    [profileImagePreviewUrl],
+  );
 
   function updateField<Field extends keyof AdminForm>(field: Field, value: AdminForm[Field]) {
     setValidationError('');
@@ -114,6 +152,19 @@ function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps
       setValidationError('Select a parent gateway account.');
       return false;
     }
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      setValidationError('Enter a valid email address.');
+      return false;
+    }
+    if (form.birthdate) {
+      const parsed = new Date(`${form.birthdate}T00:00:00`);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (Number.isNaN(parsed.getTime()) || parsed > today) {
+        setValidationError('Birthdate cannot be in the future.');
+        return false;
+      }
+    }
     return true;
   }
 
@@ -123,10 +174,19 @@ function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps
     setIsSubmitting(true);
     try {
       const nextAccounts = await updateAccountItem(account.id, {
-        profileImage: form.profileImage || undefined,
+        profileImageUrl: form.profileImage || undefined,
         name: form.name,
-        email: '',
-        contact: '',
+        email: form.email,
+        contact: form.contact,
+        birthdate: form.birthdate,
+        gender: form.gender,
+        addressLine: form.addressLine,
+        city: form.city,
+        province: form.province,
+        postalCode: form.postalCode,
+        emergencyContactName: form.emergencyContactName,
+        emergencyContactRelationship: form.emergencyContactRelationship,
+        emergencyContactNumber: form.emergencyContactNumber,
         role: 'admins',
         handle: form.username,
         access: form.permissionIds,
@@ -137,6 +197,8 @@ function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps
         roleId: form.roleId || undefined,
         parentAdminAccountId: form.parentAdminAccountId,
         permissionIds: form.permissionIds,
+        profileImageFile: profileImageFile ?? undefined,
+        removeProfileImage: isProfileImageRemoved,
       });
       onSave(nextAccounts, 'Internal admin updated successfully.');
     } catch (error) {
@@ -158,6 +220,26 @@ function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps
     }
 
     setIsResetConfirmOpen(true);
+  }
+
+  function handleProfileImageChange(file: File | undefined) {
+    setValidationError('');
+    setProfileImagePreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return file ? URL.createObjectURL(file) : '';
+    });
+    setProfileImageFile(file ?? null);
+    setIsProfileImageRemoved(false);
+  }
+
+  function handleRemoveProfileImage() {
+    setValidationError('');
+    setProfileImagePreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return '';
+    });
+    setProfileImageFile(null);
+    setIsProfileImageRemoved(true);
   }
 
   async function handleConfirmResetPassword() {
@@ -195,15 +277,32 @@ function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps
         <div className={styles.formContainer}>
           <div className={styles.profilePicker}>
             <div className={styles.profilePreview} aria-hidden="true">
-              {form.profileImage ? <img src={form.profileImage} alt="" className={styles.profileImage} /> : <i className="fa-solid fa-user"></i>}
+              {profileImagePreviewUrl || (!isProfileImageRemoved && form.profileImage) ? (
+                <img src={profileImagePreviewUrl || form.profileImage} alt="" className={styles.profileImage} />
+              ) : (
+                <i className="fa-solid fa-user"></i>
+              )}
             </div>
+            <label className={styles.profileButton}>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className={styles.profileInput}
+                onChange={(event) => handleProfileImageChange(event.target.files?.[0])}
+              />
+              {profileImagePreviewUrl || form.profileImage ? 'Replace Image' : 'Choose Image'}
+            </label>
+            <button
+              type="button"
+              className={styles.profileButton}
+              onClick={handleRemoveProfileImage}
+              disabled={!canRemoveProfileImage}
+            >
+              Remove Image
+            </button>
           </div>
 
           <div className={styles.formGrid}>
-            <label className={styles.field}>
-              <span className={styles.label}>Profile Image URL</span>
-              <input value={form.profileImage} onChange={(event) => updateField('profileImage', event.target.value)} className={styles.input} />
-            </label>
             <label className={styles.field}>
               <span className={styles.label}>Full Name</span>
               <input value={form.name} onChange={(event) => updateField('name', event.target.value)} className={styles.input} />
@@ -212,6 +311,71 @@ function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps
               <span className={styles.label}>Username</span>
               <input value={form.username} onChange={(event) => updateField('username', event.target.value.toLowerCase())} className={styles.input} />
             </label>
+            <div className={`${styles.sectionBlock} ${styles.wideField}`}>
+              <h3>Personal Information</h3>
+              <div className={styles.formGrid}>
+                <label className={styles.field}>
+                  <span className={styles.label}>Birthdate</span>
+                  <input type="date" value={form.birthdate} onChange={(event) => updateField('birthdate', event.target.value)} className={styles.input} />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>Gender</span>
+                  <select value={form.gender} onChange={(event) => updateField('gender', event.target.value)} className={styles.select}>
+                    <option value="">Select gender</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Prefer not to say">Prefer not to say</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>Email</span>
+                  <input type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} className={styles.input} />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>Contact Number</span>
+                  <input value={form.contact} onChange={(event) => updateField('contact', event.target.value)} className={styles.input} />
+                </label>
+              </div>
+            </div>
+            <div className={`${styles.sectionBlock} ${styles.wideField}`}>
+              <h3>Address</h3>
+              <div className={styles.formGrid}>
+                <label className={`${styles.field} ${styles.wideField}`}>
+                  <span className={styles.label}>Address Line</span>
+                  <input value={form.addressLine} onChange={(event) => updateField('addressLine', event.target.value)} className={styles.input} />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>City</span>
+                  <input value={form.city} onChange={(event) => updateField('city', event.target.value)} className={styles.input} />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>Province</span>
+                  <input value={form.province} onChange={(event) => updateField('province', event.target.value)} className={styles.input} />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>Postal Code</span>
+                  <input value={form.postalCode} onChange={(event) => updateField('postalCode', event.target.value)} className={styles.input} />
+                </label>
+              </div>
+            </div>
+            <div className={`${styles.sectionBlock} ${styles.wideField}`}>
+              <h3>Emergency Contact</h3>
+              <div className={styles.formGrid}>
+                <label className={styles.field}>
+                  <span className={styles.label}>Name</span>
+                  <input value={form.emergencyContactName} onChange={(event) => updateField('emergencyContactName', event.target.value)} className={styles.input} />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>Relationship</span>
+                  <input value={form.emergencyContactRelationship} onChange={(event) => updateField('emergencyContactRelationship', event.target.value)} className={styles.input} />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>Contact Number</span>
+                  <input value={form.emergencyContactNumber} onChange={(event) => updateField('emergencyContactNumber', event.target.value)} className={styles.input} />
+                </label>
+              </div>
+            </div>
             <label className={styles.field}>
               <span className={styles.label}>Role / Position</span>
               <select value={form.roleId} onChange={(event) => updateField('roleId', event.target.value)} className={styles.select} disabled={isLoadingOptions}>
@@ -242,27 +406,40 @@ function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps
               </select>
             </label>
             <div className={styles.noticeCard}>
-              <span className={styles.label}>Password Status</span>
-              <p>{account.passwordStatus ?? 'Password Changed'}</p>
-              <p>Changed: {formatDateTime(account.passwordChangedAt)}</p>
-              <p>Last reset: {formatDateTime(account.passwordResetAt)}</p>
-              <input
-                type="password"
-                value={resetPassword}
-                onChange={(event) => {
-                  setResetPassword(event.target.value);
-                  setResetError('');
-                  setResetSuccess('');
-                }}
-                className={styles.input}
-                placeholder="Temporary password"
-              />
+              <div className={styles.passwordStatusRow}>
+                <div className={styles.passwordStatusItem}>
+                  <span className={styles.label}>Password Status</span>
+                  <strong>{account.passwordStatus ?? 'Password Changed'}</strong>
+                </div>
+                <div className={styles.passwordStatusItem}>
+                  <span>Changed</span>
+                  <strong>{formatDateTime(account.passwordChangedAt)}</strong>
+                </div>
+                <div className={styles.passwordStatusItem}>
+                  <span>Last reset</span>
+                  <strong>{formatDateTime(account.passwordResetAt)}</strong>
+                </div>
+                <label className={styles.passwordResetField}>
+                  <span className={styles.label}>Temporary Password</span>
+                  <input
+                    type="password"
+                    value={resetPassword}
+                    onChange={(event) => {
+                      setResetPassword(event.target.value);
+                      setResetError('');
+                      setResetSuccess('');
+                    }}
+                    className={styles.input}
+                    placeholder="Temporary password"
+                  />
+                </label>
+                <button type="button" className={styles.cancelButton} onClick={handleResetPasswordRequest} disabled={isResettingPassword}>
+                  {isResettingPassword ? 'Resetting...' : 'Reset Password'}
+                </button>
+              </div>
               <span className={styles.fieldHelper}>Temporary password must be at least 8 characters.</span>
               {resetError ? <p className={styles.validationError}>{resetError}</p> : null}
               {resetSuccess ? <p className={styles.successMessage}>{resetSuccess}</p> : null}
-              <button type="button" className={styles.cancelButton} onClick={handleResetPasswordRequest} disabled={isResettingPassword}>
-                {isResettingPassword ? 'Resetting...' : 'Reset Password'}
-              </button>
             </div>
             <div className={`${styles.noticeCard} ${styles.wideField}`}>
               <span className={styles.label}>Access</span>

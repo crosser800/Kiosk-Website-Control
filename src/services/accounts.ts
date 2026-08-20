@@ -7,21 +7,37 @@ import type {
 import { getStoredInternalSessionToken } from './internalAdminAuth';
 import type { OrderPriceCode } from './orderPricing';
 import {
+  ADMIN_PROFILE_BUCKET,
   convertImageToWebp,
   getAgentProfilePath,
+  internalAdminProfilePath,
   MAX_PROFILE_IMAGE_DIMENSION,
   PROFILE_IMAGE_BUCKET,
   PROFILE_IMAGE_QUALITY,
+  resolveAdminProfileImageUrl,
+  uploadAdminProfileImage,
 } from '../utils/profileImages';
 
 type AccountStatus = 'Active' | 'Inactive' | 'Blocked' | 'Locked';
 
 export type AccountInput = {
   profileImage?: string;
+  profileImagePath?: string;
+  profileImageUrl?: string;
   profileImageFile?: File;
+  removeProfileImage?: boolean;
   name: string;
   email: string;
   contact: string;
+  birthdate?: string;
+  gender?: string;
+  addressLine?: string;
+  city?: string;
+  province?: string;
+  postalCode?: string;
+  emergencyContactName?: string;
+  emergencyContactRelationship?: string;
+  emergencyContactNumber?: string;
   role: AccountView;
   handle: string;
   access: string | string[];
@@ -100,7 +116,20 @@ type InternalAdminAccountRow = {
   department_id: string | null;
   username: string | null;
   full_name: string | null;
+  profile_image_path: string | null;
   profile_image_url: string | null;
+  updated_at: string | null;
+  birthdate: string | null;
+  gender: string | null;
+  email: string | null;
+  contact_number: string | null;
+  address_line: string | null;
+  city: string | null;
+  province: string | null;
+  postal_code: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_relationship: string | null;
+  emergency_contact_number: string | null;
   status: string | null;
   must_change_password: boolean | null;
   password_changed_at: string | null;
@@ -238,6 +267,43 @@ function validateUsername(value: string) {
   return /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/.test(value);
 }
 
+const allowedInternalAdminGenders = new Set(['', 'Male', 'Female', 'Prefer not to say', 'Other']);
+
+function cleanOptionalText(value: string | undefined) {
+  return value?.trim() || null;
+}
+
+function validateOptionalEmail(value: string | undefined) {
+  const email = value?.trim() ?? '';
+  return !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function validateOptionalBirthdate(value: string | undefined) {
+  const birthdate = value?.trim() ?? '';
+  if (!birthdate) return true;
+  const parsed = new Date(`${birthdate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return parsed <= today;
+}
+
+function internalAdminProfilePayload(account: AccountInput) {
+  return {
+    birthdate: cleanOptionalText(account.birthdate),
+    gender: cleanOptionalText(account.gender),
+    email: cleanOptionalText(account.email),
+    contact_number: cleanOptionalText(account.contact),
+    address_line: cleanOptionalText(account.addressLine),
+    city: cleanOptionalText(account.city),
+    province: cleanOptionalText(account.province),
+    postal_code: cleanOptionalText(account.postalCode),
+    emergency_contact_name: cleanOptionalText(account.emergencyContactName),
+    emergency_contact_relationship: cleanOptionalText(account.emergencyContactRelationship),
+    emergency_contact_number: cleanOptionalText(account.emergencyContactNumber),
+  };
+}
+
 function mapAgentRowToAccount(row: AgentAccountRow, group?: AgentGroupRow): AccountSummaryItem {
   return {
     id: String(row.id),
@@ -274,14 +340,29 @@ function mapInternalAdminRowToAccount(
   return {
     id: String(row.id),
     name: String(row.full_name ?? '').trim() || String(row.username ?? '').trim() || 'Internal Admin',
-    email: '',
-    contact: '',
+    email: String(row.email ?? '').trim(),
+    contact: String(row.contact_number ?? '').trim(),
+    birthdate: String(row.birthdate ?? '').trim(),
+    gender: String(row.gender ?? '').trim(),
+    addressLine: String(row.address_line ?? '').trim(),
+    city: String(row.city ?? '').trim(),
+    province: String(row.province ?? '').trim(),
+    postalCode: String(row.postal_code ?? '').trim(),
+    emergencyContactName: String(row.emergency_contact_name ?? '').trim(),
+    emergencyContactRelationship: String(row.emergency_contact_relationship ?? '').trim(),
+    emergencyContactNumber: String(row.emergency_contact_number ?? '').trim(),
     role: 'admins',
     handle: String(row.username ?? '').trim(),
     access: permissionLabels.length > 0 ? permissionLabels.join(', ') : 'No access',
     branch: departmentName || '-',
     status: normalizeStatus(row.status),
-    profileImage: String(row.profile_image_url ?? '').trim() || undefined,
+    profileImagePath: String(row.profile_image_path ?? '').trim() || undefined,
+    profileImageUrl: String(row.profile_image_url ?? '').trim() || undefined,
+    profileImage: resolveAdminProfileImageUrl({
+      profileImagePath: row.profile_image_path,
+      profileImageUrl: row.profile_image_url,
+      updatedAt: row.updated_at,
+    }) || undefined,
     roleLabel: roleLabel || '-',
     username: String(row.username ?? '').trim(),
     roleId: String(row.role_id ?? '').trim(),
@@ -425,7 +506,20 @@ async function fetchInternalAdminAccounts() {
         'department_id',
         'username',
         'full_name',
+        'profile_image_path',
         'profile_image_url',
+        'updated_at',
+        'birthdate',
+        'gender',
+        'email',
+        'contact_number',
+        'address_line',
+        'city',
+        'province',
+        'postal_code',
+        'emergency_contact_name',
+        'emergency_contact_relationship',
+        'emergency_contact_number',
         'status',
         'must_change_password',
         'password_changed_at',
@@ -627,6 +721,9 @@ function validateInternalAdminInput(account: AccountInput, isCreate: boolean) {
   }
   if (account.roleId && !isUuid(account.roleId)) throw new Error('Select a valid role.');
   if (account.departmentId && !isUuid(account.departmentId)) throw new Error('Select a valid department.');
+  if (!validateOptionalEmail(account.email)) throw new Error('Enter a valid email address.');
+  if (!validateOptionalBirthdate(account.birthdate)) throw new Error('Birthdate cannot be in the future.');
+  if (!allowedInternalAdminGenders.has(account.gender?.trim() ?? '')) throw new Error('Select a valid gender.');
   if (isCreate && !account.temporaryPassword?.trim()) throw new Error('Temporary password is required.');
   if (
     isCreate &&
@@ -636,6 +733,30 @@ function validateInternalAdminInput(account: AccountInput, isCreate: boolean) {
   }
 
   return username;
+}
+
+async function uploadInternalAdminProfileImage(internalAdminId: string, file: File) {
+  const profileBlob = await convertImageToWebp(file, {
+    maxWidth: MAX_PROFILE_IMAGE_DIMENSION,
+    maxHeight: MAX_PROFILE_IMAGE_DIMENSION,
+    quality: PROFILE_IMAGE_QUALITY,
+  });
+  const profilePath = internalAdminProfilePath(internalAdminId);
+  await uploadAdminProfileImage(profilePath, profileBlob);
+
+  return profilePath;
+}
+
+async function saveInternalAdminProfileImagePath(internalAdminId: string, profileImagePath: string) {
+  const { error } = await supabase
+    .from('internal_admin_accounts')
+    .update({ profile_image_path: profileImagePath })
+    .eq('id', internalAdminId);
+
+  if (error) {
+    await supabase.storage.from(ADMIN_PROFILE_BUCKET).remove([profileImagePath]);
+    throw new Error('Profile image uploaded, but the account could not be updated.');
+  }
 }
 
 export async function addAccountItem(account: AccountInput) {
@@ -660,9 +781,43 @@ export async function addAccountItem(account: AccountInput) {
       throw new Error(String(result.error ?? 'Unable to create this internal admin.'));
     }
 
-    return loadAccountItems();
+    const internalAdminId = String(result.internal_admin_id ?? '').trim();
+    let profileWarning = '';
+
+    if (internalAdminId) {
+      const { error: profileError } = await supabase
+        .from('internal_admin_accounts')
+        .update(internalAdminProfilePayload(account))
+        .eq('id', internalAdminId);
+
+      if (profileError) {
+        throw new Error(`Internal admin was created, but profile details could not be saved: ${profileError.message}`);
+      }
+    }
+
+    if (internalAdminId && account.profileImageFile) {
+      try {
+        const profilePath = await uploadInternalAdminProfileImage(internalAdminId, account.profileImageFile);
+        await saveInternalAdminProfileImagePath(internalAdminId, profilePath);
+      } catch (profileError) {
+        console.error('Internal admin profile image upload failed', profileError);
+        profileWarning = 'Internal admin was created, but the profile image upload failed.';
+      }
+    }
+
+    const accounts = (await loadAccountItems()) as AccountCreateResult;
+    if (profileWarning) accounts.warning = profileWarning;
+    return accounts;
   }
 
+  if (account.role === 'agents') {
+    return addAgentAccountItem(account);
+  }
+
+  return loadAccountItems();
+}
+
+async function addAgentAccountItem(account: AccountInput) {
   const { data, error } = await supabase
     .from('agent_accounts')
     .insert({
@@ -742,9 +897,13 @@ export async function updateAccountItem(accountId: string, account: AccountInput
     const username = validateInternalAdminInput(account, false);
     const { data: currentAccount, error: currentAccountError } = await supabase
       .from('internal_admin_accounts')
-      .select('parent_admin_account_id')
+      .select('parent_admin_account_id, profile_image_path, profile_image_url')
       .eq('id', accountId)
-      .maybeSingle<{ parent_admin_account_id: string | null }>();
+      .maybeSingle<{
+        parent_admin_account_id: string | null;
+        profile_image_path: string | null;
+        profile_image_url: string | null;
+      }>();
 
     if (currentAccountError) throw new Error(currentAccountError.message);
     const parentAdminAccountId = String(currentAccount?.parent_admin_account_id ?? '').trim();
@@ -752,19 +911,60 @@ export async function updateAccountItem(accountId: string, account: AccountInput
 
     await assertUniqueInternalAdminUsername(username, parentAdminAccountId, accountId);
 
-    const { error } = await supabase
-      .from('internal_admin_accounts')
-      .update({
-        profile_image_url: account.profileImage?.trim() || null,
+    const currentProfileImagePath = String(currentAccount?.profile_image_path ?? '').trim();
+    const currentProfileImageUrl = String(currentAccount?.profile_image_url ?? '').trim();
+    let uploadedProfileImagePath = '';
+    const payload: Record<string, unknown> = {
         full_name: account.name.trim(),
         username,
         role_id: account.roleId?.trim() || null,
         department_id: account.departmentId?.trim() || null,
         status: account.status,
-      })
+        ...internalAdminProfilePayload(account),
+    };
+
+    if (account.profileImageFile) {
+      uploadedProfileImagePath = await uploadInternalAdminProfileImage(accountId, account.profileImageFile);
+      payload.profile_image_path = uploadedProfileImagePath;
+    } else if (account.removeProfileImage) {
+      if (currentProfileImagePath) {
+        const { error: removeError } = await supabase.storage
+          .from(ADMIN_PROFILE_BUCKET)
+          .remove([currentProfileImagePath]);
+
+        if (removeError) {
+          throw new Error('Profile image removal failed.');
+        }
+
+        payload.profile_image_path = null;
+        if (currentProfileImageUrl) {
+          payload.profile_image_url = null;
+        }
+      } else if (currentProfileImageUrl) {
+        payload.profile_image_url = null;
+      }
+    } else if (account.profileImageUrl !== undefined) {
+      const nextProfileImageUrl = account.profileImageUrl.trim();
+      if (nextProfileImageUrl !== currentProfileImageUrl) {
+        payload.profile_image_url = nextProfileImageUrl || null;
+      }
+    }
+
+    const { error } = await supabase
+      .from('internal_admin_accounts')
+      .update(payload)
       .eq('id', accountId);
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (uploadedProfileImagePath) {
+        await supabase.storage.from(ADMIN_PROFILE_BUCKET).remove([uploadedProfileImagePath]);
+      }
+      throw new Error(
+        account.removeProfileImage
+          ? 'Profile image was removed from storage, but the account could not be updated.'
+          : error.message,
+      );
+    }
 
     await saveInternalAdminPermissions(accountId, account.permissionIds ?? []);
     return loadAccountItems();

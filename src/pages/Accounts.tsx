@@ -27,7 +27,11 @@ function getAccountsLoadMessage(error: Error) {
   return 'Unable to load accounts right now. Please try again.';
 }
 
-export default function Accounts() {
+type AccountsProps = {
+  onInternalAdminUpdated?: (account: AccountSummaryItem) => void;
+};
+
+export default function Accounts({ onInternalAdminUpdated }: AccountsProps) {
   const [accounts, setAccounts] = useState<AccountSummaryItem[]>(() => getAccountItems());
   const [createAccountType, setCreateAccountType] = useState<AccountView | null>(null);
   const [editingAccount, setEditingAccount] = useState<AccountSummaryItem | null>(null);
@@ -74,11 +78,17 @@ export default function Accounts() {
       .finally(() => setIsLoadingAccounts(false));
   }
 
-  function handleAccountsSaved(nextAccounts: AccountSummaryItem[], message: string) {
+  function handleAccountsSaved(nextAccounts: AccountSummaryItem[], message: string, updatedAccountId?: string) {
     setAccounts(nextAccounts);
     setCreateAccountType(null);
     setEditingAccount(null);
     setSuccessMessage(message);
+    if (updatedAccountId) {
+      const updatedAccount = nextAccounts.find((account) => account.id === updatedAccountId);
+      if (updatedAccount?.role === 'admins') {
+        onInternalAdminUpdated?.(updatedAccount);
+      }
+    }
     window.setTimeout(() => setSuccessMessage(''), 3200);
   }
 
@@ -150,7 +160,7 @@ export default function Accounts() {
           onSave={(nextAccounts, message = 'Internal admin updated successfully.') => {
             void Promise.resolve(nextAccounts).then((resolved) => {
               if (editingAccount.role === 'admins') {
-                handleAccountsSaved(resolved, message);
+                handleAccountsSaved(resolved, message, editingAccount.id);
                 return;
               }
               setAccounts(resolved);

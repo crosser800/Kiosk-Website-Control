@@ -5,6 +5,8 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import MainContent from './components/MainContent';
 import AccountProfilePanel from './components/account/AccountProfilePanel';
+import InternalAccountProfilePanel from './components/account/InternalAccountProfilePanel';
+import type { AccountSummaryItem } from './components/account/AccountsSummary';
 
 import Dashboard from './pages/Dashboard';
 import Products from './pages/Products';
@@ -25,7 +27,7 @@ import {
 } from './services/auth';
 import { hasModulePermission } from './services/internalAdminAuth';
 import { useCurrentAdminProfile } from './hooks/useCurrentAdminProfile';
-import { getVersionedImageUrl } from './utils/profileImages';
+import { resolveAdminProfileImageUrl } from './utils/profileImages';
 
 type ProductView = 'summary' | 'add';
 
@@ -395,16 +397,15 @@ export default function App() {
 
   const internalProfileImage =
     authAccessState.kind === 'admin'
-      ? authAccessState.internalSession?.account.profileImageUrl ?? ''
+      ? resolveAdminProfileImageUrl({
+          profileImagePath: authAccessState.internalSession?.account.profileImagePath,
+          profileImageUrl: authAccessState.internalSession?.account.profileImageUrl,
+          updatedAt: authAccessState.internalSession?.account.updatedAt,
+        })
       : '';
   const sidebarAccountImage = internalProfileImage
     ? internalProfileImage
-    : currentAdminProfile.profile?.profileImageUrl
-      ? getVersionedImageUrl(
-          currentAdminProfile.profile.profileImageUrl,
-          currentAdminProfile.profile.updatedAt,
-        )
-      : '';
+    : currentAdminProfile.profile?.resolvedProfileImageUrl ?? '';
 
   const handleNavigate = async (item: string) => {
     if (allowedNavigationItems && !allowedNavigationItems.includes(item)) {
@@ -623,6 +624,63 @@ export default function App() {
       setAuthAccessState({ kind: 'none' });
     };
 
+  const handleInternalAdminUpdated = (account: AccountSummaryItem) => {
+    setAuthAccessState((current) => {
+      if (
+        current.kind !== 'admin' ||
+        !current.internalSession ||
+        current.internalSession.account.id !== account.id
+      ) {
+        return current;
+      }
+
+      return {
+        ...current,
+        internalSession: {
+          ...current.internalSession,
+          account: {
+            ...current.internalSession.account,
+            fullName: account.name,
+            profileImagePath: account.profileImagePath ?? '',
+            profileImageUrl: account.profileImageUrl ?? '',
+            birthdate: account.birthdate ?? '',
+            gender: account.gender ?? '',
+            email: account.email ?? '',
+            contactNumber: account.contact ?? '',
+            addressLine: account.addressLine ?? '',
+            city: account.city ?? '',
+            province: account.province ?? '',
+            postalCode: account.postalCode ?? '',
+            emergencyContactName: account.emergencyContactName ?? '',
+            emergencyContactRelationship: account.emergencyContactRelationship ?? '',
+            emergencyContactNumber: account.emergencyContactNumber ?? '',
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      };
+    });
+  };
+
+  const handleInternalProfileUpdated = (
+    profile: NonNullable<
+      Extract<AuthAccessState, { kind: 'admin' }>['internalSession']
+    >['account'],
+  ) => {
+    setAuthAccessState((current) => {
+      if (current.kind !== 'admin' || !current.internalSession) {
+        return current;
+      }
+
+      return {
+        ...current,
+        internalSession: {
+          ...current.internalSession,
+          account: profile,
+        },
+      };
+    });
+  };
+
   const renderPage = () => {
     switch (active) {
       case 'Dashboard':
@@ -651,13 +709,16 @@ export default function App() {
         return <Sales />;
 
       case 'Accounts':
-        return <Accounts />;
+        return <Accounts onInternalAdminUpdated={handleInternalAdminUpdated} />;
 
       case 'Settings':
         return (
           <Settings
             isDark={isDark}
             onToggleTheme={toggleTheme}
+            onGatewayProfileChanged={() => {
+              void currentAdminProfile.reload();
+            }}
           />
         );
 
@@ -949,7 +1010,13 @@ export default function App() {
 
       {renderGatewayLogoutConfirm()}
 
-      {isAccountProfileOpen ? (
+      {isAccountProfileOpen && authAccessState.kind === 'admin' && authAccessState.internalSession ? (
+        <InternalAccountProfilePanel
+          profile={authAccessState.internalSession.account}
+          onProfileUpdated={handleInternalProfileUpdated}
+          onClose={() => setIsAccountProfileOpen(false)}
+        />
+      ) : isAccountProfileOpen ? (
         <AccountProfilePanel
           profile={currentAdminProfile.profile}
           isLoading={currentAdminProfile.isLoading}
