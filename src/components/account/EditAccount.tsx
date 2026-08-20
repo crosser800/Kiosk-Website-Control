@@ -99,9 +99,11 @@ function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps
   const groupedPermissions = useMemo(() => {
     return groupPermissionsByModule(options.permissions);
   }, [options]);
+  const currentProfileImage = account.profileImage ?? form.profileImage;
+  const displayedProfileImage = profileImagePreviewUrl || (!isProfileImageRemoved ? currentProfileImage : '');
   const canRemoveProfileImage = Boolean(
     profileImagePreviewUrl ||
-    (!isProfileImageRemoved && (form.profileImage || account.profileImagePath)),
+    (!isProfileImageRemoved && (currentProfileImage || account.profileImagePath)),
   );
 
   useEffect(() => {
@@ -277,8 +279,8 @@ function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps
         <div className={styles.formContainer}>
           <div className={styles.profilePicker}>
             <div className={styles.profilePreview} aria-hidden="true">
-              {profileImagePreviewUrl || (!isProfileImageRemoved && form.profileImage) ? (
-                <img src={profileImagePreviewUrl || form.profileImage} alt="" className={styles.profileImage} />
+              {displayedProfileImage ? (
+                <img src={displayedProfileImage} alt="" className={styles.profileImage} />
               ) : (
                 <i className="fa-solid fa-user"></i>
               )}
@@ -290,7 +292,7 @@ function InternalAdminEditAccount({ account, onSave, onClose }: EditAccountProps
                 className={styles.profileInput}
                 onChange={(event) => handleProfileImageChange(event.target.files?.[0])}
               />
-              {profileImagePreviewUrl || form.profileImage ? 'Replace Image' : 'Choose Image'}
+              {displayedProfileImage ? 'Replace Image' : 'Choose Image'}
             </label>
             <button
               type="button"
