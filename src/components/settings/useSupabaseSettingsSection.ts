@@ -341,5 +341,6 @@ export default function useSupabaseSettingsSection<
     submit,
     updateStatus,
     reorderItems,
+    loadItems,
   };
 }

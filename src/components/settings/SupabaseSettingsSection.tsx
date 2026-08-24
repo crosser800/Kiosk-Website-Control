@@ -55,6 +55,8 @@ type SupabaseSettingsSectionProps<
   onReorder?: (orderedIds: string[]) => void | Promise<unknown>;
   renderForm?: () => React.ReactNode;
   canCreate?: boolean;
+  createButtonLabel?: string;
+  renderExtraActions?: (item: TRecord) => React.ReactNode;
 };
 
 export default function SupabaseSettingsSection<
@@ -86,6 +88,8 @@ export default function SupabaseSettingsSection<
   onReorder,
   renderForm,
   canCreate = true,
+  createButtonLabel = 'Add Record',
+  renderExtraActions,
 }: SupabaseSettingsSectionProps<TRecord, TForm>) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -246,7 +250,7 @@ export default function SupabaseSettingsSection<
               {column.label}
             </span>
           ))}
-          <span className={styles.headerCell}>{actionHeaderLabel}</span>
+          <span className={`${styles.headerCell} ${styles.actionHeaderCell}`}>{actionHeaderLabel}</span>
         </div>
 
         {Array.from({ length: 4 }).map((_, index) => (
@@ -302,7 +306,7 @@ export default function SupabaseSettingsSection<
       <div className={styles.toolbar}>
         {canCreate ? (
           <button type="button" className={styles.primaryButton} onClick={handleOpenCreate}>
-            Add Record
+            {createButtonLabel}
           </button>
         ) : null}
         {onReorder ? (
@@ -331,7 +335,7 @@ export default function SupabaseSettingsSection<
                 {column.label}
               </span>
             ))}
-            <span className={styles.headerCell}>{actionHeaderLabel}</span>
+            <span className={`${styles.headerCell} ${styles.actionHeaderCell}`}>{actionHeaderLabel}</span>
           </div>
 
           {items.map((item) => {
@@ -370,6 +374,7 @@ export default function SupabaseSettingsSection<
                       {isInactive ? 'Activate' : 'Deactivate'}
                     </button>
                   ) : null}
+                  {renderExtraActions ? renderExtraActions(item) : null}
                 </div>
               </div>
             );

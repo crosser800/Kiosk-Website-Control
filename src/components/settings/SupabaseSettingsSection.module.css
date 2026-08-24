@@ -209,6 +209,22 @@
   font-weight: 800;
 }
 
+.rowAction:disabled,
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.dangerRowAction {
+  color: #b42318;
+}
+
+.dangerRowAction:hover {
+  border-color: color-mix(in srgb, #ef4444 44%, var(--card-border));
+  color: #991b1b;
+}
+
 .primaryButton {
   min-height: 2.65rem;
   padding: 0 1rem;
@@ -247,6 +263,10 @@
   color: #b42318;
 }
 
+.success {
+  color: #15803d;
+}
+
 .empty {
   color: var(--text-muted);
 }
@@ -255,14 +275,17 @@
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
+  overflow-x: auto;
+  padding-bottom: 0.15rem;
 }
 
 .tableHeader,
 .tableRow {
   display: grid;
-  gap: 0.75rem;
-  align-items: center;
-  padding: 0.7rem 0.85rem;
+  min-width: 48rem;
+  gap: 1rem;
+  align-items: stretch;
+  padding: 0.65rem 0.75rem;
   border: 1px solid var(--card-border);
   border-radius: 0.5rem;
 }
@@ -272,6 +295,7 @@
 }
 
 .tableRow {
+  min-height: 3.25rem;
   background-color: var(--surface);
 }
 
@@ -300,6 +324,9 @@
 }
 
 .headerCell {
+  min-width: 0;
+  display: flex;
+  align-items: center;
   color: var(--text-muted);
   font-size: 0.78rem;
   font-weight: 800;
@@ -309,12 +336,24 @@
 
 .cell {
   min-width: 0;
+  display: flex;
+  align-items: center;
   color: var(--text);
   font-size: 0.88rem;
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.cell:has(.statusBadge),
+.cell:has(.sortOrderBadge) {
+  justify-content: center;
+}
+
+.actionHeaderCell {
+  justify-content: flex-end;
+  padding-right: 0.15rem;
 }
 
 .cellMuted {
@@ -692,9 +731,128 @@
 .rowActions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.45rem;
-  flex-wrap: wrap;
+  gap: 0.4rem;
+  flex-wrap: nowrap;
   align-items: center;
+  min-width: max-content;
+}
+
+.rowActions .rowAction {
+  min-width: 4.5rem;
+}
+
+.settingsSnackbar {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 1300;
+  max-width: min(24rem, calc(100vw - 2rem));
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.65rem;
+  background: var(--card-bg);
+  color: var(--text);
+  box-shadow: var(--card-shadow);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.settingsSnackbarSuccess {
+  border-color: var(--status-active-border);
+  background: var(--status-active-bg);
+  color: var(--status-active-text);
+}
+
+.settingsSnackbarError {
+  border-color: var(--status-inactive-border);
+  background: var(--status-inactive-bg);
+  color: var(--status-inactive-text);
+}
+
+.unitReplacePanel,
+.impactList,
+.impactSummary {
+  display: flex;
+  flex-direction: column;
+}
+
+.unitReplacePanel {
+  gap: 0.9rem;
+}
+
+.segmentedControl {
+  display: inline-flex;
+  align-self: flex-start;
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+  border-radius: 0.5rem;
+  background-color: var(--surface);
+}
+
+.segmentedControl button {
+  min-height: 2.35rem;
+  padding: 0 1rem;
+  border: 0;
+  border-right: 1px solid var(--card-border);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.segmentedControl button:last-child {
+  border-right: 0;
+}
+
+.segmentedControl .segmentActive {
+  background-color: var(--yellow);
+  color: #1f2937;
+}
+
+.bulkReplaceBar {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.impactList {
+  gap: 0.55rem;
+  max-height: 22rem;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.impactRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(10rem, 13rem);
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.5rem;
+  background-color: var(--surface);
+}
+
+.impactRowCompact {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.impactSummary {
+  min-width: 0;
+  gap: 0.2rem;
+  color: var(--text-muted);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.impactSummary strong {
+  color: var(--text);
+  font-size: 0.86rem;
 }
 
 @media (max-width: 768px) {
@@ -707,7 +865,8 @@
   }
 
   .tableRow {
-    grid-template-columns: 1fr;
+    min-width: 0;
+    grid-template-columns: 1fr !important;
   }
 
   .cell {
@@ -725,5 +884,6 @@
 
   .rowActions {
     justify-content: flex-start;
+    flex-wrap: wrap;
   }
 }

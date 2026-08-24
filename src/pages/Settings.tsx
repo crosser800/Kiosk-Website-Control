@@ -5,9 +5,11 @@ import BranchesSettingsSection from '../components/settings/BranchesSettingsSect
 import BrandsSettingsSection from '../components/settings/BrandsSettingsSection';
 import CategoriesSettingsSection from '../components/settings/CategoriesSettingsSection';
 import DeliveryTermsSettingsSection from '../components/settings/DeliveryTermsSettingsSection';
+import GiftChecksSettingsSection from '../components/settings/GiftChecksSettingsSection';
 import InternalAdminRolesSettingsSection from '../components/settings/InternalAdminRolesSettingsSection';
 import PreferenceTypesSettingsSection from '../components/settings/PreferenceTypesSettingsSection';
 import PriceClassesSettingsSection from '../components/settings/PriceClassesSettingsSection';
+import UnitsSettingsSection from '../components/settings/UnitsSettingsSection';
 import ThemeToggle from '../components/ThemeToggle';
 import {
   type SettingPanel,
@@ -117,6 +119,8 @@ export default function Settings({ isDark, onToggleTheme, onGatewayProfileChange
         preferenceOptions={preferenceOptions}
       />
       <DeliveryTermsSettingsSection activePanel={activePanel} onToggle={togglePanel} />
+      <UnitsSettingsSection activePanel={activePanel} onToggle={togglePanel} />
+      <GiftChecksSettingsSection activePanel={activePanel} onToggle={togglePanel} />
       <CategoriesSettingsSection activePanel={activePanel} onToggle={togglePanel} />
       <BrandsSettingsSection activePanel={activePanel} onToggle={togglePanel} />
     </div>

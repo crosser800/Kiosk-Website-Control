@@ -9,6 +9,8 @@ export type SettingPanel =
   | 'preferenceTypes'
   | 'priceClasses'
   | 'deliveryTerms'
+  | 'units'
+  | 'giftChecks'
   | 'categories'
   | 'brands';
 

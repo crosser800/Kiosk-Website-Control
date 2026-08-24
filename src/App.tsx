@@ -33,6 +33,12 @@ import {
 } from './services/internalAdminAuth';
 import { useCurrentAdminProfile } from './hooks/useCurrentAdminProfile';
 import { resolveAdminProfileImageUrl } from './utils/profileImages';
+import {
+  applyThemePreference,
+  cacheThemePreference,
+  getCachedThemePreference,
+  getInitialThemePreference,
+} from './utils/themePreference';
 
 type ProductView = 'summary' | 'add';
 
@@ -46,7 +52,7 @@ function logAppLifecycle(message: string, details: Record<string, unknown> = {})
 
 export default function App() {
   const [active, setActive] = useState('Dashboard');
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(() => getInitialThemePreference() === 'dark');
   const [isCollapsed, setIsCollapsed] = useState(() =>
     window.matchMedia('(max-width: 1024px)').matches,
   );
@@ -237,15 +243,22 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isInternalBackConfirmOpen, isInternalBackLoggingOut]);
 
-  const applyTheme = (preference: InternalThemePreference) => {
+  const applyTheme = (
+    preference: InternalThemePreference,
+    options: { internalAccountId?: string | null; persist?: boolean } = {},
+  ) => {
     const nextIsDark = preference === 'dark';
     setIsDark(nextIsDark);
-    document.documentElement.classList.toggle('dark', nextIsDark);
+    applyThemePreference(preference);
+
+    if (options.persist !== false) {
+      cacheThemePreference(preference, options.internalAccountId);
+    }
   };
 
   const applyDefaultLoginTheme = () => {
     themeLoadRequestRef.current += 1;
-    applyTheme('light');
+    applyTheme(getCachedThemePreference() ?? 'light');
   };
 
   const syncInternalSessionTheme = (
@@ -275,7 +288,9 @@ export default function App() {
   ) => {
     const requestId = themeLoadRequestRef.current + 1;
     themeLoadRequestRef.current = requestId;
-    applyTheme(fallbackPreference);
+    const cachedPreference = getCachedThemePreference(internalAccountId);
+    const initialPreference = cachedPreference ?? fallbackPreference;
+    applyTheme(initialPreference, { internalAccountId });
 
     void loadInternalAdminThemePreference(internalAccountId)
       .then((savedPreference) => {
@@ -283,7 +298,17 @@ export default function App() {
           return;
         }
 
-        applyTheme(savedPreference);
+        if (cachedPreference) {
+          if (savedPreference !== cachedPreference) {
+            void updateInternalAdminThemePreference(internalAccountId, cachedPreference).catch((error) => {
+              console.error('Failed to sync cached internal admin theme preference:', error);
+            });
+          }
+          syncInternalSessionTheme(cachedPreference);
+          return;
+        }
+
+        applyTheme(savedPreference, { internalAccountId });
         syncInternalSessionTheme(savedPreference);
       })
       .catch((error) => {
@@ -298,7 +323,7 @@ export default function App() {
         ? authAccessStateRef.current.internalSession?.account.id ?? ''
         : '';
 
-    applyTheme(nextPreference);
+    applyTheme(nextPreference, { internalAccountId });
 
     if (!internalAccountId) {
       return;

@@ -2,6 +2,32 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function () {
+        try {
+          var preference = null;
+          var lastInternalAccountId = window.localStorage.getItem(
+            'kiosk-admin-theme-preference:internal:last-account-id'
+          );
+          if (lastInternalAccountId) {
+            preference = window.localStorage.getItem(
+              'kiosk-admin-theme-preference:internal:' + lastInternalAccountId
+            );
+          }
+          if (preference !== 'dark' && preference !== 'light') {
+            preference = window.localStorage.getItem('kiosk-admin-theme-preference');
+          }
+          if (preference !== 'dark' && preference !== 'light') {
+            preference = 'light';
+          }
+          document.documentElement.classList.toggle('dark', preference === 'dark');
+          document.documentElement.style.colorScheme = preference;
+        } catch (error) {
+          document.documentElement.classList.remove('dark');
+          document.documentElement.style.colorScheme = 'light';
+        }
+      })();
+    </script>
     <link rel="icon" type="image/png" href="/src/assets/2B%20LOGO.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link
