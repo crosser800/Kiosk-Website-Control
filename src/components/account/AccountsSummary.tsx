@@ -45,6 +45,7 @@ export type AccountSummaryItem = {
   passwordStatus?: string;
   passwordChangedAt?: string;
   passwordResetAt?: string;
+  updatedAt?: string;
   isSystemOwner?: boolean;
   canEdit?: boolean;
   createdAt: string;

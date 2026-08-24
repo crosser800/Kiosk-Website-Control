@@ -264,6 +264,8 @@ export default function AccountProfilePanel({
         nextProfileImageUrl = '';
       }
 
+      const profileImageChanged = Boolean(pendingImage || isImageRemoved);
+      const savedAt = new Date().toISOString();
       const updatePayload: Record<string, string | null> = {
         full_name: trimmed.fullName,
         email: trimmed.email || null,
@@ -275,6 +277,10 @@ export default function AccountProfilePanel({
         notes: trimmed.notes || null,
         profile_image_path: nextProfileImagePath || null,
       };
+
+      if (profileImageChanged) {
+        updatePayload.updated_at = savedAt;
+      }
 
       if (isImageRemoved && profile.profileImageUrl) {
         updatePayload.profile_image_url = nextProfileImageUrl || null;

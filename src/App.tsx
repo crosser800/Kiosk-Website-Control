@@ -765,7 +765,7 @@ export default function App() {
             emergencyContactName: account.emergencyContactName ?? '',
             emergencyContactRelationship: account.emergencyContactRelationship ?? '',
             emergencyContactNumber: account.emergencyContactNumber ?? '',
-            updatedAt: new Date().toISOString(),
+            updatedAt: account.updatedAt ?? new Date().toISOString(),
           },
         },
       };
@@ -820,7 +820,16 @@ export default function App() {
         return <Sales />;
 
       case 'Accounts':
-        return <Accounts onInternalAdminUpdated={handleInternalAdminUpdated} />;
+        return (
+          <Accounts
+            currentInternalAdmin={
+              authAccessState.kind === 'admin' && authAccessState.internalSession
+                ? authAccessState.internalSession.account
+                : null
+            }
+            onInternalAdminUpdated={handleInternalAdminUpdated}
+          />
+        );
 
       case 'Settings':
         return (

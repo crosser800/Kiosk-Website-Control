@@ -45,8 +45,23 @@ export function getAdminProfilePublicUrl(path: string) {
 
 export function getVersionedImageUrl(url: string, version: string) {
   if (!url) return '';
-  const separator = url.includes('?') ? '&' : '?';
-  return `${url}${separator}v=${encodeURIComponent(version || String(Date.now()))}`;
+  const normalizedVersion = version || String(Date.now());
+
+  try {
+    const parsedUrl = new URL(
+      url,
+      typeof window === 'undefined' ? 'http://localhost' : window.location.origin,
+    );
+    parsedUrl.searchParams.set('v', normalizedVersion);
+    return parsedUrl.toString();
+  } catch {
+    const [baseUrl, query = ''] = url.split('?');
+    const params = query
+      .split('&')
+      .filter((item) => item && !item.startsWith('v='));
+    params.push(`v=${encodeURIComponent(normalizedVersion)}`);
+    return `${baseUrl}?${params.join('&')}`;
+  }
 }
 
 export function resolveAdminProfileImageUrl({
@@ -60,8 +75,12 @@ export function resolveAdminProfileImageUrl({
 }) {
   const path = String(profileImagePath ?? '').trim();
   const legacyUrl = String(profileImageUrl ?? '').trim();
-  const resolvedUrl = path ? getAdminProfilePublicUrl(path) : legacyUrl;
-  return resolvedUrl && updatedAt ? getVersionedImageUrl(resolvedUrl, updatedAt) : resolvedUrl;
+  if (path) {
+    const storageUrl = getAdminProfilePublicUrl(path);
+    return storageUrl && updatedAt ? getVersionedImageUrl(storageUrl, updatedAt) : storageUrl;
+  }
+
+  return legacyUrl;
 }
 
 export async function uploadAdminProfileImage(path: string, imageBlob: Blob) {

@@ -374,6 +374,7 @@ function mapInternalAdminRowToAccount(
     passwordStatus: mustChangePassword ? 'Default Password' : 'Password Changed',
     passwordChangedAt: String(row.password_changed_at ?? '').trim(),
     passwordResetAt: String(row.password_reset_at ?? '').trim(),
+    updatedAt: String(row.updated_at ?? '').trim(),
     canEdit: true,
     createdAt: String(row.created_at ?? new Date().toISOString()),
   };
@@ -748,9 +749,10 @@ async function uploadInternalAdminProfileImage(internalAdminId: string, file: Fi
 }
 
 async function saveInternalAdminProfileImagePath(internalAdminId: string, profileImagePath: string) {
+  const savedAt = new Date().toISOString();
   const { error } = await supabase
     .from('internal_admin_accounts')
-    .update({ profile_image_path: profileImagePath })
+    .update({ profile_image_path: profileImagePath, updated_at: savedAt })
     .eq('id', internalAdminId);
 
   if (error) {
@@ -924,9 +926,12 @@ export async function updateAccountItem(accountId: string, account: AccountInput
     };
 
     if (account.profileImageFile) {
+      const savedAt = new Date().toISOString();
       uploadedProfileImagePath = await uploadInternalAdminProfileImage(accountId, account.profileImageFile);
       payload.profile_image_path = uploadedProfileImagePath;
+      payload.updated_at = savedAt;
     } else if (account.removeProfileImage) {
+      const savedAt = new Date().toISOString();
       if (currentProfileImagePath) {
         const { error: removeError } = await supabase.storage
           .from(ADMIN_PROFILE_BUCKET)
@@ -943,6 +948,7 @@ export async function updateAccountItem(accountId: string, account: AccountInput
       } else if (currentProfileImageUrl) {
         payload.profile_image_url = null;
       }
+      payload.updated_at = savedAt;
     } else if (account.profileImageUrl !== undefined) {
       const nextProfileImageUrl = account.profileImageUrl.trim();
       if (nextProfileImageUrl !== currentProfileImageUrl) {

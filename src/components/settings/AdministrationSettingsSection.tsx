@@ -47,6 +47,7 @@ type GatewayAdminForm = {
   full_name: string;
   profile_image_path: string;
   profile_image_url: string;
+  updated_at: string;
   selected_image_file: File | null;
   selected_image_preview_url: string;
   remove_profile_image: boolean;
@@ -104,6 +105,7 @@ export default function AdministrationSettingsSection({ activePanel, onToggle, o
       full_name: '',
       profile_image_path: '',
       profile_image_url: '',
+      updated_at: '',
       selected_image_file: null,
       selected_image_preview_url: '',
       remove_profile_image: false,
@@ -139,6 +141,7 @@ export default function AdministrationSettingsSection({ activePanel, onToggle, o
       full_name: record.full_name,
       profile_image_path: record.profile_image_path,
       profile_image_url: record.profile_image_url,
+      updated_at: record.updated_at,
       selected_image_file: null,
       selected_image_preview_url: '',
       remove_profile_image: false,
@@ -167,6 +170,7 @@ export default function AdministrationSettingsSection({ activePanel, onToggle, o
       const payload: Record<string, unknown> = {};
 
       if (form.selected_image_file) {
+        const savedAt = new Date().toISOString();
         const profileBlob = await convertImageToWebp(form.selected_image_file, {
           maxWidth: MAX_PROFILE_IMAGE_DIMENSION,
           maxHeight: MAX_PROFILE_IMAGE_DIMENSION,
@@ -176,7 +180,9 @@ export default function AdministrationSettingsSection({ activePanel, onToggle, o
         await uploadAdminProfileImage(profilePath, profileBlob);
         uploadedPath = profilePath;
         payload.profile_image_path = profilePath;
+        payload.updated_at = savedAt;
       } else if (form.remove_profile_image) {
+        const savedAt = new Date().toISOString();
         if (form.profile_image_path) {
           const { error: removeError } = await supabase.storage
             .from(ADMIN_PROFILE_BUCKET)
@@ -190,6 +196,7 @@ export default function AdministrationSettingsSection({ activePanel, onToggle, o
         } else if (form.profile_image_url) {
           payload.profile_image_url = null;
         }
+        payload.updated_at = savedAt;
       }
 
       return {
@@ -244,7 +251,7 @@ function AdministrationSectionContent({
       ? resolveAdminProfileImageUrl({
           profileImagePath: administration.formValues.profile_image_path,
           profileImageUrl: administration.formValues.profile_image_url,
-          updatedAt: new Date().toISOString(),
+          updatedAt: administration.formValues.updated_at,
         })
       : '');
 

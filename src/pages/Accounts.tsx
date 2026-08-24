@@ -8,6 +8,7 @@ import AccountsSummary, {
 import CreateAccount from '../components/account/CreateAccount';
 import EditAccount from '../components/account/EditAccount';
 import { getAccountItems, loadAccountItems, subscribeAccountItems } from '../services/accounts';
+import { resolveAdminProfileImageUrl } from '../utils/profileImages';
 import styles from './Accounts.module.css';
 
 function getAccountsLoadMessage(error: Error) {
@@ -29,9 +30,16 @@ function getAccountsLoadMessage(error: Error) {
 
 type AccountsProps = {
   onInternalAdminUpdated?: (account: AccountSummaryItem) => void;
+  currentInternalAdmin?: {
+    id: string;
+    fullName: string;
+    profileImagePath: string;
+    profileImageUrl: string;
+    updatedAt: string;
+  } | null;
 };
 
-export default function Accounts({ onInternalAdminUpdated }: AccountsProps) {
+export default function Accounts({ onInternalAdminUpdated, currentInternalAdmin }: AccountsProps) {
   const [accounts, setAccounts] = useState<AccountSummaryItem[]>(() => getAccountItems());
   const [createAccountType, setCreateAccountType] = useState<AccountView | null>(null);
   const [editingAccount, setEditingAccount] = useState<AccountSummaryItem | null>(null);
@@ -63,6 +71,40 @@ export default function Accounts({ onInternalAdminUpdated }: AccountsProps) {
       ),
     [],
   );
+
+  useEffect(() => {
+    if (!currentInternalAdmin?.id) return;
+
+    const profileImage = resolveAdminProfileImageUrl({
+      profileImagePath: currentInternalAdmin.profileImagePath,
+      profileImageUrl: currentInternalAdmin.profileImageUrl,
+      updatedAt: currentInternalAdmin.updatedAt,
+    }) || undefined;
+
+    setAccounts((currentAccounts) =>
+      currentAccounts.map((account) => {
+        if (account.role !== 'admins' || account.id !== currentInternalAdmin.id) {
+          return account;
+        }
+
+        return {
+          ...account,
+          name: currentInternalAdmin.fullName || account.name,
+          profileImagePath: currentInternalAdmin.profileImagePath || undefined,
+          profileImageUrl: currentInternalAdmin.profileImageUrl || undefined,
+          profileImage,
+          updatedAt: currentInternalAdmin.updatedAt || account.updatedAt,
+        };
+      }),
+    );
+  }, [
+    currentInternalAdmin?.fullName,
+    currentInternalAdmin?.id,
+    currentInternalAdmin?.profileImagePath,
+    currentInternalAdmin?.profileImageUrl,
+    currentInternalAdmin?.updatedAt,
+  ]);
+
   function handleRetryLoad() {
     setIsLoadingAccounts(true);
     setLoadError('');

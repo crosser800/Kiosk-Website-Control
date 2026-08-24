@@ -180,6 +180,8 @@ export default function InternalAccountProfilePanel({
     let uploadedPath = '';
 
     try {
+      const profileImageChanged = Boolean(pendingImage || isImageRemoved);
+      const savedAt = new Date().toISOString();
       const payload: Record<string, string | null> = {
         birthdate: trim(draft.birthdate) || null,
         gender: trim(draft.gender) || null,
@@ -193,6 +195,10 @@ export default function InternalAccountProfilePanel({
         emergency_contact_relationship: trim(draft.emergencyContactRelationship) || null,
         emergency_contact_number: trim(draft.emergencyContactNumber) || null,
       };
+
+      if (profileImageChanged) {
+        payload.updated_at = savedAt;
+      }
 
       if (pendingImage) {
         await uploadAdminProfileImage(imagePath, pendingImage.blob);
