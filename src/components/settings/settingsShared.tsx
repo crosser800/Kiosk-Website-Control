@@ -8,6 +8,7 @@ export type SettingPanel =
   | 'branches'
   | 'preferenceTypes'
   | 'priceClasses'
+  | 'priceLists'
   | 'deliveryTerms'
   | 'units'
   | 'giftChecks'

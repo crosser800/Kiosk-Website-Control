@@ -9,6 +9,7 @@ import GiftChecksSettingsSection from '../components/settings/GiftChecksSettings
 import InternalAdminRolesSettingsSection from '../components/settings/InternalAdminRolesSettingsSection';
 import PreferenceTypesSettingsSection from '../components/settings/PreferenceTypesSettingsSection';
 import PriceClassesSettingsSection from '../components/settings/PriceClassesSettingsSection';
+import PriceListsSettingsSection from '../components/settings/PriceListsSettingsSection';
 import UnitsSettingsSection from '../components/settings/UnitsSettingsSection';
 import ThemeToggle from '../components/ThemeToggle';
 import {
@@ -118,6 +119,7 @@ export default function Settings({ isDark, onToggleTheme, onGatewayProfileChange
         onToggle={togglePanel}
         preferenceOptions={preferenceOptions}
       />
+      <PriceListsSettingsSection activePanel={activePanel} onToggle={togglePanel} />
       <DeliveryTermsSettingsSection activePanel={activePanel} onToggle={togglePanel} />
       <UnitsSettingsSection activePanel={activePanel} onToggle={togglePanel} />
       <GiftChecksSettingsSection activePanel={activePanel} onToggle={togglePanel} />

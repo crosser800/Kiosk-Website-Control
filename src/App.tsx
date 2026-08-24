@@ -4,6 +4,7 @@ import './App.css';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import MainContent from './components/MainContent';
+import FloatingActionMenu from './components/FloatingActionMenu';
 import AccountProfilePanel from './components/account/AccountProfilePanel';
 import InternalAccountProfilePanel from './components/account/InternalAccountProfilePanel';
 import type { AccountSummaryItem } from './components/account/AccountsSummary';
@@ -39,6 +40,11 @@ import {
   getCachedThemePreference,
   getInitialThemePreference,
 } from './utils/themePreference';
+import {
+  loadPriceLists,
+  PRICE_LISTS_CHANGED_EVENT,
+  type PriceListRecord,
+} from './services/priceLists';
 
 type ProductView = 'summary' | 'add';
 
@@ -76,6 +82,7 @@ export default function App() {
     useState('');
   const [productView, setProductView] =
     useState<ProductView>('summary');
+  const [activePriceLists, setActivePriceLists] = useState<PriceListRecord[]>([]);
 
   const [authAccessState, setAuthAccessState] =
     useState<AuthAccessState>({ kind: 'none' });
@@ -91,6 +98,26 @@ export default function App() {
   const isAuthenticated =
     authAccessState.kind === 'admin' ||
     authAccessState.kind === 'agent_password_change';
+
+  useEffect(() => {
+    if (!isAuthenticated || authAccessState.kind !== 'admin') {
+      setActivePriceLists([]);
+      return;
+    }
+
+    const refresh = () => {
+      void loadPriceLists(true)
+        .then(setActivePriceLists)
+        .catch((error) => {
+          console.error('Failed to load active price lists:', error);
+          setActivePriceLists([]);
+        });
+    };
+
+    refresh();
+    window.addEventListener(PRICE_LISTS_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(PRICE_LISTS_CHANGED_EVENT, refresh);
+  }, [authAccessState.kind, isAuthenticated]);
 
   const activeRef = useRef(active);
   const productViewRef = useRef(productView);
@@ -1071,6 +1098,11 @@ export default function App() {
       >
         {renderPage()}
       </MainContent>
+
+      <FloatingActionMenu
+        onLogout={handleLogoutRequest}
+        priceLists={activePriceLists}
+      />
 
       {isLogoutConfirmOpen ? (
         <div

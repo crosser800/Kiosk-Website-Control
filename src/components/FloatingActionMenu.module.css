@@ -1,0 +1,122 @@
+.menu {
+  position: fixed;
+  right: 0;
+  bottom: max(1.25rem, env(safe-area-inset-bottom));
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  pointer-events: none;
+}
+
+.actionButton,
+.trigger {
+  display: grid;
+  place-items: center;
+  width: 3.15rem;
+  height: 2.55rem;
+  padding: 0;
+  border: 1px solid var(--card-border);
+  border-right: 0;
+  border-radius: 1.25rem 0 0 1.25rem;
+  background: var(--card-bg);
+  color: var(--text);
+  box-shadow: -5px 6px 16px rgba(15, 23, 42, 0.14);
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: width 220ms ease, height 220ms ease, font-size 220ms ease, opacity 180ms ease, transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 180ms ease;
+}
+
+.actionButton {
+  opacity: 0;
+  transform: translateX(100%);
+}
+
+.actionButton:first-child { transition-delay: 25ms; }
+.open .actions { pointer-events: auto; }
+.open .actionButton {
+  width: 5.25rem;
+  height: 3.2rem;
+  opacity: 1;
+  transform: translateX(0);
+  font-size: 1.2rem;
+}
+.open .actionButton:first-child { transition-delay: 60ms; }
+
+.priceListRecord {
+  grid-template-columns: auto minmax(0, 1fr);
+  justify-content: start;
+  gap: 0.65rem;
+  width: min(15rem, calc(100vw - 2rem)) !important;
+  padding: 0 1rem;
+  font-size: 0.8rem !important;
+  font-weight: 700;
+}
+
+.priceListRecord span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logoutButton {
+  background: #fff1f2;
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.16);
+}
+
+.trigger {
+  width: 3.55rem;
+  background: linear-gradient(135deg, #facc15, #f59e0b);
+  color: #171717;
+  border-color: rgba(245, 158, 11, 0.28);
+  box-shadow: -7px 8px 20px rgba(245, 158, 11, 0.25);
+  transform: translateX(2.5rem);
+}
+
+.trigger i { transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.open .trigger i { transform: rotate(180deg); }
+
+.menu:hover .trigger,
+.menu:focus-within .trigger,
+.open .trigger {
+  transform: translateX(0);
+}
+
+.actionButton:hover,
+.trigger:hover {
+  filter: brightness(0.97);
+}
+
+.actionButton:focus-visible,
+.trigger:focus-visible {
+  outline: 3px solid rgba(245, 158, 11, 0.32);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .menu { bottom: max(0.9rem, env(safe-area-inset-bottom)); }
+  .actionButton, .trigger { height: 2.4rem; }
+  .open .actionButton {
+    width: 4.75rem;
+    height: 3rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actionButton, .trigger, .trigger i { transition-duration: 1ms; }
+}
+
+:global(:root.dark) .logoutButton {
+  background: rgba(220, 38, 38, 0.16);
+  color: #fca5a5;
+  border-color: rgba(252, 165, 165, 0.2);
+}
