@@ -30,6 +30,7 @@ export type AccountSummaryItem = {
   agentGroupId?: string;
   agentGroupName?: string;
   agentGroupCode?: string;
+  clientCount?: number;
   status: string;
   authUserId?: string;
   address?: string;
@@ -470,7 +471,7 @@ export default function AccountsSummary({
           <span>Name</span>
           <span>{activeView === 'admins' ? 'Username' : 'Email'}</span>
           <span>{activeView === 'admins' ? 'Role / Position' : 'Contact'}</span>
-          <span>{activeView === 'admins' ? 'Department' : 'Role'}</span>
+          <span>{activeView === 'admins' ? 'Department' : 'Client Count'}</span>
           <span>{activeView === 'admins' ? 'Access' : 'Agent Code'}</span>
           <span>{activeView === 'admins' ? 'Password Status' : 'Group'}</span>
           <span>Status</span>
@@ -517,7 +518,11 @@ export default function AccountsSummary({
               </span>
               <span>{account.role === 'admins' ? account.username || '-' : account.email}</span>
               <span>{account.role === 'admins' ? account.roleLabel ?? '-' : formatContactNumber(account.contact)}</span>
-              <span>{account.role === 'admins' ? account.branch || '-' : 'Agent'}</span>
+              <span>
+                {account.role === 'admins'
+                  ? account.branch || '-'
+                  : (account.clientCount ?? 0).toLocaleString()}
+              </span>
               <span>
                 {account.role === 'admins' ? (
                   <button
@@ -602,8 +607,12 @@ export default function AccountsSummary({
 
                   <dl className={styles.mobileIdentityDetails}>
                     <div>
-                      <dt>Role</dt>
-                      <dd>{account.role === 'admins' ? account.roleLabel ?? '-' : 'Agent'}</dd>
+                      <dt>{account.role === 'admins' ? 'Role' : 'Client Count'}</dt>
+                      <dd>
+                        {account.role === 'admins'
+                          ? account.roleLabel ?? '-'
+                          : (account.clientCount ?? 0).toLocaleString()}
+                      </dd>
                     </div>
                     <div>
                       <dt>Department</dt>

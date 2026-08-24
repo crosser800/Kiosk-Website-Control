@@ -109,6 +109,10 @@ type AgentGroupRow = {
   group_code: string | null;
 };
 
+type AgentClientLinkRow = {
+  agent_id: string | null;
+};
+
 type InternalAdminAccountRow = {
   id: string;
   parent_admin_account_id: string | null;
@@ -304,7 +308,7 @@ function internalAdminProfilePayload(account: AccountInput) {
   };
 }
 
-function mapAgentRowToAccount(row: AgentAccountRow, group?: AgentGroupRow): AccountSummaryItem {
+function mapAgentRowToAccount(row: AgentAccountRow, group?: AgentGroupRow, clientCount = 0): AccountSummaryItem {
   return {
     id: String(row.id),
     name: String(row.full_name ?? '').trim(),
@@ -317,6 +321,7 @@ function mapAgentRowToAccount(row: AgentAccountRow, group?: AgentGroupRow): Acco
     agentGroupId: row.agent_group_id ? String(row.agent_group_id) : '',
     agentGroupName: group ? String(group.group_name ?? '').trim() : '',
     agentGroupCode: group ? String(group.group_code ?? '').trim() : '',
+    clientCount,
     status: normalizeStatus(row.status),
     profileImage: String(row.profile_image_url ?? '').trim() || undefined,
     authUserId: row.auth_user_id ? String(row.auth_user_id) : '',
@@ -572,23 +577,50 @@ async function fetchAgentAccounts() {
     new Set(rows.map((row) => String(row.agent_group_id ?? '').trim()).filter(Boolean)),
   );
   let groupsById = new Map<string, AgentGroupRow>();
+  let clientCountByAgentId = new Map<string, number>();
 
-  if (groupIds.length > 0) {
-    const { data: groupData, error: groupError } = await supabase
-      .from('agent_groups')
-      .select('id, group_name, group_code')
-      .in('id', groupIds);
+  const agentIds = rows.map((row) => String(row.id ?? '').trim()).filter(Boolean);
+  const [groupResult, clientResult] = await Promise.all([
+    groupIds.length > 0
+      ? supabase
+          .from('agent_groups')
+          .select('id, group_name, group_code')
+          .in('id', groupIds)
+      : Promise.resolve({ data: [] as AgentGroupRow[], error: null }),
+    agentIds.length > 0
+      ? supabase
+          .from('agent_clients')
+          .select('agent_id')
+          .in('agent_id', agentIds)
+      : Promise.resolve({ data: [] as AgentClientLinkRow[], error: null }),
+  ]);
 
-    if (groupError) {
-      throw new Error(groupError.message);
-    }
-
-    groupsById = new Map(
-      ((groupData ?? []) as AgentGroupRow[]).map((group) => [String(group.id), group] as const),
-    );
+  if (groupResult.error) {
+    throw new Error(groupResult.error.message);
   }
 
-  return rows.map((row) => mapAgentRowToAccount(row, groupsById.get(String(row.agent_group_id ?? ''))));
+  if (clientResult.error) {
+    throw new Error(clientResult.error.message);
+  }
+
+  groupsById = new Map(
+    ((groupResult.data ?? []) as AgentGroupRow[]).map((group) => [String(group.id), group] as const),
+  );
+
+  clientCountByAgentId = ((clientResult.data ?? []) as AgentClientLinkRow[]).reduce((counts, row) => {
+    const agentId = String(row.agent_id ?? '').trim();
+    if (!agentId) return counts;
+    counts.set(agentId, (counts.get(agentId) ?? 0) + 1);
+    return counts;
+  }, new Map<string, number>());
+
+  return rows.map((row) =>
+    mapAgentRowToAccount(
+      row,
+      groupsById.get(String(row.agent_group_id ?? '')),
+      clientCountByAgentId.get(String(row.id)) ?? 0,
+    ),
+  );
 }
 
 export async function loadInternalAdminFormOptions(): Promise<InternalAdminFormOptions> {
@@ -1050,6 +1082,9 @@ export function subscribeAccountItems(
   const agentChannel = supabase
     .channel('agent-accounts-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'agent_accounts' }, () => {
+      void syncAccounts();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'agent_clients' }, () => {
       void syncAccounts();
     })
     .subscribe();

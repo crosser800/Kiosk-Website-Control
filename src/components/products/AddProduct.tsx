@@ -146,6 +146,100 @@ function getStableUuid(value: string | null | undefined) {
   return isUuid(value) ? String(value).trim() : crypto.randomUUID();
 }
 
+function normalizeAdjustmentValue(value: string) {
+  const trimmed = String(value ?? '').replace(/,/g, '').trim();
+  if (!trimmed) return '';
+  const numeric = Number(trimmed);
+  if (!Number.isFinite(numeric)) {
+    return trimmed.toLowerCase();
+  }
+  return String(numeric);
+}
+
+function getAdjustmentDuplicateMessage(input: {
+  adjustmentKind: 'Discount' | 'Surcharge';
+  valueType: 'Percent' | 'Amount';
+  value: string;
+}) {
+  const normalizedValue = normalizeAdjustmentValue(input.value);
+  const valueTypeLabel = input.valueType === 'Amount' ? 'Fixed Amount' : 'Percent';
+  const valueLabel = input.valueType === 'Percent' ? `${normalizedValue}%` : normalizedValue;
+  return `Duplicate adjustment. This ${input.adjustmentKind} / ${valueTypeLabel} / ${valueLabel} already exists in the stack.`;
+}
+
+function getAdjustmentDuplicateKey(input: {
+  adjustmentKind: 'Discount' | 'Surcharge';
+  valueType: 'Percent' | 'Amount';
+  value: string;
+}) {
+  const normalizedValue = normalizeAdjustmentValue(input.value);
+  if (!normalizedValue) return '';
+  return [input.adjustmentKind, input.valueType, normalizedValue].join('::');
+}
+
+function assertNoDuplicatePriceAdjustmentStacks(discounts: DiscountItem[], surcharges: SurchargeItem[]) {
+  const discountGroups = new Map<string, DiscountItem[]>();
+  discounts.forEach((item) => {
+    const groupKey = [
+      item.variationId,
+      item.priceCode,
+      item.discountGroup || item.discountRecordId || item.id,
+    ].join('::');
+    discountGroups.set(groupKey, [...(discountGroups.get(groupKey) ?? []), item]);
+  });
+
+  discountGroups.forEach((rows) => {
+    const seen = new Map<string, DiscountItem>();
+    rows.forEach((item) => {
+      const key = getAdjustmentDuplicateKey({
+        adjustmentKind: 'Discount',
+        valueType: item.discountType,
+        value: item.amount,
+      });
+      if (!key) return;
+      if (seen.has(key)) {
+        throw new Error(getAdjustmentDuplicateMessage({
+          adjustmentKind: 'Discount',
+          valueType: item.discountType,
+          value: item.amount,
+        }));
+      }
+      seen.set(key, item);
+    });
+  });
+
+  const surchargeGroups = new Map<string, SurchargeItem[]>();
+  surcharges
+    .filter((item) => item.surchargeType === 'Percent' || item.surchargeType === 'Amount')
+    .forEach((item) => {
+      const groupKey = [item.variationId, item.priceCode].join('::');
+      surchargeGroups.set(groupKey, [...(surchargeGroups.get(groupKey) ?? []), item]);
+    });
+
+  surchargeGroups.forEach((rows) => {
+    const seen = new Map<string, SurchargeItem>();
+    rows.forEach((item) => {
+      if (item.surchargeType !== 'Percent' && item.surchargeType !== 'Amount') {
+        return;
+      }
+      const key = getAdjustmentDuplicateKey({
+        adjustmentKind: 'Surcharge',
+        valueType: item.surchargeType,
+        value: item.amount,
+      });
+      if (!key) return;
+      if (seen.has(key)) {
+        throw new Error(getAdjustmentDuplicateMessage({
+          adjustmentKind: 'Surcharge',
+          valueType: item.surchargeType,
+          value: item.amount,
+        }));
+      }
+      seen.set(key, item);
+    });
+  });
+}
+
 function getSyntheticParentUuid(value: string | null | undefined) {
   const text = String(value ?? '').trim();
   if (isUuid(text)) return text;
@@ -166,6 +260,48 @@ function normalizeSnapshotValue(value: unknown) {
 
 function normalizeUnitText(value: unknown) {
   return String(value ?? '').trim().toLowerCase();
+}
+
+function normalizePriceCode(value: unknown) {
+  return String(value ?? '').trim().toUpperCase();
+}
+
+function buildVariationTargetKey(variationIdOrKey: unknown, priceCode: unknown) {
+  const variationKey = String(variationIdOrKey ?? '').trim().toLowerCase();
+  const normalizedPriceCode = normalizePriceCode(priceCode);
+  if (!variationKey || !normalizedPriceCode) return '';
+  return `${variationKey}::${normalizedPriceCode}`;
+}
+
+function normalizeClassTargetPart(value: unknown) {
+  const text = String(value ?? '').trim();
+  return text ? text.toLowerCase() : '<null>';
+}
+
+function assertUniqueExactClassTargets<Row extends Record<string, unknown>>(
+  rows: Row[],
+  parentColumn: 'discount_id' | 'surcharge_id',
+  label: string,
+) {
+  const seen = new Set<string>();
+  rows.forEach((row) => {
+    const fingerprint = [
+      row[parentColumn],
+      row.variation_id,
+      normalizePriceCode(row.price_code),
+      row.unit_condition || 'any_unit',
+      row.unit_option_id,
+      row.order_unit_code,
+      row.min_order_quantity,
+      row.max_order_quantity,
+      row.min_base_quantity,
+      row.max_base_quantity,
+    ].map(normalizeClassTargetPart).join('|');
+    if (seen.has(fingerprint)) {
+      throw new Error(`Duplicate ${label} target found for ${normalizePriceCode(row.price_code) || 'this price class'}. Remove the duplicate row before saving.`);
+    }
+    seen.add(fingerprint);
+  });
 }
 
 function cloneSectionDraftState(state: SectionDraftState): SectionDraftState {
@@ -1021,71 +1157,71 @@ export default function AddProduct({
             },
           ];
         }
-        return classes.map((classRow: any, classIndex: number) => ({
-          id: classIndex === 0 ? String(row.id) : `${String(row.id)}-${classIndex}`,
-          discountRecordId: String(row.id),
-          discountClassId: String(classRow.id ?? ''),
-          variationId:
-            variationIdToKey.get(String(classRow.variation_id ?? '')) ??
-            String(classRow.variation_id ?? ''),
-          discountKind: normalizeDiscountKind(row.discount_kind),
-          discountName: String(row.discount_name ?? ''),
-          discountType: (row.discount_type as DiscountItem['discountType']) ?? 'Percent',
-          amount: String(
-            row.discount_type === 'Percent' ? row.discount_percent ?? '' : row.amount ?? '',
-          ),
-          minQuantity: String(row.min_quantity ?? '1'),
-          maxQuantity: String(row.max_quantity ?? ''),
-          branchName:
-            (classRow.branch_name as DiscountItem['branchName']) ??
-            (row.branch_name as DiscountItem['branchName']) ??
-            '',
-          priceType:
-            (classRow.price_type as DiscountItem['priceType']) ??
-            (row.price_type as DiscountItem['priceType']) ??
-            '',
-          priceCode:
-            (classRow.price_code as DiscountItem['priceCode']) ??
-            (row.price_code as DiscountItem['priceCode']) ??
-            '',
-          calculationMethod: normalizeCalculationMethod(row.calculation_method),
-          applySequence: String(row.apply_sequence ?? '1'),
-          discountGroup: String(row.discount_group ?? ''),
-          appliesTo: (row.applies_to as DiscountItem['appliesTo']) ?? 'UnitPrice',
-          stackable: Boolean(row.stackable ?? true),
-          description: String(row.description ?? ''),
-          status: String(row.status ?? 'Active') === 'Inactive' ? 'Inactive' : 'Active',
-          priority: String(row.priority ?? '0'),
-          startsAt: String(row.starts_at ?? ''),
-          endsAt: String(row.ends_at ?? ''),
-          unitOptionId: String(classRow.unit_option_id ?? ''),
-          orderUnitCode: String(classRow.order_unit_code ?? ''),
-          unitCondition:
-            String(classRow.unit_condition ?? '').toLowerCase() === 'selected_unit'
-              ? 'selected_unit'
-              : 'any_unit',
-          minOrderQuantity: String(classRow.min_order_quantity ?? row.min_quantity ?? '1'),
-          maxOrderQuantity: String(classRow.max_order_quantity ?? row.max_quantity ?? ''),
-          minBaseQuantity: String(classRow.min_base_quantity ?? ''),
-          maxBaseQuantity: String(classRow.max_base_quantity ?? ''),
-          unitRuleLabel: String(classRow.unit_rule_label ?? ''),
-          unitRuleNotes: String(classRow.unit_rule_notes ?? ''),
-          hasPromo: false,
-          promoType: 'Freebie',
-          promoRewardUnitCode: '',
-          promoRewardQuantity: '1',
-          promoRewardLabel: '',
-          promoSourceSurchargeId: '',
-          promoRewardTargetType: 'same_item',
-          promoRewardProductId: '',
-          promoRewardProductLabel: '',
-          promoRewardVariationId: '',
-          promoRewardVariationLabel: '',
-          promoRewardUnitOptionId: '',
-          promoRewardRepeatMode: 'one_time',
-          promoRewardEveryQuantity: '',
-          promoQualificationScope: 'line',
-        }));
+        return classes.map((classRow: any, classIndex: number) => {
+          const rawVariationId = String(classRow.variation_id ?? '');
+          const variationMeta = variationMetaById.get(rawVariationId);
+          const classPriceCode = normalizePriceCode(classRow.price_code) as DiscountItem['priceCode'];
+          return {
+            id: classIndex === 0 ? String(row.id) : `${String(row.id)}-${classIndex}`,
+            discountRecordId: String(row.id),
+            discountClassId: String(classRow.id ?? ''),
+            variationId: variationIdToKey.get(rawVariationId) ?? rawVariationId,
+            discountKind: normalizeDiscountKind(row.discount_kind),
+            discountName: String(row.discount_name ?? ''),
+            discountType: (row.discount_type as DiscountItem['discountType']) ?? 'Percent',
+            amount: String(
+              row.discount_type === 'Percent' ? row.discount_percent ?? '' : row.amount ?? '',
+            ),
+            minQuantity: String(row.min_quantity ?? '1'),
+            maxQuantity: String(row.max_quantity ?? ''),
+            branchName:
+              (classRow.branch_name as DiscountItem['branchName']) ??
+              (variationMeta?.branchName as DiscountItem['branchName']) ??
+              '',
+            priceType:
+              (classRow.price_type as DiscountItem['priceType']) ??
+              (variationMeta?.priceType as DiscountItem['priceType']) ??
+              '',
+            priceCode: classPriceCode,
+            calculationMethod: normalizeCalculationMethod(row.calculation_method),
+            applySequence: String(row.apply_sequence ?? '1'),
+            discountGroup: String(row.discount_group ?? ''),
+            appliesTo: (row.applies_to as DiscountItem['appliesTo']) ?? 'UnitPrice',
+            stackable: Boolean(row.stackable ?? true),
+            description: String(row.description ?? ''),
+            status: String(row.status ?? 'Active') === 'Inactive' ? 'Inactive' : 'Active',
+            priority: String(row.priority ?? '0'),
+            startsAt: String(row.starts_at ?? ''),
+            endsAt: String(row.ends_at ?? ''),
+            unitOptionId: String(classRow.unit_option_id ?? ''),
+            orderUnitCode: String(classRow.order_unit_code ?? ''),
+            unitCondition:
+              String(classRow.unit_condition ?? '').toLowerCase() === 'selected_unit'
+                ? 'selected_unit'
+                : 'any_unit',
+            minOrderQuantity: String(classRow.min_order_quantity ?? row.min_quantity ?? '1'),
+            maxOrderQuantity: String(classRow.max_order_quantity ?? row.max_quantity ?? ''),
+            minBaseQuantity: String(classRow.min_base_quantity ?? ''),
+            maxBaseQuantity: String(classRow.max_base_quantity ?? ''),
+            unitRuleLabel: String(classRow.unit_rule_label ?? ''),
+            unitRuleNotes: String(classRow.unit_rule_notes ?? ''),
+            hasPromo: false,
+            promoType: 'Freebie',
+            promoRewardUnitCode: '',
+            promoRewardQuantity: '1',
+            promoRewardLabel: '',
+            promoSourceSurchargeId: '',
+            promoRewardTargetType: 'same_item',
+            promoRewardProductId: '',
+            promoRewardProductLabel: '',
+            promoRewardVariationId: '',
+            promoRewardVariationLabel: '',
+            promoRewardUnitOptionId: '',
+            promoRewardRepeatMode: 'one_time',
+            promoRewardEveryQuantity: '',
+            promoQualificationScope: 'line',
+          };
+        });
       });
       const mappedSurcharges: SurchargeItem[] = (surchargeRes.data ?? []).flatMap((row: any) => {
         const classes = Array.isArray(row.product_surcharge_classes)
@@ -1172,11 +1308,7 @@ export default function AddProduct({
               (row.price_type as SurchargeItem['priceType']) ??
               (variationMeta?.priceType as SurchargeItem['priceType']) ??
               '',
-            priceCode:
-              (classRow.price_code as SurchargeItem['priceCode']) ??
-              (row.price_code as SurchargeItem['priceCode']) ??
-              (variationMeta?.priceCode as SurchargeItem['priceCode']) ??
-              '',
+            priceCode: normalizePriceCode(classRow.price_code) as SurchargeItem['priceCode'],
             description: String(row.description ?? ''),
             status: String(row.status ?? 'Active') === 'Inactive' ? 'Inactive' : 'Active',
             priority: String(row.priority ?? '0'),
@@ -1236,15 +1368,27 @@ export default function AddProduct({
         }
       });
 
+      const discountClassCountByRecordId = mappedDiscounts.reduce<Map<string, number>>((counts, item) => {
+        if (!item.discountRecordId || !item.discountClassId) return counts;
+        counts.set(item.discountRecordId, (counts.get(item.discountRecordId) ?? 0) + 1);
+        return counts;
+      }, new Map());
+
       const mergedDiscounts = mappedDiscounts.map((item) => {
-        const matchedPromo = (
-          (item.discountClassId ? surchargesByDiscountClassId.get(item.discountClassId) ?? [] : [])
-            .concat(
-              item.discountRecordId
-                ? surchargesByDiscountId.get(item.discountRecordId) ?? []
-                : [],
-            )
-        ).find(
+        const exactClassPromos = item.discountClassId
+          ? surchargesByDiscountClassId.get(item.discountClassId) ?? []
+          : [];
+        const parentFallbackPromos =
+          item.discountRecordId &&
+          exactClassPromos.length === 0 &&
+          (discountClassCountByRecordId.get(item.discountRecordId) ?? 0) <= 1
+            ? (surchargesByDiscountId.get(item.discountRecordId) ?? []).filter(
+                (entry) =>
+                  normalizePriceCode(entry.priceCode) === normalizePriceCode(item.priceCode) &&
+                  entry.variationId === item.variationId,
+              )
+            : [];
+        const matchedPromo = [...exactClassPromos, ...parentFallbackPromos].find(
           (entry) => entry.surchargeType === 'Freebie' || entry.surchargeType === 'BonusQty',
         );
         if (!matchedPromo) {
@@ -1868,6 +2012,16 @@ export default function AddProduct({
       return false;
     }
 
+    try {
+      assertNoDuplicatePriceAdjustmentStacks(discounts, surcharges);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Duplicate price adjustment stack rows found.';
+      setSubmitError(message);
+      setSaveNotice({ type: 'error', message });
+      setActiveSection('Variation & Pricing');
+      return false;
+    }
+
     setIsSaving(true);
     setSubmitError('');
     setSaveNotice({ type: 'info', message: 'Saving product data...' });
@@ -1970,21 +2124,34 @@ export default function AddProduct({
         }
       }
 
-      const variationLookup = new Map<string, string>();
+      type VariationTarget = {
+        variationId: string;
+        className: string;
+        priceCode: string;
+        cardKey: string;
+        productId: string;
+      };
+      const variationTargetLookup = new Map<string, VariationTarget>();
       const variationClassLookup = new Map<string, string>();
       const variationIdsByCardKey = new Map<string, string[]>();
       (insertedVariationRows ?? []).forEach((row: any) => {
         const variationName = String(row.variation_name ?? row.class_name ?? '').trim();
         const skuCode = String(row.sku_code ?? '').trim();
-        const priceCode = String(row.price_code ?? '');
+        const priceCode = normalizePriceCode(row.price_code);
         const rowId = String(row.id);
         const cardKey = buildVariationCardKey(variationName, skuCode);
-        const scopedCardKey = `${cardKey}::${priceCode}`;
-        const directRowKey = `${rowId}::${priceCode}`;
         const className = String(row.class_name ?? row.variation_name ?? 'Promo Class');
+        const target: VariationTarget = {
+          variationId: rowId,
+          className,
+          priceCode,
+          cardKey,
+          productId,
+        };
 
-        [scopedCardKey, directRowKey].forEach((key) => {
-          variationLookup.set(key, rowId);
+        [buildVariationTargetKey(cardKey, priceCode), buildVariationTargetKey(rowId, priceCode)].forEach((key) => {
+          if (!key) return;
+          variationTargetLookup.set(key, target);
           variationClassLookup.set(key, className);
         });
         variationIdsByCardKey.set(cardKey, [...(variationIdsByCardKey.get(cardKey) ?? []), rowId]);
@@ -2032,23 +2199,43 @@ export default function AddProduct({
         if (variationMediaError) throw new Error(variationMediaError.message);
       }
 
-      const resolveVariationDbId = (variationIdOrKey: string, priceCode: string) => {
-        const normalizedVariationKey = String(variationIdOrKey).trim().toLowerCase();
-        const normalizedScopedKey = `${normalizedVariationKey}::${priceCode}`;
-        const byKey =
-          variationLookup.get(`${variationIdOrKey}::${priceCode}`) ??
-          variationLookup.get(normalizedScopedKey);
-        if (byKey) return byKey;
-        const fallbackByVariation = Array.from(variationLookup.entries()).find(([key]) =>
-          key.startsWith(`${normalizedVariationKey}::`),
-        );
-        if (fallbackByVariation) {
-          return fallbackByVariation[1];
+      const findExactVariationTarget = (variationIdOrKey: string, priceCode: string) => {
+        const key = buildVariationTargetKey(variationIdOrKey, priceCode);
+        return key ? variationTargetLookup.get(key) ?? null : null;
+      };
+
+      const requireExactVariationTarget = (
+        variationIdOrKey: string,
+        priceCode: string,
+        targetLabel: string,
+      ) => {
+        const normalizedPriceCode = normalizePriceCode(priceCode);
+        const target = findExactVariationTarget(variationIdOrKey, normalizedPriceCode);
+        if (!target || !normalizedPriceCode) {
+          throw new Error(
+            `Unable to resolve the exact ${normalizedPriceCode || 'price class'} variation for this ${targetLabel}. Please reopen the variation and try again.`,
+          );
         }
-        const fallbackByPriceCode = Array.from(variationLookup.entries()).find(([key]) =>
-          key.endsWith(`::${priceCode}`),
-        );
-        return fallbackByPriceCode?.[1] ?? null;
+        const normalizedVariationKey = String(variationIdOrKey ?? '').trim().toLowerCase();
+        const directRowKey = buildVariationTargetKey(target.variationId, normalizedPriceCode);
+        const requestedKey = buildVariationTargetKey(variationIdOrKey, normalizedPriceCode);
+        const matchesLogicalVariation =
+          target.cardKey === normalizedVariationKey || directRowKey === requestedKey;
+
+        if (
+          target.priceCode !== normalizedPriceCode ||
+          target.productId !== productId ||
+          !matchesLogicalVariation
+        ) {
+          throw new Error(
+            `Unable to resolve the exact ${normalizedPriceCode || 'price class'} variation for this ${targetLabel}. Please reopen the variation and try again.`,
+          );
+        }
+        return target;
+      };
+
+      const resolveVariationDbId = (variationIdOrKey: string, priceCode: string, targetLabel = 'discount') => {
+        return requireExactVariationTarget(variationIdOrKey, priceCode, targetLabel).variationId;
       };
 
       const resolveVariationClassName = (
@@ -2056,19 +2243,18 @@ export default function AddProduct({
         priceCode: string,
         fallbackName: string,
       ) => {
-        const normalizedScopedKey = `${String(variationIdOrKey).trim().toLowerCase()}::${priceCode}`;
+        const normalizedScopedKey = buildVariationTargetKey(variationIdOrKey, priceCode);
         return (
-          variationClassLookup.get(`${variationIdOrKey}::${priceCode}`) ??
-          variationClassLookup.get(normalizedScopedKey) ??
+          (normalizedScopedKey ? variationClassLookup.get(normalizedScopedKey) : null) ??
           fallbackName
         );
       };
 
       const resolveRepresentativeVariationDbId = (variationIdOrKey: string) => {
         for (const priceCode of ['R1', 'R2', 'W1', 'W2', 'SP', 'CP']) {
-          const variationId = resolveVariationDbId(variationIdOrKey, priceCode);
-          if (variationId) {
-            return variationId;
+          const target = findExactVariationTarget(variationIdOrKey, priceCode);
+          if (target) {
+            return target.variationId;
           }
         }
         return null;
@@ -2246,7 +2432,7 @@ export default function AddProduct({
           return {
             rewardProductId: productId,
             rewardVariationId:
-              resolveVariationDbId(item.variationId, item.priceCode) ?? '',
+              resolveVariationDbId(item.variationId, item.priceCode, 'reward selection'),
             rewardUnitOptionId: resolvedRewardUnitOptionId,
             rewardUnitCode:
               localRewardOption?.unitCode?.trim() || item.rewardUnitCode || null,
@@ -2296,7 +2482,7 @@ export default function AddProduct({
           max_quantity: item.maxQuantity ? parseInt(item.maxQuantity, 10) : null,
           branch_name: item.branchName || null,
           price_type: item.priceType || null,
-          price_code: item.priceCode || null,
+          price_code: normalizePriceCode(item.priceCode) || null,
           calculation_method: normalizeCalculationMethod(item.calculationMethod),
           apply_sequence: Math.max(1, parseInt(item.applySequence || '1', 10)),
           discount_group: item.discountGroup || null,
@@ -2327,13 +2513,13 @@ export default function AddProduct({
 
         const discountClassRows = discounts.map((source) => ({
                 discount_id: discountIdBySourceId.get(source.id) ?? getStableUuid(source.discountRecordId || source.id),
-                variation_id: resolveVariationDbId(source.variationId, source.priceCode),
+                variation_id: resolveVariationDbId(source.variationId, source.priceCode, 'discount'),
                 class_name: resolveVariationClassName(
                   source.variationId,
                   source.priceCode,
                   source.discountName || 'Discount Class',
                 ),
-                price_code: source.priceCode || null,
+                price_code: normalizePriceCode(source.priceCode) || null,
                 branch_name: source.branchName || null,
                 price_type: source.priceType || null,
                 unit_option_id:
@@ -2361,6 +2547,7 @@ export default function AddProduct({
                 unit_rule_label: null,
                 unit_rule_notes: null,
               }));
+        assertUniqueExactClassTargets(discountClassRows, 'discount_id', 'discount class');
         if (discountClassRows.length > 0) {
           const { data: insertedDiscountClassRows, error: classInsertError } = await supabase
             .from('product_discount_classes')
@@ -2503,7 +2690,7 @@ export default function AddProduct({
           rewardTargetType: item.promoRewardTargetType,
           rewardProductId: item.promoRewardTargetType === 'same_item' ? productId : item.promoRewardProductId,
           rewardVariationId:
-            item.promoRewardTargetType === 'same_item' ? resolveVariationDbId(item.variationId, item.priceCode) ?? '' : item.promoRewardVariationId,
+            item.promoRewardTargetType === 'same_item' ? resolveVariationDbId(item.variationId, item.priceCode, 'promo reward') : item.promoRewardVariationId,
           rewardUnitOptionId: item.promoRewardUnitOptionId,
           rewardRepeatMode: item.promoRewardRepeatMode,
           rewardEveryQuantity:
@@ -2603,7 +2790,7 @@ export default function AddProduct({
           max_quantity: item.maxQuantity ? parseInt(item.maxQuantity, 10) : null,
           branch_name: item.branchName || null,
           price_type: item.priceType || null,
-          price_code: item.priceCode || null,
+          price_code: normalizePriceCode(item.priceCode) || null,
           priority: parseInt(item.priority || String(index), 10) || index,
           starts_at: item.startsAt || null,
           ends_at: item.endsAt || null,
@@ -2626,13 +2813,13 @@ export default function AddProduct({
         const classRows = resolvedSurchargesToSave.map((source) => ({
                 surcharge_id: persistedSurchargeIdBySourceId.get(source.id) ?? getStableUuid(source.id),
                 linked_discount_class_id: source.linkedDiscountClassId || null,
-                variation_id: resolveVariationDbId(source.variationId, source.priceCode),
+                variation_id: resolveVariationDbId(source.variationId, source.priceCode, 'promo/surcharge'),
                 class_name: resolveVariationClassName(
                   source.variationId,
                   source.priceCode,
                   source.surchargeName || 'Promo Class',
                 ),
-                price_code: source.priceCode || null,
+                price_code: normalizePriceCode(source.priceCode) || null,
                 branch_name: source.branchName || null,
                 price_type: source.priceType || null,
                 unit_option_id:
@@ -2674,6 +2861,7 @@ export default function AddProduct({
                 unit_rule_label: null,
                 unit_rule_notes: null,
               }));
+        assertUniqueExactClassTargets(classRows, 'surcharge_id', 'promo/surcharge class');
 
         if (classRows.length > 0) {
           const { error: surchargeClassInsertError } = await supabase

@@ -196,11 +196,35 @@ function formatPriceInput(value: string) {
 }
 
 function toPriceCode(value: string): PriceCode | null {
-  return PRICE_CODES.some((entry) => entry.code === value) ? (value as PriceCode) : null;
+  const normalized = String(value ?? '').trim().toUpperCase();
+  return PRICE_CODES.some((entry) => entry.code === normalized) ? (normalized as PriceCode) : null;
 }
 
 function parseNumberInput(value: string) {
   return Number(String(value).replace(/,/g, '')) || 0;
+}
+
+function normalizeAdjustmentValue(value: string) {
+  const trimmed = String(value ?? '').replace(/,/g, '').trim();
+  if (!trimmed) return '';
+  const numeric = Number(trimmed);
+  if (!Number.isFinite(numeric)) {
+    return trimmed.toLowerCase();
+  }
+  return String(numeric);
+}
+
+function getAdjustmentDuplicateKey(row: Pick<DiscountDraftRow, 'adjustmentKind' | 'discountType' | 'amount'>) {
+  const normalizedValue = normalizeAdjustmentValue(row.amount);
+  if (!normalizedValue) return '';
+  return [row.adjustmentKind, row.discountType, normalizedValue].join('::');
+}
+
+function getAdjustmentDuplicateMessage(row: Pick<DiscountDraftRow, 'adjustmentKind' | 'discountType' | 'amount'>) {
+  const normalizedValue = normalizeAdjustmentValue(row.amount);
+  const valueTypeLabel = row.discountType === 'Amount' ? 'Fixed Amount' : 'Percent';
+  const valueLabel = row.discountType === 'Percent' ? `${normalizedValue}%` : normalizedValue;
+  return `Duplicate adjustment. This ${row.adjustmentKind} / ${valueTypeLabel} / ${valueLabel} already exists in the stack.`;
 }
 
 function parseNullableNumberInput(value: string) {
@@ -436,7 +460,12 @@ function getRewardUnitCodeForCloneFingerprint(
   return option?.unitCode || fallbackCode;
 }
 
-function getDiscountCloneFingerprint(item: DiscountItem, unitOptions: VariationUnitOptionItem[] = []) {
+function getDiscountCloneFingerprint(
+  item: DiscountItem,
+  unitOptions: VariationUnitOptionItem[] = [],
+  sourceVariationId = item.variationId,
+  destinationVariationId = '',
+) {
   const orderUnitCode = getUnitCodeForCloneFingerprint(
     unitOptions,
     item.unitOptionId,
@@ -449,6 +478,8 @@ function getDiscountCloneFingerprint(item: DiscountItem, unitOptions: VariationU
   );
 
   return [
+    sourceVariationId,
+    destinationVariationId,
     item.priceCode,
     item.discountKind,
     item.discountName,
@@ -475,7 +506,12 @@ function getDiscountCloneFingerprint(item: DiscountItem, unitOptions: VariationU
   ].map(normalizeCloneValue).join('|');
 }
 
-function getSurchargeCloneFingerprint(item: SurchargeItem, unitOptions: VariationUnitOptionItem[] = []) {
+function getSurchargeCloneFingerprint(
+  item: SurchargeItem,
+  unitOptions: VariationUnitOptionItem[] = [],
+  sourceVariationId = item.variationId,
+  destinationVariationId = '',
+) {
   const orderUnitCode = getUnitCodeForCloneFingerprint(
     unitOptions,
     item.unitOptionId,
@@ -488,6 +524,8 @@ function getSurchargeCloneFingerprint(item: SurchargeItem, unitOptions: Variatio
   );
 
   return [
+    sourceVariationId,
+    destinationVariationId,
     item.priceCode,
     item.surchargeName,
     item.surchargeType,
@@ -1077,12 +1115,18 @@ export default function VarAndPrice({
       };
     })();
     const sourceDiscounts = uniqueByCloneFingerprint(
-      discounts.filter((item) => matchesVariation(card.id, card.rowIds[item.priceCode as PriceCode])),
-      (item) => getDiscountCloneFingerprint(item, unitOptions),
+      discounts.filter((item) => {
+        const priceCode = toPriceCode(item.priceCode);
+        return Boolean(priceCode && matchesVariation(card.id, card.rowIds[priceCode])(item.variationId));
+      }),
+      (item) => getDiscountCloneFingerprint(item, unitOptions, card.id, nextId),
     );
     const sourceSurcharges = uniqueByCloneFingerprint(
-      surcharges.filter((item) => matchesVariation(card.id, card.rowIds[item.priceCode as PriceCode])),
-      (item) => getSurchargeCloneFingerprint(item, unitOptions),
+      surcharges.filter((item) => {
+        const priceCode = toPriceCode(item.priceCode);
+        return Boolean(priceCode && matchesVariation(card.id, card.rowIds[priceCode])(item.variationId));
+      }),
+      (item) => getSurchargeCloneFingerprint(item, unitOptions, card.id, nextId),
     );
     const copiedDiscounts = sourceDiscounts
       .map((item, index) => {
@@ -1486,8 +1530,26 @@ export default function VarAndPrice({
           (left, right) =>
             Number(left.applySequence || '1') -
             Number(right.applySequence || '1'),
-        ),
+      ),
     }));
+  }
+
+  function getDuplicateAdjustmentMessages(rows = discountDraft) {
+    const messages = new Map<string, string>();
+    getDiscountRuleGroups(rows).forEach((group) => {
+      const rowsByKey = new Map<string, DiscountDraftRow[]>();
+      group.rows.forEach((row) => {
+        const key = getAdjustmentDuplicateKey(row);
+        if (!key) return;
+        rowsByKey.set(key, [...(rowsByKey.get(key) ?? []), row]);
+      });
+      rowsByKey.forEach((matchingRows) => {
+        if (matchingRows.length <= 1) return;
+        const message = getAdjustmentDuplicateMessage(matchingRows[0]);
+        matchingRows.forEach((row) => messages.set(row.id, message));
+      });
+    });
+    return messages;
   }
 
   function normalizeDiscountRuleRows(rows: DiscountDraftRow[], groupKey: string) {
@@ -1602,6 +1664,7 @@ export default function VarAndPrice({
   }
 
   function updateDiscountRule(groupKey: string, patch: Partial<DiscountDraftRow>) {
+    setDiscountModalError('');
     setDiscountDraft((current) =>
       normalizeAllDiscountRules(
         current.map((item) => (getDraftRuleKey(item) === groupKey ? { ...item, ...patch } : item)),
@@ -1704,6 +1767,7 @@ export default function VarAndPrice({
   }
 
   function updateDiscountStack(rowId: string, patch: Partial<DiscountDraftRow>) {
+    setDiscountModalError('');
     setDiscountDraft((current) =>
       normalizeAllDiscountRules(current.map((item) => (item.id === rowId ? { ...item, ...patch } : item))),
     );
@@ -2003,12 +2067,9 @@ export default function VarAndPrice({
     setDiscountModalError('');
     const matchVariation = matchesVariation(variationId, fallbackRowId);
     const rawExistingDiscounts = discounts
-      .filter((item) => matchVariation(item.variationId) && item.priceCode === code)
+      .filter((item) => matchVariation(item.variationId) && toPriceCode(item.priceCode) === code)
       .sort((a, b) => Number(a.applySequence || '1') - Number(b.applySequence || '1'));
-    const existingDiscounts = uniqueByCloneFingerprint(
-      rawExistingDiscounts,
-      (item) => getDiscountCloneFingerprint(item, unitOptions),
-    )
+    const existingDiscounts = rawExistingDiscounts
       .map((item) => ({
         id: item.id,
         adjustmentKind: 'Discount' as const,
@@ -2018,7 +2079,7 @@ export default function VarAndPrice({
         amount: item.amount,
         calculationMethod: item.calculationMethod || 'Single',
         applySequence: item.applySequence || '1',
-        discountGroup: item.discountGroup || '',
+        discountGroup: item.discountGroup || `legacy-${item.discountRecordId || item.id}`,
         unitCondition: item.unitCondition || 'any_unit',
         unitOptionId: item.unitOptionId || '',
         minOrderQuantity: item.minOrderQuantity || item.minQuantity || '1',
@@ -2049,14 +2110,11 @@ export default function VarAndPrice({
       .filter(
         (item) =>
           matchVariation(item.variationId) &&
-          item.priceCode === code &&
+          toPriceCode(item.priceCode) === code &&
           (item.surchargeType === 'Percent' || item.surchargeType === 'Amount'),
       )
       .sort((a, b) => Number(a.priority || '0') - Number(b.priority || '0'));
-    const existingSurcharges = uniqueByCloneFingerprint(
-      rawExistingSurcharges,
-      (item) => getSurchargeCloneFingerprint(item, unitOptions),
-    )
+    const existingSurcharges = rawExistingSurcharges
       .map((item) => ({
         id: item.id,
         adjustmentKind: 'Surcharge' as const,
@@ -2127,6 +2185,18 @@ export default function VarAndPrice({
     const matchVariation = matchesVariation(discountContext.variationId, fallbackRowId);
     const normalizedDraft = normalizeAllDiscountRules(discountDraft);
     const normalizedGroups = getDiscountRuleGroups(normalizedDraft);
+    const duplicateAdjustmentMessages = getDuplicateAdjustmentMessages(normalizedDraft);
+    const duplicateAdjustmentMessage = Array.from(duplicateAdjustmentMessages.values())[0];
+    if (duplicateAdjustmentMessage) {
+      setDiscountDraft(normalizedDraft);
+      setActiveDiscountTabId(
+        normalizedDraft.find((row) => duplicateAdjustmentMessages.has(row.id))?.discountGroup ||
+          normalizedDraft[0]?.discountGroup ||
+          '',
+      );
+      setDiscountModalError(duplicateAdjustmentMessage);
+      return;
+    }
     const suggestedNameByGroup = new Map(
       normalizedGroups.map((group) => {
         const rule = group.rows[0];
@@ -2254,7 +2324,7 @@ export default function VarAndPrice({
       return;
     }
     const filtered = discounts.filter((item) => {
-      const samePriceContext = matchVariation(item.variationId) && item.priceCode === discountContext.code;
+      const samePriceContext = matchVariation(item.variationId) && toPriceCode(item.priceCode) === discountContext.code;
       if (!samePriceContext) return true;
       if (discountManagedIds.size === 0) return false;
       return !discountManagedIds.has(item.id);
@@ -2388,7 +2458,7 @@ export default function VarAndPrice({
     const filteredSurcharges = surcharges.filter((item) => {
       const samePriceContext =
         matchVariation(item.variationId) &&
-        item.priceCode === discountContext.code &&
+        toPriceCode(item.priceCode) === discountContext.code &&
         (item.surchargeType === 'Percent' || item.surchargeType === 'Amount');
       if (!samePriceContext) return true;
       if (surchargeManagedIds.size === 0) return true;
@@ -3040,7 +3110,7 @@ export default function VarAndPrice({
                       const matchVariation = matchesVariation(card.id, fallbackRowId);
                       const matchingDiscounts = uniqueByCloneFingerprint(
                         discounts.filter(
-                          (item) => matchVariation(item.variationId) && item.priceCode === entry.code,
+                          (item) => matchVariation(item.variationId) && toPriceCode(item.priceCode) === entry.code,
                         ),
                         (item) => getDiscountCloneFingerprint(item, unitOptions),
                       );
@@ -3048,7 +3118,7 @@ export default function VarAndPrice({
                         surcharges.filter(
                           (item) =>
                             matchVariation(item.variationId) &&
-                            item.priceCode === entry.code &&
+                            toPriceCode(item.priceCode) === entry.code &&
                             (item.surchargeType === 'Percent' || item.surchargeType === 'Amount'),
                         ),
                         (item) => getSurchargeCloneFingerprint(item, unitOptions),
@@ -3344,6 +3414,8 @@ export default function VarAndPrice({
                 (pendingDisablePromoIndex >= 0 ? `Discount ${pendingDisablePromoIndex + 1}` : 'selected discount');
               const activeTier: DiscountDraftRow | null =
                 discountDraft.find((item) => item.id === activeDiscountTabId) ?? discountDraft[0] ?? null;
+              const duplicateStackMessages = getDuplicateAdjustmentMessages();
+              const firstDuplicateStackMessage = Array.from(duplicateStackMessages.values())[0] ?? '';
               const stackingEnabled = false;
               return (
                 <>
@@ -3387,7 +3459,9 @@ export default function VarAndPrice({
                       <strong>Adjustments:</strong> {discountRuleGroups.length}
                     </span>
                   </div>
-                  {discountModalError ? <p className={styles.modalAlert}>{discountModalError}</p> : null}
+                  {discountModalError || firstDuplicateStackMessage ? (
+                    <p className={styles.modalAlert}>{discountModalError || firstDuplicateStackMessage}</p>
+                  ) : null}
 
                   <div className={styles.modalContent}>
                     <div className={styles.ruleTabsHeader}>
@@ -3683,13 +3757,14 @@ export default function VarAndPrice({
                                 const isDragOver =
                                   dragOverDiscountStackId === stackItem.id &&
                                   draggingDiscountStackId !== stackItem.id;
+                                const duplicateMessage = duplicateStackMessages.get(stackItem.id) ?? '';
 
                                 return (
                                   <div
                                     key={stackItem.id}
                                     className={`${styles.stackRow} ${isDragging ? styles.stackRowDragging : ''} ${
                                       isDragOver ? styles.stackRowDragOver : ''
-                                    }`}
+                                    } ${duplicateMessage ? styles.stackRowInvalid : ''}`}
                                     onDragOver={(event) => handleDiscountStackDragOver(event, stackItem.id)}
                                     onDrop={(event) => handleDiscountStackDrop(event, stackItem.id)}
                                   >
@@ -3710,6 +3785,7 @@ export default function VarAndPrice({
                                       <select
                                         className={styles.select}
                                         value={stackItem.adjustmentKind}
+                                        aria-invalid={Boolean(duplicateMessage)}
                                         onChange={(event) =>
                                           updateDiscountStack(stackItem.id, {
                                             adjustmentKind: event.target.value as DiscountDraftRow['adjustmentKind'],
@@ -3726,6 +3802,7 @@ export default function VarAndPrice({
                                       <select
                                         className={styles.select}
                                         value={stackItem.discountType}
+                                        aria-invalid={Boolean(duplicateMessage)}
                                         onChange={(event) =>
                                           updateDiscountStack(stackItem.id, {
                                             discountType: event.target.value as DiscountItem['discountType'],
@@ -3742,6 +3819,7 @@ export default function VarAndPrice({
                                         className={styles.input}
                                         placeholder={stackItem.discountType === 'Percent' ? 'Percent (%)' : 'Amount (Net)'}
                                         value={stackItem.amount}
+                                        aria-invalid={Boolean(duplicateMessage)}
                                         onChange={(event) => updateDiscountStack(stackItem.id, { amount: event.target.value })}
                                       />
                                     </label>
@@ -3755,6 +3833,9 @@ export default function VarAndPrice({
                                     >
                                       <i className="fa-solid fa-trash" aria-hidden="true"></i>
                                     </button>
+                                    {duplicateMessage ? (
+                                      <p className={styles.stackErrorText}>{duplicateMessage}</p>
+                                    ) : null}
                                   </div>
                                 );
                               })}
