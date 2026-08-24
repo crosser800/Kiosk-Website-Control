@@ -778,9 +778,15 @@ export default function App() {
           ...current.internalSession,
           account: {
             ...current.internalSession.account,
+            id: account.id,
+            parentAdminAccountId:
+              account.parentAdminAccountId ?? current.internalSession.account.parentAdminAccountId,
             fullName: account.name,
+            username: account.username ?? account.handle ?? current.internalSession.account.username,
             profileImagePath: account.profileImagePath ?? '',
             profileImageUrl: account.profileImageUrl ?? '',
+            themePreference:
+              account.themePreference ?? current.internalSession.account.themePreference,
             birthdate: account.birthdate ?? '',
             gender: account.gender ?? '',
             email: account.email ?? '',
@@ -792,7 +798,16 @@ export default function App() {
             emergencyContactName: account.emergencyContactName ?? '',
             emergencyContactRelationship: account.emergencyContactRelationship ?? '',
             emergencyContactNumber: account.emergencyContactNumber ?? '',
-            updatedAt: account.updatedAt ?? new Date().toISOString(),
+            roleId: account.roleId ?? '',
+            departmentId: account.departmentId ?? '',
+            mustChangePassword:
+              account.mustChangePassword ?? current.internalSession.account.mustChangePassword,
+            passwordChangedAt:
+              account.passwordChangedAt ?? current.internalSession.account.passwordChangedAt,
+            passwordResetAt:
+              account.passwordResetAt ?? current.internalSession.account.passwordResetAt,
+            status: account.status ?? current.internalSession.account.status,
+            updatedAt: account.updatedAt ?? current.internalSession.account.updatedAt,
           },
         },
       };

@@ -713,7 +713,7 @@ function getAssortedRuleMatch(rule: SurchargeRule, context: RuleMatchContext) {
   }
 
   const matchingClass = rule.classes.find(
-    (item) => getClassTargetIneligibilityReasons(item, context).length === 0,
+    (item) => getClassUnitAndPriceIneligibilityReasons(item, context).length === 0,
   );
   if (!matchingClass) {
     return null;
@@ -763,31 +763,6 @@ function getRuleIneligibilityReasonsWithoutQuantity(
   }
   if (!isNullableTextMatch(rule.priceCode, context.price.priceCode)) {
     reasons.push('wrong_price_class');
-  }
-  return Array.from(new Set(reasons));
-}
-
-function getClassTargetIneligibilityReasons(rule: DiscountClassRule, context: RuleMatchContext) {
-  const reasons: PromotionIneligibilityReason[] = [];
-  const usesSelectedUnit = String(rule.unitCondition ?? '').toLowerCase() === 'selected_unit';
-  if (!isNullableTextMatch(rule.variationId, context.variationId)) {
-    reasons.push('wrong_variation');
-  }
-  if (!isNullableTextMatch(rule.priceCode, context.price.priceCode)) {
-    reasons.push('wrong_price_class');
-  }
-  if (!isNullableTextMatch(rule.branchName, context.branchName ?? context.price.branchName)) {
-    reasons.push('wrong_branch');
-  }
-  if (!isNullableTextMatch(rule.priceType, context.priceType ?? context.price.priceType)) {
-    reasons.push('wrong_price_type');
-  }
-  if (
-    usesSelectedUnit &&
-    (!isNullableTextMatch(rule.unitOptionId, context.unitOption.id) ||
-      !isNullableTextMatch(rule.orderUnitCode, context.unitOption.unitCode))
-  ) {
-    reasons.push('wrong_unit');
   }
   return Array.from(new Set(reasons));
 }

@@ -24,6 +24,7 @@ type AddProductProps = {
   editProductId?: string | null;
   initialCategoryId?: string | null;
   onSaved?: (productId: string, categoryId: string) => void;
+  onDraftVariationCountChange?: (productId: string, variationCount: number) => void;
   onRegisterNavigationGuard?: (guard: (() => Promise<boolean>) | null) => void;
   layout?: 'standalone' | 'embedded';
   initialSection?: AddProductSection;
@@ -135,6 +136,22 @@ function buildVariationCardKey(variationName: string, skuCode: string) {
   return `${variationName.trim().toLowerCase()}::${skuCode.trim().toLowerCase()}`;
 }
 
+function countActiveVariationCards(variationRows: VariationItem[]) {
+  const activeRows = variationRows.filter((variation) => {
+    const availability = String(variation.availability ?? '').trim().toLowerCase();
+    return !['unavailable', 'inactive', 'archived', 'deleted'].includes(availability);
+  });
+
+  return new Set(
+    activeRows.map((variation) =>
+      buildVariationCardKey(
+        variation.variationName || variation.className || '',
+        variation.skuCode || '',
+      ),
+    ),
+  ).size;
+}
+
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -146,105 +163,64 @@ function getStableUuid(value: string | null | undefined) {
   return isUuid(value) ? String(value).trim() : crypto.randomUUID();
 }
 
-function normalizeAdjustmentValue(value: string) {
-  const trimmed = String(value ?? '').replace(/,/g, '').trim();
-  if (!trimmed) return '';
-  const numeric = Number(trimmed);
-  if (!Number.isFinite(numeric)) {
-    return trimmed.toLowerCase();
-  }
-  return String(numeric);
-}
-
-function getAdjustmentDuplicateMessage(input: {
-  adjustmentKind: 'Discount' | 'Surcharge';
-  valueType: 'Percent' | 'Amount';
-  value: string;
-}) {
-  const normalizedValue = normalizeAdjustmentValue(input.value);
-  const valueTypeLabel = input.valueType === 'Amount' ? 'Fixed Amount' : 'Percent';
-  const valueLabel = input.valueType === 'Percent' ? `${normalizedValue}%` : normalizedValue;
-  return `Duplicate adjustment. This ${input.adjustmentKind} / ${valueTypeLabel} / ${valueLabel} already exists in the stack.`;
-}
-
-function getAdjustmentDuplicateKey(input: {
-  adjustmentKind: 'Discount' | 'Surcharge';
-  valueType: 'Percent' | 'Amount';
-  value: string;
-}) {
-  const normalizedValue = normalizeAdjustmentValue(input.value);
-  if (!normalizedValue) return '';
-  return [input.adjustmentKind, input.valueType, normalizedValue].join('::');
-}
-
-function assertNoDuplicatePriceAdjustmentStacks(discounts: DiscountItem[], surcharges: SurchargeItem[]) {
-  const discountGroups = new Map<string, DiscountItem[]>();
-  discounts.forEach((item) => {
-    const groupKey = [
-      item.variationId,
-      item.priceCode,
-      item.discountGroup || item.discountRecordId || item.id,
-    ].join('::');
-    discountGroups.set(groupKey, [...(discountGroups.get(groupKey) ?? []), item]);
-  });
-
-  discountGroups.forEach((rows) => {
-    const seen = new Map<string, DiscountItem>();
-    rows.forEach((item) => {
-      const key = getAdjustmentDuplicateKey({
-        adjustmentKind: 'Discount',
-        valueType: item.discountType,
-        value: item.amount,
-      });
-      if (!key) return;
-      if (seen.has(key)) {
-        throw new Error(getAdjustmentDuplicateMessage({
-          adjustmentKind: 'Discount',
-          valueType: item.discountType,
-          value: item.amount,
-        }));
-      }
-      seen.set(key, item);
-    });
-  });
-
-  const surchargeGroups = new Map<string, SurchargeItem[]>();
-  surcharges
-    .filter((item) => item.surchargeType === 'Percent' || item.surchargeType === 'Amount')
-    .forEach((item) => {
-      const groupKey = [item.variationId, item.priceCode].join('::');
-      surchargeGroups.set(groupKey, [...(surchargeGroups.get(groupKey) ?? []), item]);
-    });
-
-  surchargeGroups.forEach((rows) => {
-    const seen = new Map<string, SurchargeItem>();
-    rows.forEach((item) => {
-      if (item.surchargeType !== 'Percent' && item.surchargeType !== 'Amount') {
-        return;
-      }
-      const key = getAdjustmentDuplicateKey({
-        adjustmentKind: 'Surcharge',
-        valueType: item.surchargeType,
-        value: item.amount,
-      });
-      if (!key) return;
-      if (seen.has(key)) {
-        throw new Error(getAdjustmentDuplicateMessage({
-          adjustmentKind: 'Surcharge',
-          valueType: item.surchargeType,
-          value: item.amount,
-        }));
-      }
-      seen.set(key, item);
-    });
-  });
-}
-
 function getSyntheticParentUuid(value: string | null | undefined) {
   const text = String(value ?? '').trim();
   if (isUuid(text)) return text;
   const possibleUuid = text.slice(0, 36);
   return isUuid(possibleUuid) ? possibleUuid : '';
+}
+
+type PromoGiftCheckMeta = {
+  giftCheckId: string;
+  giftCheckCode: string;
+  giftCheckName: string;
+  giftCheckQuantity: string;
+};
+
+function parsePromoGiftCheckMeta(description: unknown): PromoGiftCheckMeta {
+  const empty = { giftCheckId: '', giftCheckCode: '', giftCheckName: '', giftCheckQuantity: '' };
+  const text = String(description ?? '').trim();
+  if (!text.startsWith('{')) {
+    return empty;
+  }
+
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    if (parsed.metaType !== 'promo_gift_check') {
+      return empty;
+    }
+    return {
+      giftCheckId: String(parsed.giftCheckId ?? ''),
+      giftCheckCode: String(parsed.giftCheckCode ?? ''),
+      giftCheckName: String(parsed.giftCheckName ?? ''),
+      giftCheckQuantity: String(parsed.giftCheckQuantity ?? ''),
+    };
+  } catch {
+    return empty;
+  }
+}
+
+function buildPromoGiftCheckDescription(item: Pick<
+  SurchargeItem,
+  'giftCheckId' | 'giftCheckCode' | 'giftCheckName' | 'giftCheckQuantity' | 'description'
+>) {
+  if (!item.giftCheckId && !item.giftCheckCode && !item.giftCheckName) {
+    return item.description || null;
+  }
+
+  return JSON.stringify({
+    metaType: 'promo_gift_check',
+    giftCheckId: item.giftCheckId,
+    giftCheckCode: item.giftCheckCode,
+    giftCheckName: item.giftCheckName,
+    giftCheckQuantity: item.giftCheckQuantity || '1',
+  });
+}
+
+function normalizeRewardTargetType(value: unknown): SurchargeItem['rewardTargetType'] {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'different_item') return 'different_item';
+  return 'same_item';
 }
 
 function normalizeCalculationMethod(
@@ -583,6 +559,7 @@ export default function AddProduct({
   editProductId,
   initialCategoryId = null,
   onSaved,
+  onDraftVariationCountChange,
   onRegisterNavigationGuard,
   layout = 'standalone',
   initialSection = 'Basic Information',
@@ -627,6 +604,15 @@ export default function AddProduct({
   const variationRef = useRef<HTMLElement | null>(null);
   const savedDraftRef = useRef<SectionDraftState | null>(null);
   const pendingNavigationResolveRef = useRef<((allowNavigation: boolean) => void) | null>(null);
+
+  useEffect(() => {
+    const productId = draftProductId ?? editProductId;
+    if (!productId) {
+      return;
+    }
+
+    onDraftVariationCountChange?.(productId, countActiveVariationCards(variations));
+  }, [draftProductId, editProductId, onDraftVariationCountChange, variations]);
 
   function getCurrentDraftState(): SectionDraftState {
     return {
@@ -1154,6 +1140,11 @@ export default function AddProduct({
               promoRewardRepeatMode: 'one_time',
               promoRewardEveryQuantity: '',
               promoQualificationScope: 'line',
+              promoGiftCheckEnabled: false,
+              promoGiftCheckId: '',
+              promoGiftCheckCode: '',
+              promoGiftCheckName: '',
+              promoGiftCheckQuantity: '',
             },
           ];
         }
@@ -1220,6 +1211,11 @@ export default function AddProduct({
             promoRewardRepeatMode: 'one_time',
             promoRewardEveryQuantity: '',
             promoQualificationScope: 'line',
+            promoGiftCheckEnabled: false,
+            promoGiftCheckId: '',
+            promoGiftCheckCode: '',
+            promoGiftCheckName: '',
+            promoGiftCheckQuantity: '',
           };
         });
       });
@@ -1262,10 +1258,7 @@ export default function AddProduct({
               rewardLabel: String(row.free_item_label ?? ''),
               unitRuleLabel: '',
               unitRuleNotes: '',
-              rewardTargetType:
-                String(row.reward_target_type ?? '').toLowerCase() === 'different_item'
-                  ? 'different_item'
-                  : 'same_item',
+              rewardTargetType: normalizeRewardTargetType(row.reward_target_type),
               rewardProductId: String(row.reward_product_id ?? ''),
               rewardVariationId: String(row.reward_variation_id ?? ''),
               rewardUnitOptionId: String(row.reward_unit_option_id ?? ''),
@@ -1278,6 +1271,7 @@ export default function AddProduct({
                 String(row.qualification_scope ?? '').toLowerCase() === 'assorted_same_product'
                   ? 'assorted_same_product'
                   : 'line',
+              ...parsePromoGiftCheckMeta(row.description),
             },
           ];
         }
@@ -1330,11 +1324,7 @@ export default function AddProduct({
               String(classRow.reward_label ?? row.free_item_label ?? ''),
             unitRuleLabel: String(classRow.unit_rule_label ?? ''),
             unitRuleNotes: String(classRow.unit_rule_notes ?? ''),
-            rewardTargetType:
-              String(classRow.reward_target_type ?? row.reward_target_type ?? '').toLowerCase() ===
-              'different_item'
-                ? 'different_item'
-                : 'same_item',
+            rewardTargetType: normalizeRewardTargetType(classRow.reward_target_type ?? row.reward_target_type),
             rewardProductId: String(classRow.reward_product_id ?? row.reward_product_id ?? ''),
             rewardVariationId: String(classRow.reward_variation_id ?? row.reward_variation_id ?? ''),
             rewardUnitOptionId: String(classRow.reward_unit_option_id ?? row.reward_unit_option_id ?? ''),
@@ -1348,6 +1338,7 @@ export default function AddProduct({
               String(row.qualification_scope ?? '').toLowerCase() === 'assorted_same_product'
                 ? 'assorted_same_product'
                 : 'line',
+            ...parsePromoGiftCheckMeta(row.description),
           };
         });
       });
@@ -1394,16 +1385,26 @@ export default function AddProduct({
         if (!matchedPromo) {
           return item;
         }
+        const matchedGiftCheckEnabled = Boolean(
+          matchedPromo.giftCheckId || matchedPromo.giftCheckCode || matchedPromo.giftCheckName,
+        );
+        const matchedItemPromoEnabled = Boolean(
+          matchedPromo.rewardUnitCode ||
+          matchedPromo.rewardUnitOptionId ||
+          Number(matchedPromo.rewardQuantity || matchedPromo.freeQuantity || '0') > 0
+        );
         matchedSurchargeIds.add(matchedPromo.id);
         return {
           ...item,
-          hasPromo: true,
+          hasPromo: matchedItemPromoEnabled,
           promoType:
             matchedPromo.surchargeType === 'BonusQty'
               ? ('BonusQty' as DiscountItem['promoType'])
               : ('Freebie' as DiscountItem['promoType']),
           promoRewardUnitCode: matchedPromo.rewardUnitCode || matchedPromo.orderUnitCode || '',
-          promoRewardQuantity: matchedPromo.rewardQuantity || matchedPromo.freeQuantity || '1',
+          promoRewardQuantity: matchedItemPromoEnabled
+            ? matchedPromo.rewardQuantity || matchedPromo.freeQuantity || '1'
+            : '1',
           promoRewardLabel: matchedPromo.rewardLabel || '',
           promoSourceSurchargeId: matchedPromo.id,
           promoRewardTargetType: matchedPromo.rewardTargetType || 'same_item',
@@ -1415,6 +1416,11 @@ export default function AddProduct({
           promoRewardRepeatMode: matchedPromo.rewardRepeatMode || 'one_time',
           promoRewardEveryQuantity: matchedPromo.rewardEveryQuantity || '',
           promoQualificationScope: matchedPromo.qualificationScope || 'line',
+          promoGiftCheckEnabled: matchedGiftCheckEnabled,
+          promoGiftCheckId: matchedPromo.giftCheckId || '',
+          promoGiftCheckCode: matchedPromo.giftCheckCode || '',
+          promoGiftCheckName: matchedPromo.giftCheckName || '',
+          promoGiftCheckQuantity: matchedPromo.giftCheckQuantity || '',
         };
       });
 
@@ -2012,16 +2018,6 @@ export default function AddProduct({
       return false;
     }
 
-    try {
-      assertNoDuplicatePriceAdjustmentStacks(discounts, surcharges);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Duplicate price adjustment stack rows found.';
-      setSubmitError(message);
-      setSaveNotice({ type: 'error', message });
-      setActiveSection('Variation & Pricing');
-      return false;
-    }
-
     setIsSaving(true);
     setSubmitError('');
     setSaveNotice({ type: 'info', message: 'Saving product data...' });
@@ -2418,6 +2414,7 @@ export default function AddProduct({
         variationId: string;
         priceCode: string;
         rewardTargetType: string;
+        qualificationScope?: string;
         rewardProductId: string;
         rewardVariationId: string;
         rewardUnitOptionId: string;
@@ -2432,7 +2429,9 @@ export default function AddProduct({
           return {
             rewardProductId: productId,
             rewardVariationId:
-              resolveVariationDbId(item.variationId, item.priceCode, 'reward selection'),
+              item.qualificationScope === 'assorted_same_product'
+                ? null
+                : resolveVariationDbId(item.variationId, item.priceCode, 'reward selection'),
             rewardUnitOptionId: resolvedRewardUnitOptionId,
             rewardUnitCode:
               localRewardOption?.unitCode?.trim() || item.rewardUnitCode || null,
@@ -2645,16 +2644,18 @@ export default function AddProduct({
       }
 
       const derivedPromoSurcharges: SurchargeItem[] = discounts
-        .filter((item) => item.hasPromo)
+        .filter((item) => item.hasPromo || item.promoGiftCheckEnabled)
         .map((item, index) => ({
           id: item.promoSourceSurchargeId || `promo-${item.id || index}`,
           linkedDiscountId: discountIdBySourceId.get(item.id) ?? '',
           linkedDiscountClassId: discountClassIdBySourceId.get(item.id) ?? '',
           variationId: item.variationId,
-          surchargeName: item.discountName || 'Promo / Freebie',
-          surchargeType: item.promoType || 'Freebie',
+          surchargeName: item.hasPromo
+            ? item.discountName || 'Promo / Freebie'
+            : item.discountName || 'Gift Check Promo',
+          surchargeType: item.hasPromo ? item.promoType || 'Freebie' : 'Freebie',
           amount: '',
-          freeQuantity: item.promoRewardQuantity || '0',
+          freeQuantity: item.hasPromo ? item.promoRewardQuantity || '0' : '0',
           minQuantity: item.minOrderQuantity || item.minQuantity || '1',
           maxQuantity: item.maxOrderQuantity || item.maxQuantity || '',
           branchName: item.branchName,
@@ -2672,9 +2673,12 @@ export default function AddProduct({
           maxOrderQuantity: item.maxOrderQuantity || item.maxQuantity || '',
           minBaseQuantity: item.minBaseQuantity,
           maxBaseQuantity: item.maxBaseQuantity,
-          rewardUnitCode: item.promoRewardUnitCode,
-          rewardQuantity: item.promoRewardQuantity || '0',
+          rewardUnitCode: item.hasPromo ? item.promoRewardUnitCode : '',
+          rewardQuantity: item.hasPromo ? item.promoRewardQuantity || '0' : '0',
           rewardLabel:
+            !item.hasPromo
+              ? ''
+              :
             item.promoRewardLabel ||
             (item.promoRewardQuantity && item.promoRewardUnitCode
               ? `free ${item.promoRewardQuantity} ${item.promoRewardUnitCode}${
@@ -2687,26 +2691,47 @@ export default function AddProduct({
               : ''),
           unitRuleLabel: '',
           unitRuleNotes: '',
-          rewardTargetType: item.promoRewardTargetType,
-          rewardProductId: item.promoRewardTargetType === 'same_item' ? productId : item.promoRewardProductId,
+          rewardTargetType: item.hasPromo ? item.promoRewardTargetType : 'same_item',
+          rewardProductId:
+            !item.hasPromo
+              ? ''
+              : item.promoRewardTargetType === 'same_item'
+                ? productId
+                : item.promoRewardProductId,
           rewardVariationId:
-            item.promoRewardTargetType === 'same_item' ? resolveVariationDbId(item.variationId, item.priceCode, 'promo reward') : item.promoRewardVariationId,
-          rewardUnitOptionId: item.promoRewardUnitOptionId,
-          rewardRepeatMode: item.promoRewardRepeatMode,
+            !item.hasPromo
+              ? ''
+              : item.promoRewardTargetType === 'same_item' && item.promoQualificationScope === 'assorted_same_product'
+                ? ''
+                : item.promoRewardTargetType === 'same_item'
+                  ? resolveVariationDbId(item.variationId, item.priceCode, 'promo reward')
+                  : item.promoRewardVariationId,
+          rewardUnitOptionId: item.hasPromo ? item.promoRewardUnitOptionId : '',
+          rewardRepeatMode: item.hasPromo ? item.promoRewardRepeatMode : 'one_time',
           rewardEveryQuantity:
-            item.promoRewardRepeatMode === 'every'
+            item.hasPromo && item.promoRewardRepeatMode === 'every'
               ? item.promoRewardEveryQuantity || item.minOrderQuantity || '1'
               : '',
           qualificationScope: item.promoQualificationScope || 'line',
+          giftCheckId: item.promoGiftCheckEnabled ? item.promoGiftCheckId : '',
+          giftCheckCode: item.promoGiftCheckEnabled ? item.promoGiftCheckCode : '',
+          giftCheckName: item.promoGiftCheckEnabled ? item.promoGiftCheckName : '',
+          giftCheckQuantity: item.promoGiftCheckEnabled ? item.promoGiftCheckQuantity : '',
         }));
 
       const allSurchargesToSave = [...surcharges, ...derivedPromoSurcharges];
 
       const resolvedSurchargesToSave = allSurchargesToSave.map((item) => {
+        const hasItemReward = Boolean(
+          item.rewardUnitCode ||
+          item.rewardUnitOptionId ||
+          Number(item.rewardQuantity || item.freeQuantity || '0') > 0
+        );
         const resolvedRewardSelection = resolveRewardSelection({
           variationId: item.variationId,
           priceCode: item.priceCode,
           rewardTargetType: item.rewardTargetType,
+          qualificationScope: item.qualificationScope,
           rewardProductId: item.rewardProductId,
           rewardVariationId: item.rewardVariationId,
           rewardUnitOptionId: item.rewardUnitOptionId,
@@ -2715,9 +2740,19 @@ export default function AddProduct({
 
         if (
           (item.surchargeType === 'Freebie' || item.surchargeType === 'BonusQty') &&
+          hasItemReward &&
+          item.qualificationScope !== 'assorted_same_product' &&
           !resolvedRewardSelection.rewardUnitOptionId
         ) {
           throw new Error('Reward unit option is required before saving promo/freebie.');
+        }
+
+        if (
+          (item.surchargeType === 'Freebie' || item.surchargeType === 'BonusQty') &&
+          item.giftCheckId &&
+          (!item.giftCheckQuantity || Number(item.giftCheckQuantity) <= 0)
+        ) {
+          throw new Error('Gift Check quantity must be greater than zero.');
         }
 
         return {
@@ -2768,7 +2803,7 @@ export default function AddProduct({
           surcharge_percent:
             item.surchargeType === 'Percent' ? parseNumber(item.amount) : null,
           amount: item.surchargeType === 'Amount' ? parseNumber(item.amount) : null,
-          description: item.description || null,
+          description: buildPromoGiftCheckDescription(item),
           status: item.status || 'Active',
           free_quantity: parseInt(item.freeQuantity || '0', 10) || 0,
           free_item_label: item.rewardLabel || null,

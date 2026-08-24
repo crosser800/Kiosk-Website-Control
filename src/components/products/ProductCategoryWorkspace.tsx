@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import AddProduct from './AddProduct';
 import ProductCreateModal from './ProductCreateModal';
@@ -39,6 +39,7 @@ type ProductVariationRow = {
   variation_name: string | null;
   class_name: string | null;
   sku_code: string | null;
+  availability: string | null;
 };
 
 type ProductListItem = {
@@ -66,23 +67,32 @@ type CategorySummary = {
 
 type EditorMode = 'create' | 'edit';
 
+const SUPABASE_PAGE_SIZE = 1000;
+
 function buildVariationGroupKey(variation: ProductVariationRow) {
-  const normalizedVariationName = String(
-    variation.variation_name ?? variation.class_name ?? '',
-  )
+  const normalizedVariationName = String(variation.variation_name ?? variation.class_name ?? '')
     .trim()
     .toLowerCase();
   const normalizedSku = String(variation.sku_code ?? '').trim().toLowerCase();
 
-  if (normalizedVariationName) {
-    return `name::${normalizedVariationName}`;
+  if (normalizedVariationName || normalizedSku) {
+    return `${normalizedVariationName}::${normalizedSku}`;
   }
 
-  return `sku::${normalizedSku}`;
+  return `row::${String(variation.id ?? '').trim().toLowerCase()}`;
+}
+
+function isAvailableVariation(variation: ProductVariationRow) {
+  const availability = String(variation.availability ?? '').trim().toLowerCase();
+  return !['unavailable', 'inactive', 'archived', 'deleted'].includes(availability);
 }
 
 function countVariationCards(variations: ProductVariationRow[]) {
-  return new Set(variations.map((variation) => buildVariationGroupKey(variation))).size;
+  return new Set(
+    variations
+      .filter(isAvailableVariation)
+      .map((variation) => buildVariationGroupKey(variation)),
+  ).size;
 }
 
 function normalizeStatus(status: string | null | undefined) {
@@ -113,6 +123,33 @@ function sortProducts(products: ProductListItem[]) {
   );
 }
 
+async function fetchAllVariationRows() {
+  const rows: ProductVariationRow[] = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + SUPABASE_PAGE_SIZE - 1;
+    const { data, error } = await supabase
+      .from('product_variations')
+      .select('id, product_id, variation_name, class_name, sku_code, availability')
+      .order('id', { ascending: true })
+      .range(from, to);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const page = (data ?? []) as ProductVariationRow[];
+    rows.push(...page);
+
+    if (page.length < SUPABASE_PAGE_SIZE) {
+      return rows;
+    }
+
+    from += SUPABASE_PAGE_SIZE;
+  }
+}
+
 type ProductCategoryWorkspaceProps = {
   onRegisterNavigationGuard?: (guard: (() => Promise<boolean>) | null) => void;
 };
@@ -136,7 +173,7 @@ export default function ProductCategoryWorkspace({
     useState<'Basic Information' | 'Images' | 'Variation & Pricing'>('Basic Information');
 
   async function fetchWorkspaceData() {
-    const [categoriesRes, productsRes, mediaRes, variationsRes] = await Promise.all([
+    const [categoriesRes, productsRes, mediaRes, variationRows] = await Promise.all([
       supabase
         .from('product_categories')
         .select('id, category_title, category_slug, category_image_url, status')
@@ -149,13 +186,11 @@ export default function ProductCategoryWorkspace({
         .from('product_media')
         .select('id, product_id, media_url, media_type, is_primary, sort_order, variation_id, status')
         .order('sort_order', { ascending: true }),
-      supabase
-        .from('product_variations')
-        .select('id, product_id, variation_name, class_name, sku_code'),
+      fetchAllVariationRows(),
     ]);
 
     const firstError =
-      categoriesRes.error ?? productsRes.error ?? mediaRes.error ?? variationsRes.error;
+      categoriesRes.error ?? productsRes.error ?? mediaRes.error;
     if (firstError) {
       throw new Error(firstError.message);
     }
@@ -170,7 +205,7 @@ export default function ProductCategoryWorkspace({
     });
 
     const variationsByProductId = new Map<string, ProductVariationRow[]>();
-    (variationsRes.data as ProductVariationRow[] | null | undefined)?.forEach((row) => {
+    variationRows.forEach((row) => {
       const productId = String(row.product_id ?? '');
       if (!productId) return;
       const current = variationsByProductId.get(productId) ?? [];
@@ -422,6 +457,42 @@ export default function ProductCategoryWorkspace({
     setEditorInitialSection('Images');
     void refreshWorkspaceAfterSave(productId, categoryId);
   }
+
+  const handleDraftVariationCountChange = useCallback((productId: string, variationCount: number) => {
+    setCategories((currentCategories) => {
+      let changed = false;
+      const nextCategories = currentCategories.map((category) => {
+        let categoryChanged = false;
+        const nextProducts = category.products.map((product) => {
+          if (product.id !== productId || product.variationCount === variationCount) {
+            return product;
+          }
+
+          changed = true;
+          categoryChanged = true;
+          return {
+            ...product,
+            variationCount,
+          };
+        });
+
+        if (!categoryChanged) {
+          return category;
+        }
+
+        return {
+          ...category,
+          variationCount: nextProducts.reduce(
+            (total, product) => total + product.variationCount,
+            0,
+          ),
+          products: nextProducts,
+        };
+      });
+
+      return changed ? nextCategories : currentCategories;
+    });
+  }, []);
 
   useEffect(() => {
     setProductPage(1);
@@ -747,6 +818,7 @@ export default function ProductCategoryWorkspace({
                     }
                   }}
                   onSaved={handleSavedProduct}
+                  onDraftVariationCountChange={handleDraftVariationCountChange}
                 />
               ) : (
                 <div className={styles.editorEmptyState}>

@@ -194,6 +194,7 @@ export default function InternalAccountProfilePanel({
         emergency_contact_name: trim(draft.emergencyContactName) || null,
         emergency_contact_relationship: trim(draft.emergencyContactRelationship) || null,
         emergency_contact_number: trim(draft.emergencyContactNumber) || null,
+        updated_at: savedAt,
       };
 
       if (profileImageChanged) {

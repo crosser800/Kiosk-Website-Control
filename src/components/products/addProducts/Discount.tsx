@@ -57,6 +57,11 @@ const emptyDiscount: DiscountItem = {
   promoRewardRepeatMode: 'one_time',
   promoRewardEveryQuantity: '',
   promoQualificationScope: 'line',
+  promoGiftCheckEnabled: false,
+  promoGiftCheckId: '',
+  promoGiftCheckCode: '',
+  promoGiftCheckName: '',
+  promoGiftCheckQuantity: '',
 };
 
 export default function Discount({ onBack, onNext, items, onChange }: DiscountProps) {

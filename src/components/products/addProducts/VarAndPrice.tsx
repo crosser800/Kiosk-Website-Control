@@ -110,6 +110,19 @@ type DiscountDraftRow = {
   promoRewardEveryQuantity: string;
   promoQualificationScope: QualificationScope;
   promoRewardSearchQuery: string;
+  promoGiftCheckEnabled: boolean;
+  promoGiftCheckId: string;
+  promoGiftCheckCode: string;
+  promoGiftCheckName: string;
+  promoGiftCheckQuantity: string;
+};
+
+type GiftCheckOption = {
+  id: string;
+  code: string;
+  name: string;
+  amount: number;
+  status: string;
 };
 
 type RewardProductSearchItem = {
@@ -202,29 +215,6 @@ function toPriceCode(value: string): PriceCode | null {
 
 function parseNumberInput(value: string) {
   return Number(String(value).replace(/,/g, '')) || 0;
-}
-
-function normalizeAdjustmentValue(value: string) {
-  const trimmed = String(value ?? '').replace(/,/g, '').trim();
-  if (!trimmed) return '';
-  const numeric = Number(trimmed);
-  if (!Number.isFinite(numeric)) {
-    return trimmed.toLowerCase();
-  }
-  return String(numeric);
-}
-
-function getAdjustmentDuplicateKey(row: Pick<DiscountDraftRow, 'adjustmentKind' | 'discountType' | 'amount'>) {
-  const normalizedValue = normalizeAdjustmentValue(row.amount);
-  if (!normalizedValue) return '';
-  return [row.adjustmentKind, row.discountType, normalizedValue].join('::');
-}
-
-function getAdjustmentDuplicateMessage(row: Pick<DiscountDraftRow, 'adjustmentKind' | 'discountType' | 'amount'>) {
-  const normalizedValue = normalizeAdjustmentValue(row.amount);
-  const valueTypeLabel = row.discountType === 'Amount' ? 'Fixed Amount' : 'Percent';
-  const valueLabel = row.discountType === 'Percent' ? `${normalizedValue}%` : normalizedValue;
-  return `Duplicate adjustment. This ${row.adjustmentKind} / ${valueTypeLabel} / ${valueLabel} already exists in the stack.`;
 }
 
 function parseNullableNumberInput(value: string) {
@@ -478,6 +468,11 @@ function getDiscountCloneFingerprint(
   );
 
   return [
+    item.id,
+    item.discountRecordId,
+    item.discountClassId,
+    item.discountGroup,
+    item.applySequence,
     sourceVariationId,
     destinationVariationId,
     item.priceCode,
@@ -503,6 +498,62 @@ function getDiscountCloneFingerprint(
     item.promoRewardRepeatMode,
     item.promoRewardEveryQuantity,
     item.promoQualificationScope,
+    item.promoGiftCheckEnabled,
+    item.promoGiftCheckId,
+    item.promoGiftCheckCode,
+    item.promoGiftCheckName,
+    item.promoGiftCheckQuantity,
+  ].map(normalizeCloneValue).join('|');
+}
+
+function getDiscountCloneSourceFingerprint(
+  item: DiscountItem,
+  unitOptions: VariationUnitOptionItem[] = [],
+  sourceVariationId = item.variationId,
+) {
+  const orderUnitCode = getUnitCodeForCloneFingerprint(
+    unitOptions,
+    item.unitOptionId,
+    item.orderUnitCode,
+  );
+  const rewardUnitCode = getRewardUnitCodeForCloneFingerprint(
+    unitOptions,
+    item.promoRewardUnitOptionId,
+    item.promoRewardUnitCode,
+  );
+
+  return [
+    item.discountGroup,
+    item.applySequence,
+    sourceVariationId,
+    item.priceCode,
+    item.discountKind,
+    item.discountName,
+    item.discountType,
+    item.amount,
+    item.calculationMethod,
+    item.unitCondition,
+    item.unitCondition === 'selected_unit' ? orderUnitCode : '',
+    item.minOrderQuantity || item.minQuantity,
+    item.maxOrderQuantity || item.maxQuantity,
+    item.status,
+    item.startsAt,
+    item.endsAt,
+    item.hasPromo,
+    item.promoType,
+    rewardUnitCode,
+    item.promoRewardQuantity,
+    item.promoRewardTargetType,
+    item.promoRewardProductId,
+    item.promoRewardVariationId,
+    item.promoRewardRepeatMode,
+    item.promoRewardEveryQuantity,
+    item.promoQualificationScope,
+    item.promoGiftCheckEnabled,
+    item.promoGiftCheckId,
+    item.promoGiftCheckCode,
+    item.promoGiftCheckName,
+    item.promoGiftCheckQuantity,
   ].map(normalizeCloneValue).join('|');
 }
 
@@ -524,6 +575,10 @@ function getSurchargeCloneFingerprint(
   );
 
   return [
+    item.id,
+    item.linkedDiscountId,
+    item.linkedDiscountClassId,
+    item.priority,
     sourceVariationId,
     destinationVariationId,
     item.priceCode,
@@ -546,6 +601,58 @@ function getSurchargeCloneFingerprint(
     item.rewardRepeatMode,
     item.rewardEveryQuantity,
     item.qualificationScope,
+    item.giftCheckId,
+    item.giftCheckCode,
+    item.giftCheckName,
+    item.giftCheckQuantity,
+  ].map(normalizeCloneValue).join('|');
+}
+
+function getSurchargeCloneSourceFingerprint(
+  item: SurchargeItem,
+  unitOptions: VariationUnitOptionItem[] = [],
+  sourceVariationId = item.variationId,
+) {
+  const orderUnitCode = getUnitCodeForCloneFingerprint(
+    unitOptions,
+    item.unitOptionId,
+    item.orderUnitCode,
+  );
+  const rewardUnitCode = getRewardUnitCodeForCloneFingerprint(
+    unitOptions,
+    item.rewardUnitOptionId,
+    item.rewardUnitCode,
+  );
+
+  return [
+    item.linkedDiscountId,
+    item.linkedDiscountClassId,
+    item.priority,
+    sourceVariationId,
+    item.priceCode,
+    item.surchargeName,
+    item.surchargeType,
+    item.amount,
+    item.freeQuantity,
+    item.unitCondition,
+    item.unitCondition === 'selected_unit' ? orderUnitCode : '',
+    item.minOrderQuantity || item.minQuantity,
+    item.maxOrderQuantity || item.maxQuantity,
+    item.status,
+    item.startsAt,
+    item.endsAt,
+    rewardUnitCode,
+    item.rewardQuantity,
+    item.rewardTargetType,
+    item.rewardProductId,
+    item.rewardVariationId,
+    item.rewardRepeatMode,
+    item.rewardEveryQuantity,
+    item.qualificationScope,
+    item.giftCheckId,
+    item.giftCheckCode,
+    item.giftCheckName,
+    item.giftCheckQuantity,
   ].map(normalizeCloneValue).join('|');
 }
 
@@ -688,9 +795,46 @@ export default function VarAndPrice({
   const [rewardSearchResults, setRewardSearchResults] = useState<Record<string, RewardProductSearchItem[]>>({});
   const [rewardVariationOptions, setRewardVariationOptions] = useState<Record<string, RewardVariationOption[]>>({});
   const [rewardUnitOptions, setRewardUnitOptions] = useState<Record<string, VariationUnitOptionItem[]>>({});
+  const [giftCheckOptions, setGiftCheckOptions] = useState<GiftCheckOption[]>([]);
   const [, setRewardSearchLoading] = useState<Record<string, boolean>>({});
   const [, setRewardVariationLoading] = useState<Record<string, boolean>>({});
   const [, setRewardUnitLoading] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    let disposed = false;
+
+    async function loadGiftChecks() {
+      const { data, error } = await supabase
+        .from('gift_checks')
+        .select('id, gift_check_code, name, amount, status')
+        .order('amount', { ascending: true });
+
+      if (disposed) {
+        return;
+      }
+
+      if (error) {
+        setGiftCheckOptions([]);
+        return;
+      }
+
+      setGiftCheckOptions(
+        ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+          id: String(row.id ?? ''),
+          code: String(row.gift_check_code ?? ''),
+          name: String(row.name ?? ''),
+          amount: Number(row.amount ?? 0) || 0,
+          status: String(row.status ?? 'Active'),
+        })).filter((row) => row.id && row.status.toLowerCase() === 'active'),
+      );
+    }
+
+    void loadGiftChecks();
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isVariationModalOpen) {
@@ -1119,14 +1263,14 @@ export default function VarAndPrice({
         const priceCode = toPriceCode(item.priceCode);
         return Boolean(priceCode && matchesVariation(card.id, card.rowIds[priceCode])(item.variationId));
       }),
-      (item) => getDiscountCloneFingerprint(item, unitOptions, card.id, nextId),
+      (item) => getDiscountCloneSourceFingerprint(item, unitOptions, card.id),
     );
     const sourceSurcharges = uniqueByCloneFingerprint(
       surcharges.filter((item) => {
         const priceCode = toPriceCode(item.priceCode);
         return Boolean(priceCode && matchesVariation(card.id, card.rowIds[priceCode])(item.variationId));
       }),
-      (item) => getSurchargeCloneFingerprint(item, unitOptions, card.id, nextId),
+      (item) => getSurchargeCloneSourceFingerprint(item, unitOptions, card.id),
     );
     const copiedDiscounts = sourceDiscounts
       .map((item, index) => {
@@ -1274,17 +1418,35 @@ export default function VarAndPrice({
     orderUnitLabel: string,
     rewardUnitLabel: string,
   ) {
-    if (!tier.hasPromo || !tier.promoRewardQuantity || !rewardUnitLabel) {
+    const giftCheckText =
+      tier.promoGiftCheckEnabled && tier.promoGiftCheckId
+        ? `${tier.promoGiftCheckQuantity || '1'} ${tier.promoGiftCheckName || tier.promoGiftCheckCode || 'Gift Check'}`
+        : '';
+    if (!tier.hasPromo) {
+      if (!giftCheckText) return '';
+      const qualificationLabel = tier.promoQualificationScope === 'assorted_same_product'
+        ? `Assorted ${tier.minOrderQuantity || '1'} ${orderUnitLabel} across variations`
+        : `Buy at least ${tier.minOrderQuantity || '1'} ${orderUnitLabel}`;
+      return `${qualificationLabel}, get ${giftCheckText}.`;
+    }
+    if (!tier.promoRewardQuantity) {
+      return '';
+    }
+    if (!rewardUnitLabel) {
       return '';
     }
     const targetLabel =
       tier.promoRewardTargetType === 'same_item'
         ? 'this item'
         : tier.promoRewardProductLabel || 'selected item';
+    const qualificationLabel = tier.promoQualificationScope === 'assorted_same_product'
+      ? `Assorted ${tier.minOrderQuantity || '1'} ${orderUnitLabel} across variations`
+      : `Buy at least ${tier.minOrderQuantity || '1'} ${orderUnitLabel}`;
+    const giftCheckLabel = giftCheckText ? ` plus ${giftCheckText}` : '';
     if (tier.promoRewardRepeatMode === 'every' && tier.promoRewardEveryQuantity) {
-      return `Every ${tier.promoRewardEveryQuantity} ${orderUnitLabel}, get ${tier.promoRewardQuantity} ${rewardUnitLabel} of ${targetLabel} free.`;
+      return `Every ${tier.promoRewardEveryQuantity} ${orderUnitLabel}, get ${tier.promoRewardQuantity} ${rewardUnitLabel} of ${targetLabel} free${giftCheckLabel}.`;
     }
-    return `Buy at least ${tier.minOrderQuantity || '1'} ${orderUnitLabel}, get ${tier.promoRewardQuantity} ${rewardUnitLabel} of ${targetLabel} free once.`;
+    return `${qualificationLabel}, get ${tier.promoRewardQuantity} ${rewardUnitLabel} of ${targetLabel} free once${giftCheckLabel}.`;
   }
 
   function buildStackingPreview(rows: DiscountDraftRow[], basePrice: number) {
@@ -1436,15 +1598,26 @@ export default function VarAndPrice({
   }
 
   function getPromoValidationMessage(rule: DiscountDraftRow, orderableOptions: VariationUnitOptionItem[]) {
-    if (!rule.hasPromo) return '';
-    if (!rule.promoRewardQuantity || Number(rule.promoRewardQuantity) <= 0) {
+    if (!rule.hasPromo && !rule.promoGiftCheckEnabled) return '';
+    if (rule.hasPromo && (!rule.promoRewardQuantity || Number(rule.promoRewardQuantity) <= 0)) {
       return 'Enter a reward quantity greater than zero.';
     }
-    if (!rule.promoRewardUnitOptionId || !rule.promoRewardUnitCode) {
+    if (rule.hasPromo && !rule.promoRewardUnitCode) {
       return 'Select a reward unit.';
     }
+    if (rule.promoGiftCheckEnabled && !rule.promoGiftCheckId) {
+      return 'Select a Gift Check reward.';
+    }
     if (
+      rule.promoGiftCheckEnabled &&
+      (!rule.promoGiftCheckQuantity || Number(rule.promoGiftCheckQuantity) <= 0)
+    ) {
+      return 'Enter a Gift Check quantity greater than zero.';
+    }
+    if (
+      rule.hasPromo &&
       rule.promoRewardTargetType === 'same_item' &&
+      rule.promoRewardUnitOptionId &&
       !orderableOptions.some(
         (option) =>
           option.id === rule.promoRewardUnitOptionId ||
@@ -1454,12 +1627,14 @@ export default function VarAndPrice({
       return 'Select a reward unit from this item.';
     }
     if (
+      rule.hasPromo &&
       rule.promoRewardTargetType === 'different_item' &&
       (!rule.promoRewardProductId || !rule.promoRewardVariationId || !rule.promoRewardUnitOptionId)
     ) {
       return 'Select the reward product, variation, and unit.';
     }
     if (
+      rule.hasPromo &&
       rule.promoRewardRepeatMode === 'every' &&
       (!rule.promoRewardEveryQuantity || Number(rule.promoRewardEveryQuantity) <= 0)
     ) {
@@ -1504,6 +1679,11 @@ export default function VarAndPrice({
       promoRewardEveryQuantity: '',
       promoQualificationScope: 'line',
       promoRewardSearchQuery: '',
+      promoGiftCheckEnabled: false,
+      promoGiftCheckId: '',
+      promoGiftCheckCode: '',
+      promoGiftCheckName: '',
+      promoGiftCheckQuantity: '',
     };
   }
 
@@ -1532,24 +1712,6 @@ export default function VarAndPrice({
             Number(right.applySequence || '1'),
       ),
     }));
-  }
-
-  function getDuplicateAdjustmentMessages(rows = discountDraft) {
-    const messages = new Map<string, string>();
-    getDiscountRuleGroups(rows).forEach((group) => {
-      const rowsByKey = new Map<string, DiscountDraftRow[]>();
-      group.rows.forEach((row) => {
-        const key = getAdjustmentDuplicateKey(row);
-        if (!key) return;
-        rowsByKey.set(key, [...(rowsByKey.get(key) ?? []), row]);
-      });
-      rowsByKey.forEach((matchingRows) => {
-        if (matchingRows.length <= 1) return;
-        const message = getAdjustmentDuplicateMessage(matchingRows[0]);
-        matchingRows.forEach((row) => messages.set(row.id, message));
-      });
-    });
-    return messages;
   }
 
   function normalizeDiscountRuleRows(rows: DiscountDraftRow[], groupKey: string) {
@@ -1585,6 +1747,11 @@ export default function VarAndPrice({
       promoRewardRepeatMode: rule.promoRewardRepeatMode,
       promoRewardEveryQuantity: rule.promoRewardEveryQuantity,
       promoQualificationScope: rule.promoQualificationScope || 'line',
+      promoGiftCheckEnabled: rule.promoGiftCheckEnabled,
+      promoGiftCheckId: rule.promoGiftCheckId,
+      promoGiftCheckCode: rule.promoGiftCheckCode,
+      promoGiftCheckName: rule.promoGiftCheckName,
+      promoGiftCheckQuantity: rule.promoGiftCheckQuantity,
       applySequence: String(index + 1),
       discountGroup: group,
       stackable: stacked,
@@ -2105,6 +2272,11 @@ export default function VarAndPrice({
         promoRewardEveryQuantity: item.promoRewardEveryQuantity || '',
         promoQualificationScope: item.promoQualificationScope || 'line',
         promoRewardSearchQuery: '',
+        promoGiftCheckEnabled: item.promoGiftCheckEnabled || Boolean(item.promoGiftCheckId),
+        promoGiftCheckId: item.promoGiftCheckId || '',
+        promoGiftCheckCode: item.promoGiftCheckCode || '',
+        promoGiftCheckName: item.promoGiftCheckName || '',
+        promoGiftCheckQuantity: item.promoGiftCheckQuantity || '',
       }));
     const rawExistingSurcharges = surcharges
       .filter(
@@ -2150,6 +2322,11 @@ export default function VarAndPrice({
         promoRewardEveryQuantity: '',
         promoQualificationScope: 'line' as const,
         promoRewardSearchQuery: '',
+        promoGiftCheckEnabled: false,
+        promoGiftCheckId: '',
+        promoGiftCheckCode: '',
+        promoGiftCheckName: '',
+        promoGiftCheckQuantity: '',
       }));
     const existing: DiscountDraftRow[] = [...existingDiscounts, ...existingSurcharges];
     const visibleExisting: DiscountDraftRow[] = existing.map((item) => ({
@@ -2185,18 +2362,6 @@ export default function VarAndPrice({
     const matchVariation = matchesVariation(discountContext.variationId, fallbackRowId);
     const normalizedDraft = normalizeAllDiscountRules(discountDraft);
     const normalizedGroups = getDiscountRuleGroups(normalizedDraft);
-    const duplicateAdjustmentMessages = getDuplicateAdjustmentMessages(normalizedDraft);
-    const duplicateAdjustmentMessage = Array.from(duplicateAdjustmentMessages.values())[0];
-    if (duplicateAdjustmentMessage) {
-      setDiscountDraft(normalizedDraft);
-      setActiveDiscountTabId(
-        normalizedDraft.find((row) => duplicateAdjustmentMessages.has(row.id))?.discountGroup ||
-          normalizedDraft[0]?.discountGroup ||
-          '',
-      );
-      setDiscountModalError(duplicateAdjustmentMessage);
-      return;
-    }
     const suggestedNameByGroup = new Map(
       normalizedGroups.map((group) => {
         const rule = group.rows[0];
@@ -2277,9 +2442,17 @@ export default function VarAndPrice({
         item.adjustmentKind === 'Discount' &&
         item.hasPromo &&
         item.promoRewardTargetType === 'same_item' &&
+        item.promoRewardUnitOptionId &&
         !sameItemRewardUnit
       ) {
         return `${label}: Select a reward unit from this item before saving.`;
+      }
+      if (
+        item.adjustmentKind === 'Discount' &&
+        item.hasPromo &&
+        !item.promoRewardUnitCode
+      ) {
+        return `${label}: Select a reward unit before saving.`;
       }
       if (
         item.adjustmentKind === 'Discount' &&
@@ -2291,11 +2464,17 @@ export default function VarAndPrice({
       }
       if (
         item.adjustmentKind === 'Discount' &&
-        item.hasPromo &&
-        item.promoRewardTargetType === 'different_item' &&
-        !item.promoRewardUnitCode
+        item.promoGiftCheckEnabled &&
+        !item.promoGiftCheckId
       ) {
-        return `${label}: Select a reward unit before saving.`;
+        return `${label}: Select a Gift Check before saving.`;
+      }
+      if (
+        item.adjustmentKind === 'Discount' &&
+        item.promoGiftCheckEnabled &&
+        (!item.promoGiftCheckQuantity || Number(item.promoGiftCheckQuantity) <= 0)
+      ) {
+        return `${label}: Enter a Gift Check quantity greater than zero before saving.`;
       }
       if (
         item.adjustmentKind === 'Discount' &&
@@ -2310,7 +2489,7 @@ export default function VarAndPrice({
       }
       if (
         item.adjustmentKind === 'Discount' &&
-        item.hasPromo &&
+        (item.hasPromo || item.promoGiftCheckEnabled) &&
         item.promoQualificationScope !== 'line' &&
         item.promoQualificationScope !== 'assorted_same_product'
       ) {
@@ -2452,7 +2631,12 @@ export default function VarAndPrice({
             item.hasPromo && item.promoRewardRepeatMode === 'every'
               ? item.promoRewardEveryQuantity
               : '',
-          promoQualificationScope: item.hasPromo ? item.promoQualificationScope || 'line' : 'line',
+          promoQualificationScope: (item.hasPromo || item.promoGiftCheckEnabled) ? item.promoQualificationScope || 'line' : 'line',
+          promoGiftCheckEnabled: item.promoGiftCheckEnabled,
+          promoGiftCheckId: item.promoGiftCheckEnabled ? item.promoGiftCheckId : '',
+          promoGiftCheckCode: item.promoGiftCheckEnabled ? item.promoGiftCheckCode : '',
+          promoGiftCheckName: item.promoGiftCheckEnabled ? item.promoGiftCheckName : '',
+          promoGiftCheckQuantity: item.promoGiftCheckEnabled ? item.promoGiftCheckQuantity : '',
         };
       });
     const filteredSurcharges = surcharges.filter((item) => {
@@ -2533,6 +2717,10 @@ export default function VarAndPrice({
           rewardRepeatMode: 'one_time',
           rewardEveryQuantity: '',
           qualificationScope: 'line',
+          giftCheckId: '',
+          giftCheckCode: '',
+          giftCheckName: '',
+          giftCheckQuantity: '',
         };
       });
     onDiscountsChange([...filtered, ...inserted]);
@@ -3414,8 +3602,6 @@ export default function VarAndPrice({
                 (pendingDisablePromoIndex >= 0 ? `Discount ${pendingDisablePromoIndex + 1}` : 'selected discount');
               const activeTier: DiscountDraftRow | null =
                 discountDraft.find((item) => item.id === activeDiscountTabId) ?? discountDraft[0] ?? null;
-              const duplicateStackMessages = getDuplicateAdjustmentMessages();
-              const firstDuplicateStackMessage = Array.from(duplicateStackMessages.values())[0] ?? '';
               const stackingEnabled = false;
               return (
                 <>
@@ -3459,9 +3645,7 @@ export default function VarAndPrice({
                       <strong>Adjustments:</strong> {discountRuleGroups.length}
                     </span>
                   </div>
-                  {discountModalError || firstDuplicateStackMessage ? (
-                    <p className={styles.modalAlert}>{discountModalError || firstDuplicateStackMessage}</p>
-                  ) : null}
+                  {discountModalError ? <p className={styles.modalAlert}>{discountModalError}</p> : null}
 
                   <div className={styles.modalContent}>
                     <div className={styles.ruleTabsHeader}>
@@ -3740,6 +3924,23 @@ export default function VarAndPrice({
                                   </label>
                                 </>
                               ) : null}
+                              {!rule.hasPromo && (rule.promoGiftCheckEnabled || rule.promoGiftCheckId) ? (
+                                <>
+                                  <div className={styles.fieldGroup}>
+                                    <span className={styles.fieldLabel}>Reward Display Preview</span>
+                                    <div className={styles.readOnlyValue}>
+                                      {buildPromoPreview(
+                                        rule,
+                                        getUnitOptionLabel(selectedOption),
+                                        rewardUnitLabel,
+                                      ) || 'Reward display preview'}
+                                    </div>
+                                  </div>
+                                  {promoValidationMessage ? (
+                                    <p className={styles.modalAlert}>{promoValidationMessage}</p>
+                                  ) : null}
+                                </>
+                              ) : null}
                             </div>
                             <p className={styles.ruleNote}>
                               {rule.discountKind === 'Base'
@@ -3757,14 +3958,12 @@ export default function VarAndPrice({
                                 const isDragOver =
                                   dragOverDiscountStackId === stackItem.id &&
                                   draggingDiscountStackId !== stackItem.id;
-                                const duplicateMessage = duplicateStackMessages.get(stackItem.id) ?? '';
-
                                 return (
                                   <div
                                     key={stackItem.id}
                                     className={`${styles.stackRow} ${isDragging ? styles.stackRowDragging : ''} ${
                                       isDragOver ? styles.stackRowDragOver : ''
-                                    } ${duplicateMessage ? styles.stackRowInvalid : ''}`}
+                                    }`}
                                     onDragOver={(event) => handleDiscountStackDragOver(event, stackItem.id)}
                                     onDrop={(event) => handleDiscountStackDrop(event, stackItem.id)}
                                   >
@@ -3785,7 +3984,6 @@ export default function VarAndPrice({
                                       <select
                                         className={styles.select}
                                         value={stackItem.adjustmentKind}
-                                        aria-invalid={Boolean(duplicateMessage)}
                                         onChange={(event) =>
                                           updateDiscountStack(stackItem.id, {
                                             adjustmentKind: event.target.value as DiscountDraftRow['adjustmentKind'],
@@ -3802,7 +4000,6 @@ export default function VarAndPrice({
                                       <select
                                         className={styles.select}
                                         value={stackItem.discountType}
-                                        aria-invalid={Boolean(duplicateMessage)}
                                         onChange={(event) =>
                                           updateDiscountStack(stackItem.id, {
                                             discountType: event.target.value as DiscountItem['discountType'],
@@ -3819,7 +4016,6 @@ export default function VarAndPrice({
                                         className={styles.input}
                                         placeholder={stackItem.discountType === 'Percent' ? 'Percent (%)' : 'Amount (Net)'}
                                         value={stackItem.amount}
-                                        aria-invalid={Boolean(duplicateMessage)}
                                         onChange={(event) => updateDiscountStack(stackItem.id, { amount: event.target.value })}
                                       />
                                     </label>
@@ -3833,9 +4029,6 @@ export default function VarAndPrice({
                                     >
                                       <i className="fa-solid fa-trash" aria-hidden="true"></i>
                                     </button>
-                                    {duplicateMessage ? (
-                                      <p className={styles.stackErrorText}>{duplicateMessage}</p>
-                                    ) : null}
                                   </div>
                                 );
                               })}
@@ -3911,13 +4104,83 @@ export default function VarAndPrice({
                             <div className={styles.promoSection}>
                               <h5 className={styles.modalSectionTitle}>Promo</h5>
                               <label className={styles.toggleField}>
-                                <span className={styles.fieldLabel}>Enable Promo</span>
+                                <span className={styles.fieldLabel}>Enable Freebie Promo</span>
                                 <input
                                   type="checkbox"
                                   checked={rule.hasPromo}
                                   onChange={(event) => enableDiscountPromo(ruleGroup.groupKey, event.target.checked)}
                                 />
                               </label>
+                              <label className={styles.toggleField}>
+                                <span className={styles.fieldLabel}>Add Gift Check Reward</span>
+                                <input
+                                  type="checkbox"
+                                  checked={rule.promoGiftCheckEnabled || Boolean(rule.promoGiftCheckId)}
+                                  onChange={(event) =>
+                                    updateDiscountPromo(ruleGroup.groupKey, {
+                                      promoGiftCheckEnabled: event.target.checked,
+                                      promoGiftCheckId: event.target.checked ? rule.promoGiftCheckId : '',
+                                      promoGiftCheckCode: event.target.checked ? rule.promoGiftCheckCode : '',
+                                      promoGiftCheckName: event.target.checked ? rule.promoGiftCheckName : '',
+                                      promoGiftCheckQuantity: event.target.checked
+                                        ? rule.promoGiftCheckQuantity || '1'
+                                        : '',
+                                    })
+                                  }
+                                />
+                              </label>
+                              {rule.promoGiftCheckEnabled || rule.promoGiftCheckId ? (
+                                <div className={styles.ruleGrid}>
+                                  <label className={styles.fieldGroup}>
+                                    <span className={styles.fieldLabel}>Gift Check</span>
+                                    <select
+                                      className={styles.select}
+                                      value={rule.promoGiftCheckId}
+                                      onChange={(event) => {
+                                        const selectedGiftCheck = giftCheckOptions.find(
+                                          (option) => option.id === event.target.value,
+                                        );
+                                        updateDiscountPromo(ruleGroup.groupKey, {
+                                          promoGiftCheckId: selectedGiftCheck?.id ?? '',
+                                          promoGiftCheckCode: selectedGiftCheck?.code ?? '',
+                                          promoGiftCheckName: selectedGiftCheck?.name ?? '',
+                                          promoGiftCheckQuantity: selectedGiftCheck
+                                            ? rule.promoGiftCheckQuantity || '1'
+                                            : '1',
+                                        });
+                                      }}
+                                    >
+                                      <option value="">Select Gift Check</option>
+                                      {giftCheckOptions.map((option) => (
+                                        <option key={option.id} value={option.id}>
+                                          {option.code} - {option.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                  <label className={styles.fieldGroup}>
+                                    <span className={styles.fieldLabel}>Gift Check Quantity</span>
+                                    <input
+                                      className={styles.input}
+                                      placeholder="Gift Check Quantity"
+                                      value={rule.promoGiftCheckQuantity}
+                                      onChange={(event) =>
+                                        updateDiscountPromo(ruleGroup.groupKey, {
+                                          promoGiftCheckQuantity: event.target.value.replace(/[^\d.]/g, ''),
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                  <div className={styles.fieldGroup}>
+                                    <span className={styles.fieldLabel}>Gift Check Preview</span>
+                                    <div className={styles.readOnlyValue}>
+                                      {rule.promoGiftCheckId
+                                        ? `${rule.promoGiftCheckQuantity || '1'} ${rule.promoGiftCheckName || rule.promoGiftCheckCode}`
+                                        : 'Select a Gift Check reward'}
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : null}
 
                               {rule.hasPromo ? (
                                 <>
@@ -3947,13 +4210,13 @@ export default function VarAndPrice({
                                           updateDiscountPromo(ruleGroup.groupKey, {
                                             promoRewardTargetType: event.target.value as RewardTargetType,
                                             promoRewardProductId:
-                                              event.target.value === 'same_item' ? '' : rule.promoRewardProductId,
+                                              event.target.value === 'different_item' ? rule.promoRewardProductId : '',
                                             promoRewardProductLabel:
-                                              event.target.value === 'same_item' ? '' : rule.promoRewardProductLabel,
+                                              event.target.value === 'different_item' ? rule.promoRewardProductLabel : '',
                                             promoRewardVariationId:
-                                              event.target.value === 'same_item' ? '' : rule.promoRewardVariationId,
+                                              event.target.value === 'different_item' ? rule.promoRewardVariationId : '',
                                             promoRewardVariationLabel:
-                                              event.target.value === 'same_item' ? '' : rule.promoRewardVariationLabel,
+                                              event.target.value === 'different_item' ? rule.promoRewardVariationLabel : '',
                                             promoRewardUnitOptionId: '',
                                             promoRewardUnitCode: '',
                                           })
@@ -3979,10 +4242,10 @@ export default function VarAndPrice({
                                       </select>
                                     </label>
                                     <label className={styles.fieldGroup}>
-                                      <span className={styles.fieldLabel}>Reward Quantity</span>
+                                      <span className={styles.fieldLabel}>Item Reward Quantity</span>
                                       <input
                                         className={styles.input}
-                                        placeholder="Reward Quantity"
+                                        placeholder="Item Reward Quantity"
                                         value={rule.promoRewardQuantity}
                                         onChange={(event) =>
                                           updateDiscountPromo(ruleGroup.groupKey, {
@@ -4329,6 +4592,11 @@ export default function VarAndPrice({
                                 promoRewardRepeatMode: tier.promoRewardRepeatMode,
                                 promoRewardEveryQuantity: tier.promoRewardEveryQuantity,
                                 promoQualificationScope: tier.promoQualificationScope || 'line',
+                                promoGiftCheckEnabled: tier.promoGiftCheckEnabled,
+                                promoGiftCheckId: tier.promoGiftCheckId,
+                                promoGiftCheckCode: tier.promoGiftCheckCode,
+                                promoGiftCheckName: tier.promoGiftCheckName,
+                                promoGiftCheckQuantity: tier.promoGiftCheckQuantity,
                               })}</span>
                               <button
                                 type="button"
@@ -4533,7 +4801,7 @@ export default function VarAndPrice({
 
                             <div className={styles.promoSection}>
                               <label className={styles.toggleField}>
-                                <span className={styles.fieldLabel}>Enable Promo</span>
+                                <span className={styles.fieldLabel}>Enable Freebie Promo</span>
                                 <input
                                   type="checkbox"
                                   checked={tier.hasPromo}
@@ -4578,6 +4846,88 @@ export default function VarAndPrice({
                                   }
                                 />
                               </label>
+                              <label className={styles.toggleField}>
+                                <span className={styles.fieldLabel}>Add Gift Check Reward</span>
+                                <input
+                                  type="checkbox"
+                                  checked={tier.promoGiftCheckEnabled || Boolean(tier.promoGiftCheckId)}
+                                  onChange={(event) =>
+                                    setDiscountDraft((current) =>
+                                      current.map((item) =>
+                                        item.id === tier.id
+                                          ? {
+                                              ...item,
+                                              promoGiftCheckEnabled: event.target.checked,
+                                              promoGiftCheckId: event.target.checked ? item.promoGiftCheckId : '',
+                                              promoGiftCheckCode: event.target.checked ? item.promoGiftCheckCode : '',
+                                              promoGiftCheckName: event.target.checked ? item.promoGiftCheckName : '',
+                                              promoGiftCheckQuantity: event.target.checked
+                                                ? item.promoGiftCheckQuantity || '1'
+                                                : '',
+                                            }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                />
+                              </label>
+                              {tier.promoGiftCheckEnabled || tier.promoGiftCheckId ? (
+                                <div className={styles.ruleGrid}>
+                                  <select
+                                    className={styles.select}
+                                    value={tier.promoGiftCheckId}
+                                    onChange={(event) => {
+                                      const selectedGiftCheck = giftCheckOptions.find(
+                                        (option) => option.id === event.target.value,
+                                      );
+                                      setDiscountDraft((current) =>
+                                        current.map((item) =>
+                                          item.id === tier.id
+                                            ? {
+                                                ...item,
+                                                promoGiftCheckId: selectedGiftCheck?.id ?? '',
+                                                promoGiftCheckCode: selectedGiftCheck?.code ?? '',
+                                                promoGiftCheckName: selectedGiftCheck?.name ?? '',
+                                                promoGiftCheckQuantity: selectedGiftCheck
+                                                  ? item.promoGiftCheckQuantity || '1'
+                                                  : '1',
+                                              }
+                                            : item,
+                                        ),
+                                      );
+                                    }}
+                                  >
+                                    <option value="">Select Gift Check</option>
+                                    {giftCheckOptions.map((option) => (
+                                      <option key={option.id} value={option.id}>
+                                        {option.code} - {option.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <input
+                                    className={styles.input}
+                                    placeholder="Gift Check Quantity"
+                                    value={tier.promoGiftCheckQuantity}
+                                    onChange={(event) =>
+                                      setDiscountDraft((current) =>
+                                        current.map((item) =>
+                                          item.id === tier.id
+                                            ? {
+                                                ...item,
+                                                promoGiftCheckQuantity: event.target.value.replace(/[^\d.]/g, ''),
+                                              }
+                                            : item,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                  <div className={styles.readOnlyValue}>
+                                    {tier.promoGiftCheckId
+                                      ? `${tier.promoGiftCheckQuantity || '1'} ${tier.promoGiftCheckName || tier.promoGiftCheckCode}`
+                                      : 'Select a Gift Check reward'}
+                                  </div>
+                                </div>
+                              ) : null}
 
                             {tier.hasPromo ? (
                               <>
@@ -4651,7 +5001,7 @@ export default function VarAndPrice({
                                 </select>
                                 <input
                                   className={styles.input}
-                                  placeholder="Reward Quantity"
+                                  placeholder="Item Reward Quantity"
                                   value={tier.promoRewardQuantity}
                                   onChange={(event) =>
                                     setDiscountDraft((current) =>
@@ -4872,6 +5222,15 @@ export default function VarAndPrice({
                                 ) || 'Reward display preview'}
                               </div>
                               </>
+                            ) : null}
+                            {!tier.hasPromo && (tier.promoGiftCheckEnabled || tier.promoGiftCheckId) ? (
+                              <div className={styles.readOnlyValue}>
+                                {buildPromoPreview(
+                                  tier,
+                                  getUnitOptionLabel(selectedOption),
+                                  rewardUnitLabel,
+                                ) || 'Reward display preview'}
+                              </div>
                             ) : null}
                             </div>
 

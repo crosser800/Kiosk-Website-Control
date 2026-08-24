@@ -44,9 +44,11 @@ export type AccountSummaryItem = {
   assignedPermissions?: AccountPermissionSummary[];
   totalPermissionCount?: number;
   passwordStatus?: string;
+  mustChangePassword?: boolean;
   passwordChangedAt?: string;
   passwordResetAt?: string;
   updatedAt?: string;
+  themePreference?: 'light' | 'dark';
   isSystemOwner?: boolean;
   canEdit?: boolean;
   createdAt: string;
