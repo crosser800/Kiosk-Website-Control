@@ -127,6 +127,11 @@ export type DiscountItem = {
   promoRewardRepeatMode: RewardRepeatMode;
   promoRewardEveryQuantity: string;
   promoQualificationScope: QualificationScope;
+  promoGiftCheckEnabled: boolean;
+  promoGiftCheckId: string;
+  promoGiftCheckCode: string;
+  promoGiftCheckName: string;
+  promoGiftCheckQuantity: string;
 };
 
 export type SurchargeItem = {
@@ -167,4 +172,8 @@ export type SurchargeItem = {
   rewardRepeatMode: RewardRepeatMode;
   rewardEveryQuantity: string;
   qualificationScope: QualificationScope;
+  giftCheckId: string;
+  giftCheckCode: string;
+  giftCheckName: string;
+  giftCheckQuantity: string;
 };

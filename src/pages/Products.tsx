@@ -7,25 +7,59 @@ import { supabase } from '../lib/supabase';
 import styles from './Products.module.css';
 
 type ProductVariationRow = {
+  id: string;
   product_id: string | null;
   variation_name: string | null;
   class_name: string | null;
   sku_code: string | null;
+  availability: string | null;
 };
 
 function buildVariationGroupKey(variation: ProductVariationRow) {
-  const normalizedVariationName = String(
-    variation.variation_name ?? variation.class_name ?? '',
-  )
+  const normalizedVariationName = String(variation.variation_name ?? variation.class_name ?? '')
     .trim()
     .toLowerCase();
   const normalizedSku = String(variation.sku_code ?? '').trim().toLowerCase();
 
-  if (normalizedVariationName) {
-    return `name::${normalizedVariationName}`;
+  if (normalizedVariationName || normalizedSku) {
+    return `${normalizedVariationName}::${normalizedSku}`;
   }
 
-  return `sku::${normalizedSku}`;
+  return `row::${String(variation.id ?? '').trim().toLowerCase()}`;
+}
+
+function isAvailableVariation(variation: ProductVariationRow) {
+  const availability = String(variation.availability ?? '').trim().toLowerCase();
+  return !['unavailable', 'inactive', 'archived', 'deleted'].includes(availability);
+}
+
+const SUPABASE_PAGE_SIZE = 1000;
+
+async function fetchAllVariationRows() {
+  const rows: ProductVariationRow[] = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + SUPABASE_PAGE_SIZE - 1;
+    const { data, error } = await supabase
+      .from('product_variations')
+      .select('id, product_id, variation_name, class_name, sku_code, availability')
+      .order('id', { ascending: true })
+      .range(from, to);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const page = (data ?? []) as ProductVariationRow[];
+    rows.push(...page);
+
+    if (page.length < SUPABASE_PAGE_SIZE) {
+      return rows;
+    }
+
+    from += SUPABASE_PAGE_SIZE;
+  }
 }
 
 type ProductsProps = {
@@ -62,29 +96,24 @@ export default function Products({ onRegisterNavigationGuard }: ProductsProps) {
     };
 
     const loadActiveVariations = async () => {
-      const { data, error } = await supabase
-        .from('product_variations')
-        .select('product_id, variation_name, class_name, sku_code')
-        .eq('availability', 'Available');
-
-      if (error) {
+      try {
+        const data = await fetchAllVariationRows();
+        if (!disposed) {
+          const groupedVariations = new Set(
+            data
+              .filter((row) => String(row.product_id ?? '').trim() && isAvailableVariation(row))
+              .map(
+                (row) =>
+                  `${String(row.product_id).trim().toLowerCase()}::${buildVariationGroupKey(row)}`,
+              ),
+          );
+          setActiveVariations(groupedVariations.size);
+        }
+      } catch (error) {
         console.error('Products: failed to load active variation count', error);
         if (!disposed) {
           setActiveVariations(0);
         }
-        return;
-      }
-
-      if (!disposed) {
-        const groupedVariations = new Set(
-          ((data ?? []) as ProductVariationRow[])
-            .filter((row) => String(row.product_id ?? '').trim())
-            .map(
-              (row) =>
-                `${String(row.product_id).trim().toLowerCase()}::${buildVariationGroupKey(row)}`,
-            ),
-        );
-        setActiveVariations(groupedVariations.size);
       }
     };
 

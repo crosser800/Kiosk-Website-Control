@@ -48,6 +48,10 @@ const emptySurcharge: SurchargeItem = {
   rewardRepeatMode: 'one_time',
   rewardEveryQuantity: '',
   qualificationScope: 'line',
+  giftCheckId: '',
+  giftCheckCode: '',
+  giftCheckName: '',
+  giftCheckQuantity: '',
 };
 
 export default function Surcharge({ onBack, onSubmit, items, onChange, isSaving }: SurchargeProps) {

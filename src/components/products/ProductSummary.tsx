@@ -51,22 +51,29 @@ function toNumber(value: unknown) {
 }
 
 function buildVariationGroupKey(variation: Record<string, unknown>) {
-  const normalizedVariationName = String(
-    variation.variation_name ?? variation.class_name ?? '',
-  )
+  const normalizedVariationName = String(variation.variation_name ?? variation.class_name ?? '')
     .trim()
     .toLowerCase();
   const normalizedSku = String(variation.sku_code ?? '').trim().toLowerCase();
 
-  if (normalizedVariationName) {
-    return `name::${normalizedVariationName}`;
+  if (normalizedVariationName || normalizedSku) {
+    return `${normalizedVariationName}::${normalizedSku}`;
   }
 
-  return `sku::${normalizedSku}`;
+  return `row::${String(variation.id ?? '').trim().toLowerCase()}`;
+}
+
+function isAvailableVariation(variation: Record<string, unknown>) {
+  const availability = String(variation.availability ?? '').trim().toLowerCase();
+  return !['unavailable', 'inactive', 'archived', 'deleted'].includes(availability);
 }
 
 function countVariationCards(variations: Array<Record<string, unknown>>) {
-  return new Set(variations.map((variation) => buildVariationGroupKey(variation))).size;
+  return new Set(
+    variations
+      .filter(isAvailableVariation)
+      .map((variation) => buildVariationGroupKey(variation)),
+  ).size;
 }
 
 function getStatusClass(status: string) {
@@ -98,7 +105,7 @@ export default function ProductSummary({ onAddProduct, onEditProduct }: ProductS
           product_categories(category_title),
           price,
           created_at,
-          product_variations(branch_name, variation_name, class_name, price, sku_code)
+          product_variations(id, branch_name, variation_name, class_name, price, sku_code, availability)
         `)
         .order('created_at', { ascending: false });
 

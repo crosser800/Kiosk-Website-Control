@@ -38,6 +38,8 @@ export type InternalAdminProfile = {
   roleId: string;
   departmentId: string;
   mustChangePassword: boolean;
+  passwordChangedAt: string;
+  passwordResetAt: string;
   status: string;
 };
 
@@ -94,6 +96,8 @@ type RawAccount = {
   role_id?: unknown;
   department_id?: unknown;
   must_change_password?: unknown;
+  password_changed_at?: unknown;
+  password_reset_at?: unknown;
   status?: unknown;
 };
 
@@ -170,6 +174,8 @@ function mapAccount(value: unknown): InternalAdminProfile {
     roleId: text(account.role_id),
     departmentId: text(account.department_id),
     mustChangePassword: account.must_change_password === true,
+    passwordChangedAt: text(account.password_changed_at),
+    passwordResetAt: text(account.password_reset_at),
     status: text(account.status),
   };
 }

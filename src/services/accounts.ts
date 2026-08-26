@@ -122,6 +122,7 @@ type InternalAdminAccountRow = {
   full_name: string | null;
   profile_image_path: string | null;
   profile_image_url: string | null;
+  theme_preference: string | null;
   updated_at: string | null;
   birthdate: string | null;
   gender: string | null;
@@ -341,6 +342,7 @@ function mapInternalAdminRowToAccount(
   totalPermissionCount: number,
 ): AccountSummaryItem {
   const mustChangePassword = Boolean(row.must_change_password);
+  const themePreference = String(row.theme_preference ?? '').trim().toLowerCase() === 'dark' ? 'dark' : 'light';
 
   return {
     id: String(row.id),
@@ -377,9 +379,11 @@ function mapInternalAdminRowToAccount(
     assignedPermissions,
     totalPermissionCount,
     passwordStatus: mustChangePassword ? 'Default Password' : 'Password Changed',
+    mustChangePassword,
     passwordChangedAt: String(row.password_changed_at ?? '').trim(),
     passwordResetAt: String(row.password_reset_at ?? '').trim(),
     updatedAt: String(row.updated_at ?? '').trim(),
+    themePreference,
     canEdit: true,
     createdAt: String(row.created_at ?? new Date().toISOString()),
   };
@@ -514,6 +518,7 @@ async function fetchInternalAdminAccounts() {
         'full_name',
         'profile_image_path',
         'profile_image_url',
+        'theme_preference',
         'updated_at',
         'birthdate',
         'gender',
@@ -948,22 +953,22 @@ export async function updateAccountItem(accountId: string, account: AccountInput
     const currentProfileImagePath = String(currentAccount?.profile_image_path ?? '').trim();
     const currentProfileImageUrl = String(currentAccount?.profile_image_url ?? '').trim();
     let uploadedProfileImagePath = '';
+    const savedAt = new Date().toISOString();
     const payload: Record<string, unknown> = {
         full_name: account.name.trim(),
         username,
         role_id: account.roleId?.trim() || null,
         department_id: account.departmentId?.trim() || null,
         status: account.status,
+        updated_at: savedAt,
         ...internalAdminProfilePayload(account),
     };
 
     if (account.profileImageFile) {
-      const savedAt = new Date().toISOString();
       uploadedProfileImagePath = await uploadInternalAdminProfileImage(accountId, account.profileImageFile);
       payload.profile_image_path = uploadedProfileImagePath;
       payload.updated_at = savedAt;
     } else if (account.removeProfileImage) {
-      const savedAt = new Date().toISOString();
       if (currentProfileImagePath) {
         const { error: removeError } = await supabase.storage
           .from(ADMIN_PROFILE_BUCKET)
