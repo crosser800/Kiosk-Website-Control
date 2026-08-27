@@ -29,6 +29,13 @@ export default function FloatingActionMenu({ onLogout, priceLists }: Props) {
   }, [isOpen]);
 
   const openLink = (link: PriceListLink) => {
+    const viewerUrl = driveLinkToEmbedUrl(link.embedUrl);
+    if (!viewerUrl) {
+      window.open(link.embedUrl, '_blank', 'noopener,noreferrer');
+      setIsOpen(false); setArePriceListsOpen(false); setExpandedRecordId(null);
+      return;
+    }
+
     const width = Math.min(768, window.innerWidth - 32);
     const height = Math.min(672, window.innerHeight - 32);
     setViewerRect({ x: Math.max(16, window.innerWidth - width - 16), y: Math.max(16, window.innerHeight - height - 16), width, height });
