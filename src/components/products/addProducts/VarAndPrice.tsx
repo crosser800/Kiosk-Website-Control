@@ -3679,8 +3679,12 @@ export default function VarAndPrice({
                           discountContext.variationId,
                           rule.unitOptionId,
                         );
+                        const previewQuantityInBaseUnit =
+                          rule.unitCondition === 'selected_unit'
+                            ? selectedOption?.quantityInBaseUnit ?? '1'
+                            : '1';
                         const basePrice = currentCard
-                          ? getComputedUnitPrice(currentCard, discountContext.code, '1')
+                          ? getComputedUnitPrice(currentCard, discountContext.code, previewQuantityInBaseUnit)
                           : 0;
                         const stackingPreview = buildStackingPreview(ruleGroup.rows, basePrice);
                         const minBasePreview = computeBaseQuantityPreview(
