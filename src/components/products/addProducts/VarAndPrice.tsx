@@ -18,6 +18,7 @@ import {
   type PromoValidityMode,
 } from './discountLifecycle';
 import { generatePackagingSummary } from './packagingParser';
+import RewardProductSelector from './RewardProductSelector';
 import type {
   DiscountItem,
   DiscountKind,
@@ -123,14 +124,6 @@ type GiftCheckOption = {
   name: string;
   amount: number;
   status: string;
-};
-
-type RewardProductSearchItem = {
-  id: string;
-  productName: string;
-  skuCode: string;
-  brandName: string;
-  categoryName: string;
 };
 
 type RewardVariationOption = {
@@ -272,18 +265,6 @@ function getComputedUnitPrice(card: VariationCard, priceCode: PriceCode, quantit
   return basePrice * unitQuantity;
 }
 
-function getDiscountAmountPreview(
-  baseAmount: number,
-  discountType: DiscountItem['discountType'],
-  discountValue: string,
-) {
-  const amount = parseNumberInput(discountValue);
-  if (!baseAmount || !amount) {
-    return 0;
-  }
-  return discountType === 'Percent' ? baseAmount * (amount / 100) : Math.min(amount, baseAmount);
-}
-
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
 }
@@ -326,23 +307,6 @@ function pluralizeUnitLabel(unitLabel: string, quantity: string) {
   if (amount === 1 || trimmed.endsWith('s')) return trimmed;
   if (trimmed.endsWith('x') || trimmed.endsWith('ch') || trimmed.endsWith('sh')) return `${trimmed}es`;
   return `${trimmed}s`;
-}
-
-function formatSignedValue(type: DiscountItem['discountType'] | SurchargeItem['surchargeType'], value: string) {
-  if (!value) {
-    return '-';
-  }
-  if (type === 'Percent') {
-    return `-${value}%`;
-  }
-  return `-${formatCurrency(parseNumberInput(value))}`;
-}
-
-function formatQuantityLabel(quantity: string, unitCode: string) {
-  if (!quantity) {
-    return unitCode || 'unit';
-  }
-  return `${quantity} ${unitCode || 'unit'}`;
 }
 
 function toVariationCards(items: VariationItem[]): VariationCard[] {
@@ -792,13 +756,11 @@ export default function VarAndPrice({
   const [dragOverDiscountStackId, setDragOverDiscountStackId] = useState<string | null>(null);
   const [pendingRemoveDiscountGroupId, setPendingRemoveDiscountGroupId] = useState<string | null>(null);
   const [pendingDisablePromoGroupId, setPendingDisablePromoGroupId] = useState<string | null>(null);
-  const [rewardSearchResults, setRewardSearchResults] = useState<Record<string, RewardProductSearchItem[]>>({});
-  const [rewardVariationOptions, setRewardVariationOptions] = useState<Record<string, RewardVariationOption[]>>({});
   const [rewardUnitOptions, setRewardUnitOptions] = useState<Record<string, VariationUnitOptionItem[]>>({});
   const [giftCheckOptions, setGiftCheckOptions] = useState<GiftCheckOption[]>([]);
-  const [, setRewardSearchLoading] = useState<Record<string, boolean>>({});
-  const [, setRewardVariationLoading] = useState<Record<string, boolean>>({});
   const [, setRewardUnitLoading] = useState<Record<string, boolean>>({});
+  const [rewardSelectorRowId, setRewardSelectorRowId] = useState<string | null>(null);
+  const rewardSelectorRow = discountDraft.find((item) => item.id === rewardSelectorRowId) ?? null;
 
   useEffect(() => {
     let disposed = false;
@@ -853,35 +815,7 @@ export default function VarAndPrice({
   }, [isVariationModalOpen]);
 
   useEffect(() => {
-    const activeSearchRows = discountDraft.filter(
-      (item) =>
-        item.hasPromo &&
-        item.promoRewardTargetType === 'different_item' &&
-        item.promoRewardSearchQuery.trim().length >= 2,
-    );
-    if (activeSearchRows.length === 0) {
-      return;
-    }
-
-    const timeout = window.setTimeout(() => {
-      activeSearchRows.forEach((row) => {
-        void searchRewardProducts(row.id, row.promoRewardSearchQuery.trim());
-      });
-    }, 250);
-
-    return () => window.clearTimeout(timeout);
-  }, [discountDraft]);
-
-  useEffect(() => {
     discountDraft.forEach((row) => {
-      if (
-        row.hasPromo &&
-        row.promoRewardTargetType === 'different_item' &&
-        row.promoRewardProductId &&
-        !rewardVariationOptions[row.id]
-      ) {
-        void loadRewardVariations(row.id, row.promoRewardProductId);
-      }
       if (
         row.hasPromo &&
         row.promoRewardTargetType === 'different_item' &&
@@ -900,13 +834,33 @@ export default function VarAndPrice({
       }
       if (
         row.hasPromo &&
+        row.promoRewardTargetType === 'different_item' &&
         row.promoRewardVariationId &&
         !rewardUnitOptions[row.id]
       ) {
         void loadRewardUnitOptions(row.id, row.promoRewardVariationId);
       }
+      if (
+        row.hasPromo &&
+        row.promoRewardTargetType === 'same_product_different_variant' &&
+        row.promoRewardVariationId &&
+        !cards.some((card) => card.id === row.promoRewardVariationId)
+      ) {
+        const ownerCard = cards.find((card) =>
+          Object.values(card.rowIds).some((rowId) => rowId === row.promoRewardVariationId),
+        );
+        if (ownerCard) {
+          setDiscountDraft((current) =>
+            current.map((item) =>
+              item.id === row.id
+                ? { ...item, promoRewardVariationId: ownerCard.id, promoRewardVariationLabel: ownerCard.variationName }
+                : item,
+            ),
+          );
+        }
+      }
     });
-  }, [discountDraft, rewardVariationOptions, rewardUnitOptions]);
+  }, [discountDraft, rewardUnitOptions, cards]);
 
   useEffect(() => {
     if (cards.length === 0) {
@@ -972,38 +926,6 @@ export default function VarAndPrice({
     onChange(flattenCards(nextCards));
   }
 
-  async function searchRewardProducts(rowId: string, query: string) {
-    setRewardSearchLoading((current) => ({ ...current, [rowId]: true }));
-    const { data, error } = await supabase
-      .from('products')
-      .select(
-        'id, product_name, sku_code, status, brands(brand_name), product_categories(category_title)',
-      )
-      .or(`product_name.ilike.%${query}%,sku_code.ilike.%${query}%`)
-      .eq('status', 'Active')
-      .limit(10);
-
-    if (error) {
-      setRewardSearchResults((current) => ({ ...current, [rowId]: [] }));
-      setRewardSearchLoading((current) => ({ ...current, [rowId]: false }));
-      return;
-    }
-
-    const mapped = ((data ?? []) as Array<Record<string, any>>).map((row) => ({
-      id: String(row.id),
-      productName: String(row.product_name ?? ''),
-      skuCode: String(row.sku_code ?? ''),
-      brandName: Array.isArray(row.brands)
-        ? String(row.brands[0]?.brand_name ?? '')
-        : String(row.brands?.brand_name ?? ''),
-      categoryName: Array.isArray(row.product_categories)
-        ? String(row.product_categories[0]?.category_title ?? '')
-        : String(row.product_categories?.category_title ?? ''),
-    }));
-    setRewardSearchResults((current) => ({ ...current, [rowId]: mapped }));
-    setRewardSearchLoading((current) => ({ ...current, [rowId]: false }));
-  }
-
   async function loadRewardProductDetails(rowId: string, productId: string) {
     const { data } = await supabase
       .from('products')
@@ -1026,34 +948,6 @@ export default function VarAndPrice({
           : item,
       ),
     );
-  }
-
-  async function loadRewardVariations(rowId: string, productId: string) {
-    setRewardVariationLoading((current) => ({ ...current, [rowId]: true }));
-    const { data, error } = await supabase
-      .from('product_variations')
-      .select('id, variation_name, class_name, branch_name, price_type, price_code')
-      .eq('product_id', productId)
-      .order('sort_order', { ascending: true });
-
-    if (error) {
-      setRewardVariationOptions((current) => ({ ...current, [rowId]: [] }));
-      setRewardVariationLoading((current) => ({ ...current, [rowId]: false }));
-      return;
-    }
-
-    const mapped = ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-      id: String(row.id ?? ''),
-      label: [
-        String(row.variation_name ?? row.class_name ?? 'Variation'),
-        String(row.price_code ?? ''),
-        String(row.branch_name ?? ''),
-      ]
-        .filter(Boolean)
-        .join(' • '),
-    }));
-    setRewardVariationOptions((current) => ({ ...current, [rowId]: mapped }));
-    setRewardVariationLoading((current) => ({ ...current, [rowId]: false }));
   }
 
   async function loadRewardVariationDetails(rowId: string, variationId: string) {
@@ -1332,6 +1226,18 @@ export default function VarAndPrice({
     );
   }
 
+  function getSameProductRewardVariationOptions(
+    excludeVariationId: string,
+    priceCode: PriceCode,
+  ): RewardVariationOption[] {
+    return cards
+      .filter((card) => card.id !== excludeVariationId && Boolean(card.rowIds[priceCode]))
+      .map((card) => ({
+        id: card.id,
+        label: card.baseSku ? `${card.variationName} (${card.baseSku})` : card.variationName,
+      }));
+  }
+
   function getUnitOptionLabel(option?: VariationUnitOptionItem | null) {
     return option?.unitLabel?.trim() || option?.unitCode?.trim() || 'unit';
   }
@@ -1367,6 +1273,13 @@ export default function VarAndPrice({
         tier.promoRewardUnitCode,
       );
     }
+    if (tier.promoRewardTargetType === 'same_product_different_variant') {
+      return getDraftUnitOption(
+        tier.promoRewardVariationId,
+        tier.promoRewardUnitOptionId,
+        tier.promoRewardUnitCode,
+      );
+    }
     return (
       (rewardUnitOptions[rowId] ?? []).find((item) => item.id === tier.promoRewardUnitOptionId) ??
       (rewardUnitOptions[rowId] ?? []).find((item) => item.unitCode === tier.promoRewardUnitCode) ??
@@ -1395,23 +1308,6 @@ export default function VarAndPrice({
     return `${baseQty} ${option.baseUnitCode || option.unitCode}`;
   }
 
-  function buildDiscountSummary(item: DiscountItem) {
-    const valueLabel = formatSignedValue(item.discountType, item.amount);
-    const promoLabel =
-      item.hasPromo && item.promoRewardQuantity && item.promoRewardUnitCode
-        ? ` + free ${item.promoRewardQuantity} ${item.promoRewardUnitCode}`
-        : '';
-    if (item.unitCondition === 'selected_unit') {
-      const option = getDraftUnitOption(item.variationId, item.unitOptionId, item.orderUnitCode);
-      const unitLabel = getUnitOptionLabel(option) || item.orderUnitCode || 'unit';
-      const minQty = item.minOrderQuantity || item.minQuantity || '1';
-      if (minQty && Number(minQty) > 1) {
-        return `${valueLabel} when min ${formatQuantityLabel(minQty, unitLabel)}${promoLabel}`;
-      }
-      return `${valueLabel} applies to ${unitLabel} order${promoLabel}`;
-    }
-    return `${valueLabel} applies to any unit${promoLabel}`;
-  }
 
   function buildPromoPreview(
     tier: DiscountDraftRow,
@@ -1437,8 +1333,11 @@ export default function VarAndPrice({
     }
     const targetLabel =
       tier.promoRewardTargetType === 'same_item'
-        ? 'this item'
-        : tier.promoRewardProductLabel || 'selected item';
+        ? 'the same variation'
+        : tier.promoRewardTargetType === 'same_product_different_variant'
+          ? `${tier.promoRewardVariationLabel || 'another variation'} from the same product`
+          : [tier.promoRewardProductLabel, tier.promoRewardVariationLabel].filter(Boolean).join(' – ') ||
+            'selected item';
     const qualificationLabel = tier.promoQualificationScope === 'assorted_same_product'
       ? `Assorted ${tier.minOrderQuantity || '1'} ${orderUnitLabel} across variations`
       : `Buy at least ${tier.minOrderQuantity || '1'} ${orderUnitLabel}`;
@@ -1625,6 +1524,30 @@ export default function VarAndPrice({
       )
     ) {
       return 'Select a reward unit from this item.';
+    }
+    if (
+      rule.hasPromo &&
+      rule.promoRewardTargetType === 'same_product_different_variant' &&
+      (!rule.promoRewardVariationId ||
+        !discountContext ||
+        !getSameProductRewardVariationOptions(discountContext.variationId, discountContext.code).some(
+          (option) => option.id === rule.promoRewardVariationId,
+        ))
+    ) {
+      return 'Select a valid reward variation from this product.';
+    }
+    if (
+      rule.hasPromo &&
+      rule.promoRewardTargetType === 'same_product_different_variant' &&
+      rule.promoRewardVariationId &&
+      (!rule.promoRewardUnitOptionId ||
+        !getOrderableUnitOptions(rule.promoRewardVariationId).some(
+          (option) =>
+            option.id === rule.promoRewardUnitOptionId ||
+            option.unitCode.trim().toLowerCase() === rule.promoRewardUnitCode.trim().toLowerCase(),
+        ))
+    ) {
+      return 'Select a reward unit that belongs to the selected reward variation.';
     }
     if (
       rule.hasPromo &&
@@ -1963,22 +1886,6 @@ export default function VarAndPrice({
     setDiscountDraft((current) => normalizeAllDiscountRules(current.filter((item) => item.id !== rowId)));
   }
 
-  function moveDiscountStack(rowId: string, direction: -1 | 1) {
-    setDiscountDraft((current) => {
-      const group = getDiscountRuleGroups(current).find((item) =>
-        item.rows.some((row) => row.id === rowId),
-      );
-      if (!group) return current;
-      const stackIndex = group.rows.findIndex((row) => row.id === rowId);
-      const targetIndex = stackIndex + direction;
-      if (targetIndex < 0 || targetIndex >= group.rows.length) return current;
-      const nextGroupRows = group.rows.slice();
-      const [item] = nextGroupRows.splice(stackIndex, 1);
-      nextGroupRows.splice(targetIndex, 0, item);
-      return replaceDiscountGroupRows(current, group.groupKey, nextGroupRows);
-    });
-  }
-
   function reorderDiscountStack(draggedId: string, targetId: string) {
     if (!draggedId || draggedId === targetId) return;
 
@@ -2040,36 +1947,6 @@ export default function VarAndPrice({
   function clearDiscountStackDragState() {
     setDraggingDiscountStackId(null);
     setDragOverDiscountStackId(null);
-  }
-
-  function addStackedDiscountRule() {
-    const firstGroup = getDiscountRuleGroups()[0];
-    if (firstGroup) {
-      addDiscountStack(firstGroup.groupKey);
-    }
-  }
-
-  function removeDiscountDraftRow(rowId: string) {
-    removeDiscountStack(rowId);
-  }
-
-  function moveDiscountDraftRow(rowId: string, direction: -1 | 1) {
-    moveDiscountStack(rowId, direction);
-  }
-
-  function setStackingEnabled(enabled: boolean) {
-    const firstGroup = getDiscountRuleGroups()[0];
-    if (enabled && firstGroup && firstGroup.rows.length === 1) {
-      addDiscountStack(firstGroup.groupKey);
-    }
-    if (!enabled && firstGroup && firstGroup.rows.length > 1) {
-      setDiscountDraft((current) =>
-        normalizeAllDiscountRules([
-          firstGroup.rows[0],
-          ...current.filter((row) => getDraftRuleKey(row) !== firstGroup.groupKey),
-        ]),
-      );
-    }
   }
 
   function getCardBaseUnitCode(cardId: string) {
@@ -2450,6 +2327,29 @@ export default function VarAndPrice({
       if (
         item.adjustmentKind === 'Discount' &&
         item.hasPromo &&
+        item.promoRewardTargetType === 'same_product_different_variant' &&
+        !getSameProductRewardVariationOptions(discountContext.variationId, discountContext.code).some(
+          (option) => option.id === item.promoRewardVariationId,
+        )
+      ) {
+        return `${label}: Select a valid reward variation from this product before saving.`;
+      }
+      if (
+        item.adjustmentKind === 'Discount' &&
+        item.hasPromo &&
+        item.promoRewardTargetType === 'same_product_different_variant' &&
+        item.promoRewardVariationId &&
+        !getOrderableUnitOptions(item.promoRewardVariationId).some(
+          (option) =>
+            option.id === item.promoRewardUnitOptionId ||
+            option.unitCode.trim().toLowerCase() === item.promoRewardUnitCode.trim().toLowerCase(),
+        )
+      ) {
+        return `${label}: Select a reward unit that belongs to the selected reward variation before saving.`;
+      }
+      if (
+        item.adjustmentKind === 'Discount' &&
+        item.hasPromo &&
         !item.promoRewardUnitCode
       ) {
         return `${label}: Select a reward unit before saving.`;
@@ -2602,9 +2502,12 @@ export default function VarAndPrice({
               ? `free ${item.promoRewardQuantity} ${promoRewardUnitCode}${
                   item.promoRewardTargetType === 'different_item' && item.promoRewardProductLabel
                     ? ` of ${item.promoRewardProductLabel}`
-                    : item.promoRewardTargetType === 'same_item'
-                      ? ' of this item'
-                      : ''
+                    : item.promoRewardTargetType === 'same_product_different_variant' &&
+                        item.promoRewardVariationLabel
+                      ? ` of ${item.promoRewardVariationLabel} (same product)`
+                      : item.promoRewardTargetType === 'same_item'
+                        ? ' of this item'
+                        : ''
                 }`
               : '',
           promoSourceSurchargeId: '',
@@ -2618,11 +2521,15 @@ export default function VarAndPrice({
               ? item.promoRewardProductLabel
               : '',
           promoRewardVariationId:
-            item.hasPromo && item.promoRewardTargetType === 'different_item'
+            item.hasPromo &&
+            (item.promoRewardTargetType === 'different_item' ||
+              item.promoRewardTargetType === 'same_product_different_variant')
               ? item.promoRewardVariationId
               : '',
           promoRewardVariationLabel:
-            item.hasPromo && item.promoRewardTargetType === 'different_item'
+            item.hasPromo &&
+            (item.promoRewardTargetType === 'different_item' ||
+              item.promoRewardTargetType === 'same_product_different_variant')
               ? item.promoRewardVariationLabel
               : '',
           promoRewardUnitOptionId,
@@ -3600,9 +3507,6 @@ export default function VarAndPrice({
               const pendingDisablePromoName =
                 pendingDisablePromoGroup?.rows[0]?.discountName.trim() ||
                 (pendingDisablePromoIndex >= 0 ? `Discount ${pendingDisablePromoIndex + 1}` : 'selected discount');
-              const activeTier: DiscountDraftRow | null =
-                discountDraft.find((item) => item.id === activeDiscountTabId) ?? discountDraft[0] ?? null;
-              const stackingEnabled = false;
               return (
                 <>
                   <div className={styles.modalHeader}>
@@ -3704,6 +3608,13 @@ export default function VarAndPrice({
                           getUnitOptionLabel(rewardUnitOption) ||
                           rule.promoRewardUnitCode ||
                           'unit';
+                        const sameProductRewardVariationOptions = getSameProductRewardVariationOptions(
+                          discountContext.variationId,
+                          discountContext.code,
+                        );
+                        const sameProductRewardUnitOptions = rule.promoRewardVariationId
+                          ? getOrderableUnitOptions(rule.promoRewardVariationId)
+                          : [];
                         const discountRulePreview = buildDiscountRulePreview(
                           rule,
                           ruleGroup.rows,
@@ -4213,21 +4124,19 @@ export default function VarAndPrice({
                                         onChange={(event) =>
                                           updateDiscountPromo(ruleGroup.groupKey, {
                                             promoRewardTargetType: event.target.value as RewardTargetType,
-                                            promoRewardProductId:
-                                              event.target.value === 'different_item' ? rule.promoRewardProductId : '',
-                                            promoRewardProductLabel:
-                                              event.target.value === 'different_item' ? rule.promoRewardProductLabel : '',
-                                            promoRewardVariationId:
-                                              event.target.value === 'different_item' ? rule.promoRewardVariationId : '',
-                                            promoRewardVariationLabel:
-                                              event.target.value === 'different_item' ? rule.promoRewardVariationLabel : '',
+                                            promoRewardProductId: '',
+                                            promoRewardProductLabel: '',
+                                            promoRewardVariationId: '',
+                                            promoRewardVariationLabel: '',
                                             promoRewardUnitOptionId: '',
                                             promoRewardUnitCode: '',
+                                            promoRewardSearchQuery: '',
                                           })
                                         }
                                       >
-                                        <option value="same_item">Same item</option>
-                                        <option value="different_item">Different item</option>
+                                        <option value="same_item">Same Product – Same Variant</option>
+                                        <option value="same_product_different_variant">Same Product – Different Variant</option>
+                                        <option value="different_item">Different Product</option>
                                       </select>
                                     </label>
                                     <label className={styles.fieldGroup}>
@@ -4330,109 +4239,90 @@ export default function VarAndPrice({
                                         </div>
                                       </div>
                                     </div>
-                                  ) : (
-                                    <>
-                                      <div className={styles.ruleGrid}>
-                                        <label className={styles.fieldGroup}>
-                                          <span className={styles.fieldLabel}>Search Reward Product</span>
-                                          <input
-                                            className={styles.input}
-                                            placeholder="Search Reward Product"
-                                            value={rule.promoRewardSearchQuery}
-                                            onChange={(event) =>
-                                              updateDiscountPromo(ruleGroup.groupKey, {
-                                                promoRewardSearchQuery: event.target.value,
-                                              })
-                                            }
-                                          />
-                                        </label>
-                                        <div className={styles.fieldGroup}>
-                                          <span className={styles.fieldLabel}>Selected Reward Product</span>
-                                          <div className={styles.readOnlyValue}>
-                                            {rule.promoRewardProductLabel || 'No reward product selected'}
-                                          </div>
-                                        </div>
-                                      </div>
-                                      {(rewardSearchResults[rule.id]?.length ?? 0) > 0 ? (
-                                        <div className={styles.searchResults}>
-                                          {rewardSearchResults[rule.id].map((result) => (
-                                            <button
-                                              key={result.id}
-                                              type="button"
-                                              className={styles.searchResultItem}
-                                              onClick={() => {
-                                                updateDiscountPromo(ruleGroup.groupKey, {
-                                                  promoRewardProductId: result.id,
-                                                  promoRewardProductLabel: result.productName,
-                                                  promoRewardVariationId: '',
-                                                  promoRewardVariationLabel: '',
-                                                  promoRewardUnitOptionId: '',
-                                                  promoRewardUnitCode: '',
-                                                  promoRewardSearchQuery: result.productName,
-                                                });
-                                                setRewardVariationOptions((current) => ({ ...current, [rule.id]: [] }));
-                                                setRewardUnitOptions((current) => ({ ...current, [rule.id]: [] }));
-                                                void loadRewardVariations(rule.id, result.id);
-                                              }}
-                                            >
-                                              {result.productName} {result.skuCode ? `(${result.skuCode})` : ''}
-                                            </button>
+                                  ) : rule.promoRewardTargetType === 'same_product_different_variant' ? (
+                                    <div className={styles.ruleGrid}>
+                                      <label className={styles.fieldGroup}>
+                                        <span className={styles.fieldLabel}>Reward Variation</span>
+                                        <select
+                                          className={styles.select}
+                                          value={rule.promoRewardVariationId}
+                                          onChange={(event) => {
+                                            const selectedCard = sameProductRewardVariationOptions.find(
+                                              (option) => option.id === event.target.value,
+                                            );
+                                            updateDiscountPromo(ruleGroup.groupKey, {
+                                              promoRewardVariationId: event.target.value,
+                                              promoRewardVariationLabel: selectedCard?.label ?? '',
+                                              promoRewardUnitOptionId: '',
+                                              promoRewardUnitCode: '',
+                                            });
+                                          }}
+                                        >
+                                          <option value="">Select reward variation</option>
+                                          {sameProductRewardVariationOptions.map((option) => (
+                                            <option key={option.id} value={option.id}>
+                                              {option.label}
+                                            </option>
                                           ))}
+                                        </select>
+                                        {sameProductRewardVariationOptions.length === 0 ? (
+                                          <p className={styles.ruleNote}>
+                                            No other reward variation available for this product.
+                                          </p>
+                                        ) : null}
+                                      </label>
+                                      <label className={styles.fieldGroup}>
+                                        <span className={styles.fieldLabel}>Reward Unit</span>
+                                        <select
+                                          className={styles.select}
+                                          value={rule.promoRewardUnitOptionId}
+                                          disabled={!rule.promoRewardVariationId}
+                                          onChange={(event) =>
+                                            updateDiscountPromo(ruleGroup.groupKey, {
+                                              promoRewardUnitOptionId: event.target.value,
+                                              promoRewardUnitCode:
+                                                sameProductRewardUnitOptions.find((option) => option.id === event.target.value)?.unitCode ?? '',
+                                            })
+                                          }
+                                        >
+                                          <option value="">Select reward unit</option>
+                                          {sameProductRewardUnitOptions.map((option) => (
+                                            <option key={option.id} value={option.id}>
+                                              {getUnitOptionLabel(option)}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </label>
+                                    </div>
+                                  ) : (
+                                    <div className={styles.ruleGrid}>
+                                      <div className={styles.fieldGroup}>
+                                        <span className={styles.fieldLabel}>Selected Reward</span>
+                                        <div className={styles.readOnlyValue}>
+                                          {rule.promoRewardProductLabel ? (
+                                            <>
+                                              <div>{rule.promoRewardProductLabel}</div>
+                                              <div>
+                                                {rule.promoRewardVariationLabel || 'No variation selected'}
+                                                {rewardUnitLabel ? ` • ${rewardUnitLabel}` : ''}
+                                              </div>
+                                            </>
+                                          ) : (
+                                            'No reward selected'
+                                          )}
                                         </div>
-                                      ) : null}
-                                      <div className={styles.ruleGrid}>
-                                        <label className={styles.fieldGroup}>
-                                          <span className={styles.fieldLabel}>Reward Variation</span>
-                                          <select
-                                            className={styles.select}
-                                            value={rule.promoRewardVariationId}
-                                            onChange={(event) => {
-                                              const selectedVariation = (rewardVariationOptions[rule.id] ?? []).find(
-                                                (option) => option.id === event.target.value,
-                                              );
-                                              updateDiscountPromo(ruleGroup.groupKey, {
-                                                promoRewardVariationId: event.target.value,
-                                                promoRewardVariationLabel: selectedVariation?.label ?? '',
-                                                promoRewardUnitOptionId: '',
-                                                promoRewardUnitCode: '',
-                                              });
-                                              setRewardUnitOptions((current) => ({ ...current, [rule.id]: [] }));
-                                              if (event.target.value) {
-                                                void loadRewardUnitOptions(rule.id, event.target.value);
-                                              }
-                                            }}
-                                          >
-                                            <option value="">Select reward variation</option>
-                                            {(rewardVariationOptions[rule.id] ?? []).map((option) => (
-                                              <option key={option.id} value={option.id}>
-                                                {option.label}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </label>
-                                        <label className={styles.fieldGroup}>
-                                          <span className={styles.fieldLabel}>Reward Unit</span>
-                                          <select
-                                            className={styles.select}
-                                            value={rule.promoRewardUnitOptionId}
-                                            onChange={(event) =>
-                                              updateDiscountPromo(ruleGroup.groupKey, {
-                                                promoRewardUnitOptionId: event.target.value,
-                                                promoRewardUnitCode:
-                                                  (rewardUnitOptions[rule.id] ?? []).find((option) => option.id === event.target.value)?.unitCode ?? '',
-                                              })
-                                            }
-                                          >
-                                            <option value="">Select reward unit</option>
-                                            {(rewardUnitOptions[rule.id] ?? []).map((option) => (
-                                              <option key={option.id} value={option.id}>
-                                                {getUnitOptionLabel(option)}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </label>
                                       </div>
-                                    </>
+                                      <div className={styles.fieldGroup}>
+                                        <span className={styles.fieldLabel}>&nbsp;</span>
+                                        <button
+                                          type="button"
+                                          className={styles.secondaryAction}
+                                          onClick={() => setRewardSelectorRowId(rule.id)}
+                                        >
+                                          {rule.promoRewardProductLabel ? 'Change Reward' : 'Select Reward'}
+                                        </button>
+                                      </div>
+                                    </div>
                                   )}
                                   <div className={styles.fieldGroup}>
                                     <span className={styles.fieldLabel}>Reward Display Preview</span>
@@ -4467,812 +4357,6 @@ export default function VarAndPrice({
                           </div>
                         </div>
                       )}
-                    </div>
-
-                    <div className={styles.ruleTabsHeader} style={{ display: 'none' }}>
-                      <div className={styles.ruleTabs}>
-                        {discountDraft.map((tier, index) => (
-                          <button
-                            key={tier.id}
-                            type="button"
-                            className={`${styles.ruleTab} ${
-                              activeDiscountTabId === tier.id ? styles.ruleTabActive : ''
-                            }`}
-                            onClick={() => setActiveDiscountTabId(tier.id)}
-                          >
-                            {tier.discountName.trim() || `Discount ${index + 1}`}
-                          </button>
-                        ))}
-                      </div>
-                      {stackingEnabled ? (
-                        <button
-                          type="button"
-                          className={styles.secondaryAction}
-                          onClick={addStackedDiscountRule}
-                        >
-                          + Add Another Stacked Discount
-                        </button>
-                      ) : null}
-                    </div>
-
-                    <div className={styles.ruleList} style={{ display: 'none' }}>
-                      {activeTier ? (() => {
-                        const tier = activeTier;
-                        const index = discountDraft.findIndex((item) => item.id === tier.id);
-                        const selectedOption = getDraftUnitOption(
-                          discountContext.variationId,
-                          tier.unitOptionId,
-                        );
-                        const discountBasisQuantity =
-                          tier.unitCondition === 'selected_unit' && selectedOption
-                            ? selectedOption.quantityInBaseUnit
-                            : '1';
-                        const discountBasisUnit =
-                          tier.unitCondition === 'selected_unit' && selectedOption
-                            ? getUnitOptionLabel(selectedOption)
-                            : getCardBaseUnitCode(discountContext.variationId);
-                        const discountBasisPrice = currentCard
-                          ? getComputedUnitPrice(
-                              currentCard,
-                              discountContext.code,
-                              discountBasisQuantity,
-                            )
-                          : 0;
-                        const chainBasePrice = currentCard
-                          ? getComputedUnitPrice(currentCard, discountContext.code, '1')
-                          : 0;
-                        const discountAmountPreview = getDiscountAmountPreview(
-                          discountBasisPrice,
-                          tier.discountType,
-                          tier.amount,
-                        );
-                        const stackingPreview = buildStackingPreview(discountDraft, chainBasePrice);
-                        const rewardUnitOption = getRewardUnitOption(tier.id, tier);
-                        const rewardUnitLabel =
-                          getUnitOptionLabel(rewardUnitOption) ||
-                          tier.promoRewardUnitCode ||
-                          'unit';
-                        const minBasePreview = computeBaseQuantityPreview(
-                          discountContext.variationId,
-                          tier.unitCondition,
-                          tier.unitOptionId,
-                          tier.minOrderQuantity,
-                        );
-                        const maxBasePreview = computeBaseQuantityPreview(
-                          discountContext.variationId,
-                          tier.unitCondition,
-                          tier.unitOptionId,
-                          tier.maxOrderQuantity,
-                        );
-                        return (
-                          <div key={tier.id} className={styles.ruleCard}>
-                            <div className={styles.ruleCardHeader}>
-                              <span className={styles.rowIndex}>{index + 1}</span>
-                              <span className={styles.ruleSummary}>{buildDiscountSummary({
-                                id: tier.id,
-                                discountRecordId: '',
-                                discountClassId: '',
-                                variationId: discountContext.variationId,
-                                discountKind: tier.discountKind,
-                                discountName: tier.discountName,
-                                discountType: tier.discountType,
-                                amount: tier.amount,
-                                minQuantity: tier.minOrderQuantity,
-                                maxQuantity: tier.maxOrderQuantity,
-                                branchName: '' as DiscountItem['branchName'],
-                                priceType: '' as DiscountItem['priceType'],
-                                priceCode: '' as DiscountItem['priceCode'],
-                                calculationMethod: tier.calculationMethod,
-                                applySequence: tier.applySequence || String(index + 1),
-                                discountGroup: tier.discountGroup,
-                                appliesTo: 'UnitPrice',
-                                stackable: tier.stackable,
-                                description: '',
-                                status: tier.status,
-                                priority: String(index),
-                                startsAt: tier.startsAt,
-                                endsAt: tier.endsAt,
-                                unitOptionId: tier.unitOptionId,
-                                orderUnitCode: selectedOption?.unitCode ?? '',
-                                unitCondition: tier.unitCondition,
-                                minOrderQuantity: tier.minOrderQuantity,
-                                maxOrderQuantity: tier.maxOrderQuantity,
-                                minBaseQuantity: minBasePreview.split(' ')[0] || '',
-                                maxBaseQuantity: maxBasePreview.split(' ')[0] || '',
-                                unitRuleLabel: '',
-                                unitRuleNotes: '',
-                                hasPromo: tier.hasPromo,
-                                promoType: tier.promoType,
-                                promoRewardUnitCode: tier.promoRewardUnitCode,
-                                promoRewardQuantity: tier.promoRewardQuantity,
-                                promoRewardLabel: '',
-                                promoSourceSurchargeId: '',
-                                promoRewardTargetType: tier.promoRewardTargetType,
-                                promoRewardProductId: tier.promoRewardProductId,
-                                promoRewardProductLabel: tier.promoRewardProductLabel,
-                                promoRewardVariationId: tier.promoRewardVariationId,
-                                promoRewardVariationLabel: tier.promoRewardVariationLabel,
-                                promoRewardUnitOptionId: tier.promoRewardUnitOptionId,
-                                promoRewardRepeatMode: tier.promoRewardRepeatMode,
-                                promoRewardEveryQuantity: tier.promoRewardEveryQuantity,
-                                promoQualificationScope: tier.promoQualificationScope || 'line',
-                                promoGiftCheckEnabled: tier.promoGiftCheckEnabled,
-                                promoGiftCheckId: tier.promoGiftCheckId,
-                                promoGiftCheckCode: tier.promoGiftCheckCode,
-                                promoGiftCheckName: tier.promoGiftCheckName,
-                                promoGiftCheckQuantity: tier.promoGiftCheckQuantity,
-                              })}</span>
-                              <button
-                                type="button"
-                                className={styles.deleteAction}
-                                onClick={() => removeDiscountDraftRow(tier.id)}
-                                disabled={index === 0}
-                              >
-                                Remove
-                              </button>
-                              {stackingEnabled ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    className={styles.secondaryAction}
-                                    onClick={() => moveDiscountDraftRow(tier.id, -1)}
-                                    disabled={index === 0}
-                                  >
-                                    Move Up
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={styles.secondaryAction}
-                                    onClick={() => moveDiscountDraftRow(tier.id, 1)}
-                                    disabled={index === discountDraft.length - 1}
-                                  >
-                                    Move Down
-                                  </button>
-                                </>
-                              ) : null}
-                            </div>
-
-                            <div className={styles.discountBasisPreview}>
-                              <span>
-                                <strong>{discountContext.code} basis:</strong>{' '}
-                                {formatCurrency(discountBasisPrice)} per {discountBasisUnit}
-                              </span>
-                              <span>
-                                <strong>Discount preview:</strong>{' '}
-                                {discountAmountPreview
-                                  ? `${formatCurrency(discountAmountPreview)} off`
-                                  : '-'}
-                              </span>
-                            </div>
-
-                            {stackingEnabled ? (
-                              <div className={styles.discountBasisPreview}>
-                                <span><strong>Base Price:</strong> {formatCurrency(chainBasePrice)}</span>
-                                {stackingPreview.steps.map((step, stepIndex) => (
-                                  <span key={step.id}>
-                                    <strong>Rule {stepIndex + 1}: {step.label}</strong>{' '}
-                                    {formatCurrency(step.before)} -&gt; {formatCurrency(step.after)}
-                                  </span>
-                                ))}
-                                <span><strong>Final Price:</strong> {formatCurrency(stackingPreview.finalPrice)}</span>
-                                <span><strong>Total Discount:</strong> {formatCurrency(stackingPreview.totalDiscount)}</span>
-                                <span><strong>Effective Discount:</strong> {stackingPreview.effectiveDiscount}%</span>
-                              </div>
-                            ) : null}
-
-                            <div className={styles.ruleGrid}>
-                              <input
-                                className={styles.input}
-                                placeholder="Discount Name"
-                                value={tier.discountName}
-                                onChange={(event) =>
-                                  setDiscountDraft((current) =>
-                                    current.map((item) =>
-                                      item.id === tier.id ? { ...item, discountName: event.target.value } : item,
-                                    ),
-                                  )
-                                }
-                              />
-                              <select
-                                className={styles.select}
-                                value={tier.discountType}
-                                onChange={(event) =>
-                                  setDiscountDraft((current) =>
-                                    current.map((item) =>
-                                      item.id === tier.id
-                                        ? { ...item, discountType: event.target.value as DiscountItem['discountType'] }
-                                        : item,
-                                    ),
-                                  )
-                                }
-                              >
-                                <option value="Percent">Percent (%)</option>
-                                <option value="Amount">Amount (Net)</option>
-                              </select>
-                              <input
-                                className={styles.input}
-                                placeholder={tier.discountType === 'Percent' ? 'Discount %' : 'Discount Amount'}
-                                value={tier.amount}
-                                onChange={(event) =>
-                                  setDiscountDraft((current) =>
-                                    current.map((item) =>
-                                      item.id === tier.id ? { ...item, amount: event.target.value } : item,
-                                    ),
-                                  )
-                                }
-                              />
-                              <select
-                                className={styles.select}
-                                value={tier.unitCondition}
-                                onChange={(event) =>
-                                  setDiscountDraft((current) =>
-                                    current.map((item) =>
-                                      item.id === tier.id
-                                        ? {
-                                            ...item,
-                                            unitCondition: event.target.value as UnitCondition,
-                                            unitOptionId:
-                                              event.target.value === 'selected_unit'
-                                                ? item.unitOptionId
-                                                : '',
-                                          }
-                                        : item,
-                                    ),
-                                  )
-                                }
-                              >
-                                <option value="any_unit">Any unit</option>
-                                <option value="selected_unit">Selected unit only</option>
-                              </select>
-                              {tier.unitCondition === 'selected_unit' ? (
-                                <select
-                                  className={styles.select}
-                                  value={tier.unitOptionId}
-                                  onChange={(event) =>
-                                    setDiscountDraft((current) =>
-                                      current.map((item) =>
-                                        item.id === tier.id ? { ...item, unitOptionId: event.target.value } : item,
-                                      ),
-                                    )
-                                  }
-                                >
-                                  <option value="">Select order unit</option>
-                                  {orderableOptions.map((option) => (
-                                    <option key={option.id} value={option.id}>
-                                      {getUnitOptionLabel(option)}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : null}
-                              <input
-                                className={styles.input}
-                                placeholder="Min Order Qty"
-                                value={tier.minOrderQuantity}
-                                onChange={(event) =>
-                                  setDiscountDraft((current) =>
-                                    current.map((item) =>
-                                      item.id === tier.id ? { ...item, minOrderQuantity: event.target.value.replace(/[^\d.]/g, '') } : item,
-                                    ),
-                                  )
-                                }
-                              />
-                              <input
-                                className={styles.input}
-                                placeholder="Max Order Qty (optional)"
-                                value={tier.maxOrderQuantity}
-                                onChange={(event) =>
-                                  setDiscountDraft((current) =>
-                                    current.map((item) =>
-                                      item.id === tier.id ? { ...item, maxOrderQuantity: event.target.value.replace(/[^\d.]/g, '') } : item,
-                                    ),
-                                  )
-                                }
-                              />
-                              <select
-                                className={styles.select}
-                                value={tier.status}
-                                onChange={(event) =>
-                                  setDiscountDraft((current) =>
-                                    current.map((item) =>
-                                      item.id === tier.id
-                                        ? { ...item, status: event.target.value as DiscountItem['status'] }
-                                        : item,
-                                    ),
-                                  )
-                                }
-                              >
-                                <option value="Active">Active</option>
-                                <option value="Inactive">Inactive</option>
-                              </select>
-                            </div>
-
-                            {index === 0 ? (
-                              <label className={styles.toggleField}>
-                                <span className={styles.fieldLabel}>Stack another discount</span>
-                                <input
-                                  type="checkbox"
-                                  checked={stackingEnabled}
-                                  onChange={(event) => setStackingEnabled(event.target.checked)}
-                                />
-                              </label>
-                            ) : null}
-
-                            {index > 0 ? (
-                              <p className={styles.ruleNote}>
-                                Stacked Discount {index + 1} applies after the previous eligible discount.
-                              </p>
-                            ) : null}
-
-                            <div className={styles.promoSection}>
-                              <label className={styles.toggleField}>
-                                <span className={styles.fieldLabel}>Enable Freebie Promo</span>
-                                <input
-                                  type="checkbox"
-                                  checked={tier.hasPromo}
-                                  onChange={(event) =>
-                                    setDiscountDraft((current) =>
-                                      current.map((item) =>
-                                        item.id === tier.id
-                                          ? {
-                                              ...item,
-                                              hasPromo: event.target.checked,
-                                              promoRewardUnitCode: event.target.checked
-                                                ? item.promoRewardUnitCode
-                                                : '',
-                                              promoRewardQuantity: event.target.checked
-                                                ? item.promoRewardQuantity
-                                                : '1',
-                                              promoRewardProductId: event.target.checked
-                                                ? item.promoRewardProductId
-                                                : '',
-                                              promoRewardProductLabel: event.target.checked
-                                                ? item.promoRewardProductLabel
-                                                : '',
-                                              promoRewardVariationId: event.target.checked
-                                                ? item.promoRewardVariationId
-                                                : '',
-                                              promoRewardVariationLabel: event.target.checked
-                                                ? item.promoRewardVariationLabel
-                                                : '',
-                                              promoRewardUnitOptionId: event.target.checked
-                                                ? item.promoRewardUnitOptionId
-                                                : '',
-                                              promoRewardRepeatMode: event.target.checked
-                                                ? item.promoRewardRepeatMode
-                                                : 'one_time',
-                                              promoRewardEveryQuantity: event.target.checked
-                                                ? item.promoRewardEveryQuantity
-                                                : '',
-                                            }
-                                          : item,
-                                      ),
-                                    )
-                                  }
-                                />
-                              </label>
-                              <label className={styles.toggleField}>
-                                <span className={styles.fieldLabel}>Add Gift Check Reward</span>
-                                <input
-                                  type="checkbox"
-                                  checked={tier.promoGiftCheckEnabled || Boolean(tier.promoGiftCheckId)}
-                                  onChange={(event) =>
-                                    setDiscountDraft((current) =>
-                                      current.map((item) =>
-                                        item.id === tier.id
-                                          ? {
-                                              ...item,
-                                              promoGiftCheckEnabled: event.target.checked,
-                                              promoGiftCheckId: event.target.checked ? item.promoGiftCheckId : '',
-                                              promoGiftCheckCode: event.target.checked ? item.promoGiftCheckCode : '',
-                                              promoGiftCheckName: event.target.checked ? item.promoGiftCheckName : '',
-                                              promoGiftCheckQuantity: event.target.checked
-                                                ? item.promoGiftCheckQuantity || '1'
-                                                : '',
-                                            }
-                                          : item,
-                                      ),
-                                    )
-                                  }
-                                />
-                              </label>
-                              {tier.promoGiftCheckEnabled || tier.promoGiftCheckId ? (
-                                <div className={styles.ruleGrid}>
-                                  <select
-                                    className={styles.select}
-                                    value={tier.promoGiftCheckId}
-                                    onChange={(event) => {
-                                      const selectedGiftCheck = giftCheckOptions.find(
-                                        (option) => option.id === event.target.value,
-                                      );
-                                      setDiscountDraft((current) =>
-                                        current.map((item) =>
-                                          item.id === tier.id
-                                            ? {
-                                                ...item,
-                                                promoGiftCheckId: selectedGiftCheck?.id ?? '',
-                                                promoGiftCheckCode: selectedGiftCheck?.code ?? '',
-                                                promoGiftCheckName: selectedGiftCheck?.name ?? '',
-                                                promoGiftCheckQuantity: selectedGiftCheck
-                                                  ? item.promoGiftCheckQuantity || '1'
-                                                  : '1',
-                                              }
-                                            : item,
-                                        ),
-                                      );
-                                    }}
-                                  >
-                                    <option value="">Select Gift Check</option>
-                                    {giftCheckOptions.map((option) => (
-                                      <option key={option.id} value={option.id}>
-                                        {option.code} - {option.name}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <input
-                                    className={styles.input}
-                                    placeholder="Gift Check Quantity"
-                                    value={tier.promoGiftCheckQuantity}
-                                    onChange={(event) =>
-                                      setDiscountDraft((current) =>
-                                        current.map((item) =>
-                                          item.id === tier.id
-                                            ? {
-                                                ...item,
-                                                promoGiftCheckQuantity: event.target.value.replace(/[^\d.]/g, ''),
-                                              }
-                                            : item,
-                                        ),
-                                      )
-                                    }
-                                  />
-                                  <div className={styles.readOnlyValue}>
-                                    {tier.promoGiftCheckId
-                                      ? `${tier.promoGiftCheckQuantity || '1'} ${tier.promoGiftCheckName || tier.promoGiftCheckCode}`
-                                      : 'Select a Gift Check reward'}
-                                  </div>
-                                </div>
-                              ) : null}
-
-                            {tier.hasPromo ? (
-                              <>
-                              <div className={styles.ruleGrid}>
-                                <select
-                                  className={styles.select}
-                                  value={tier.promoType}
-                                  onChange={(event) =>
-                                    setDiscountDraft((current) =>
-                                      current.map((item) =>
-                                        item.id === tier.id
-                                          ? {
-                                              ...item,
-                                              promoType: event.target.value as DiscountItem['promoType'],
-                                            }
-                                          : item,
-                                      ),
-                                    )
-                                  }
-                                >
-                                  <option value="Freebie">Freebie</option>
-                                  <option value="BonusQty">BonusQty</option>
-                                </select>
-                                <select
-                                  className={styles.select}
-                                  value={tier.promoQualificationScope}
-                                  onChange={(event) =>
-                                    setDiscountDraft((current) =>
-                                      current.map((item) =>
-                                        item.id === tier.id
-                                          ? {
-                                              ...item,
-                                              promoQualificationScope: event.target.value as QualificationScope,
-                                            }
-                                          : item,
-                                      ),
-                                    )
-                                  }
-                                >
-                                  <option value="line">Per Line</option>
-                                  <option value="assorted_same_product">Assorted Across Variations</option>
-                                </select>
-                                <select
-                                  className={styles.select}
-                                  value={tier.promoRewardTargetType}
-                                  onChange={(event) =>
-                                    setDiscountDraft((current) =>
-                                      current.map((item) =>
-                                        item.id === tier.id
-                                          ? {
-                                              ...item,
-                                              promoRewardTargetType: event.target.value as RewardTargetType,
-                                              promoRewardProductId:
-                                                event.target.value === 'same_item' ? '' : item.promoRewardProductId,
-                                              promoRewardProductLabel:
-                                                event.target.value === 'same_item' ? '' : item.promoRewardProductLabel,
-                                              promoRewardVariationId:
-                                                event.target.value === 'same_item' ? '' : item.promoRewardVariationId,
-                                              promoRewardVariationLabel:
-                                                event.target.value === 'same_item' ? '' : item.promoRewardVariationLabel,
-                                              promoRewardUnitOptionId: '',
-                                              promoRewardUnitCode: '',
-                                            }
-                                          : item,
-                                      ),
-                                    )
-                                  }
-                                >
-                                  <option value="same_item">Same item</option>
-                                  <option value="different_item">Different item</option>
-                                </select>
-                                <input
-                                  className={styles.input}
-                                  placeholder="Item Reward Quantity"
-                                  value={tier.promoRewardQuantity}
-                                  onChange={(event) =>
-                                    setDiscountDraft((current) =>
-                                      current.map((item) =>
-                                        item.id === tier.id
-                                          ? {
-                                              ...item,
-                                              promoRewardQuantity: event.target.value.replace(/[^\d.]/g, ''),
-                                            }
-                                          : item,
-                                      ),
-                                    )
-                                  }
-                                />
-                                <select
-                                  className={styles.select}
-                                  value={tier.promoRewardRepeatMode}
-                                  onChange={(event) =>
-                                    setDiscountDraft((current) =>
-                                      current.map((item) =>
-                                        item.id === tier.id
-                                          ? {
-                                              ...item,
-                                              promoRewardRepeatMode: event.target.value as RewardRepeatMode,
-                                              promoRewardEveryQuantity:
-                                                event.target.value === 'every'
-                                                  ? item.promoRewardEveryQuantity || item.minOrderQuantity || '1'
-                                                  : '',
-                                            }
-                                          : item,
-                                      ),
-                                    )
-                                  }
-                                >
-                                  <option value="one_time">One time only</option>
-                                  <option value="every">Every quantity</option>
-                                </select>
-                                {tier.promoRewardRepeatMode === 'every' ? (
-                                  <input
-                                    className={styles.input}
-                                    placeholder="Every Quantity"
-                                    value={tier.promoRewardEveryQuantity}
-                                    onChange={(event) =>
-                                      setDiscountDraft((current) =>
-                                        current.map((item) =>
-                                          item.id === tier.id
-                                            ? {
-                                                ...item,
-                                                promoRewardEveryQuantity: event.target.value.replace(/[^\d.]/g, ''),
-                                              }
-                                            : item,
-                                        ),
-                                      )
-                                    }
-                                  />
-                                ) : (
-                                  <div className={styles.readOnlyValue}>
-                                    Reward is given once when condition is met.
-                                  </div>
-                                )}
-                              </div>
-
-                              {tier.promoRewardTargetType === 'same_item' ? (
-                                <div className={styles.ruleGrid}>
-                                  <select
-                                    className={styles.select}
-                                    value={tier.promoRewardUnitOptionId}
-                                    onChange={(event) =>
-                                      setDiscountDraft((current) =>
-                                        current.map((item) =>
-                                          item.id === tier.id
-                                            ? {
-                                                ...item,
-                                                promoRewardUnitOptionId: event.target.value,
-                                                promoRewardUnitCode:
-                                                  orderableOptions.find((option) => option.id === event.target.value)?.unitCode ?? '',
-                                              }
-                                            : item,
-                                        ),
-                                      )
-                                    }
-                                  >
-                                    <option value="">Select reward unit</option>
-                                    {orderableOptions.map((option) => (
-                                      <option key={option.id} value={option.id}>
-                                        {getUnitOptionLabel(option)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <div className={styles.readOnlyValue}>
-                                    {tier.promoRewardQuantity && tier.promoRewardUnitCode
-                                      ? `free ${tier.promoRewardQuantity} ${tier.promoRewardUnitCode}`
-                                      : 'Reward preview'}
-                                  </div>
-                                </div>
-                              ) : (
-                                <>
-                                  <div className={styles.ruleGrid}>
-                                    <input
-                                      className={styles.input}
-                                      placeholder="Search Reward Product"
-                                      value={tier.promoRewardSearchQuery}
-                                      onChange={(event) =>
-                                        setDiscountDraft((current) =>
-                                          current.map((item) =>
-                                            item.id === tier.id
-                                              ? { ...item, promoRewardSearchQuery: event.target.value }
-                                              : item,
-                                          ),
-                                        )
-                                      }
-                                    />
-                                    <div className={styles.readOnlyValue}>
-                                      {tier.promoRewardProductLabel || 'No reward product selected'}
-                                    </div>
-                                  </div>
-                                  {(rewardSearchResults[tier.id]?.length ?? 0) > 0 ? (
-                                    <div className={styles.searchResults}>
-                                      {rewardSearchResults[tier.id].map((result) => (
-                                        <button
-                                          key={result.id}
-                                          type="button"
-                                          className={styles.searchResultItem}
-                                          onClick={() => {
-                                            setDiscountDraft((current) =>
-                                              current.map((item) =>
-                                                item.id === tier.id
-                                                  ? {
-                                                      ...item,
-                                                      promoRewardProductId: result.id,
-                                                      promoRewardProductLabel: result.productName,
-                                                      promoRewardVariationId: '',
-                                                      promoRewardVariationLabel: '',
-                                                      promoRewardUnitOptionId: '',
-                                                      promoRewardUnitCode: '',
-                                                      promoRewardSearchQuery: result.productName,
-                                                    }
-                                                  : item,
-                                              ),
-                                            );
-                                            setRewardVariationOptions((current) => ({ ...current, [tier.id]: [] }));
-                                            setRewardUnitOptions((current) => ({ ...current, [tier.id]: [] }));
-                                            void loadRewardVariations(tier.id, result.id);
-                                          }}
-                                        >
-                                          {result.productName} {result.skuCode ? `(${result.skuCode})` : ''}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  ) : null}
-                                  <div className={styles.ruleGrid}>
-                                    <select
-                                      className={styles.select}
-                                      value={tier.promoRewardVariationId}
-                                      onChange={(event) => {
-                                        const selectedVariation = (rewardVariationOptions[tier.id] ?? []).find(
-                                          (option) => option.id === event.target.value,
-                                        );
-                                        setDiscountDraft((current) =>
-                                          current.map((item) =>
-                                            item.id === tier.id
-                                              ? {
-                                                  ...item,
-                                                  promoRewardVariationId: event.target.value,
-                                                  promoRewardVariationLabel: selectedVariation?.label ?? '',
-                                                  promoRewardUnitOptionId: '',
-                                                  promoRewardUnitCode: '',
-                                                }
-                                              : item,
-                                          ),
-                                        );
-                                        setRewardUnitOptions((current) => ({ ...current, [tier.id]: [] }));
-                                        if (event.target.value) {
-                                          void loadRewardUnitOptions(tier.id, event.target.value);
-                                        }
-                                      }}
-                                    >
-                                      <option value="">Select reward variation</option>
-                                      {(rewardVariationOptions[tier.id] ?? []).map((option) => (
-                                        <option key={option.id} value={option.id}>
-                                          {option.label}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <select
-                                      className={styles.select}
-                                      value={tier.promoRewardUnitOptionId}
-                                      onChange={(event) =>
-                                        setDiscountDraft((current) =>
-                                          current.map((item) =>
-                                            item.id === tier.id
-                                              ? {
-                                                  ...item,
-                                                  promoRewardUnitOptionId: event.target.value,
-                                                  promoRewardUnitCode:
-                                                    (rewardUnitOptions[tier.id] ?? []).find((option) => option.id === event.target.value)?.unitCode ?? '',
-                                                }
-                                              : item,
-                                          ),
-                                        )
-                                      }
-                                    >
-                                      <option value="">Select reward unit</option>
-                                      {(rewardUnitOptions[tier.id] ?? []).map((option) => (
-                                        <option key={option.id} value={option.id}>
-                                          {getUnitOptionLabel(option)}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                </>
-                              )}
-                              <div className={styles.readOnlyValue}>
-                                {buildPromoPreview(
-                                  tier,
-                                  getUnitOptionLabel(selectedOption),
-                                  rewardUnitLabel,
-                                ) || 'Reward display preview'}
-                              </div>
-                              </>
-                            ) : null}
-                            {!tier.hasPromo && (tier.promoGiftCheckEnabled || tier.promoGiftCheckId) ? (
-                              <div className={styles.readOnlyValue}>
-                                {buildPromoPreview(
-                                  tier,
-                                  getUnitOptionLabel(selectedOption),
-                                  rewardUnitLabel,
-                                ) || 'Reward display preview'}
-                              </div>
-                            ) : null}
-                            </div>
-
-                            {tier.unitCondition === 'selected_unit' && orderableOptions.length === 0 ? (
-                              <p className={styles.ruleNote}>
-                                Define order units first before adding unit-specific discounts.
-                              </p>
-                            ) : null}
-                            {minBasePreview ? (
-                              <p className={styles.ruleNote}>
-                                Applies when customer orders at least {formatQuantityLabel(
-                                  tier.minOrderQuantity || '1',
-                                  getUnitOptionLabel(selectedOption),
-                                )} ({minBasePreview}).
-                                {maxBasePreview ? ` Max preview: ${maxBasePreview}.` : ''}
-                                {tier.hasPromo && rewardUnitLabel
-                                  ? ` Promo: ${buildPromoPreview(
-                                      tier,
-                                      getUnitOptionLabel(selectedOption),
-                                      rewardUnitLabel,
-                                    )}`
-                                  : ''}
-                              </p>
-                            ) : tier.unitCondition === 'any_unit' ? (
-                              <p className={styles.ruleNote}>
-                                Applies to any unit. Minimum order quantity defaults to 1.
-                                {tier.hasPromo && rewardUnitLabel
-                                  ? ` Promo: ${buildPromoPreview(
-                                      tier,
-                                      getUnitOptionLabel(selectedOption),
-                                      rewardUnitLabel,
-                                    )}`
-                                  : ''}
-                              </p>
-                            ) : null}
-                          </div>
-                        );
-                      })() : null}
                     </div>
                   </div>
                   {pendingRemoveDiscountGroup ? (
@@ -5417,6 +4501,42 @@ export default function VarAndPrice({
           </div>
         </div>
       ) : null}
+
+      <RewardProductSelector
+        key={rewardSelectorRowId ?? 'reward-selector-closed'}
+        open={Boolean(rewardSelectorRowId)}
+        qualifyingPriceCode={discountContext?.code ?? ''}
+        initialSelection={
+          rewardSelectorRow
+            ? {
+                productId: rewardSelectorRow.promoRewardProductId,
+                productLabel: rewardSelectorRow.promoRewardProductLabel,
+                variationId: rewardSelectorRow.promoRewardVariationId,
+                variationLabel: rewardSelectorRow.promoRewardVariationLabel,
+                unitOptionId: rewardSelectorRow.promoRewardUnitOptionId,
+                unitCode: rewardSelectorRow.promoRewardUnitCode,
+              }
+            : undefined
+        }
+        onClose={() => setRewardSelectorRowId(null)}
+        onConfirm={(selection) => {
+          if (!rewardSelectorRow) return;
+          updateDiscountPromo(getDraftRuleKey(rewardSelectorRow), {
+            promoRewardProductId: selection.productId,
+            promoRewardProductLabel: selection.productLabel,
+            promoRewardVariationId: selection.variationId,
+            promoRewardVariationLabel: selection.variationLabel,
+            promoRewardUnitOptionId: selection.unitOptionId,
+            promoRewardUnitCode: selection.unitCode,
+          });
+          setRewardUnitOptions((current) => {
+            const next = { ...current };
+            delete next[rewardSelectorRow.id];
+            return next;
+          });
+          setRewardSelectorRowId(null);
+        }}
+      />
 
       {showFooterActions ? (
         <div className={styles.actions}>

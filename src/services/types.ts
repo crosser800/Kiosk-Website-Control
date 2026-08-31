@@ -75,7 +75,7 @@ export type VariationUnitOptionItem = {
 export type UnitCondition = 'any_unit' | 'selected_unit';
 export type ItemStatus = 'Active' | 'Inactive';
 export type DiscountKind = 'Base' | 'Promo' | '';
-export type RewardTargetType = 'same_item' | 'different_item';
+export type RewardTargetType = 'same_item' | 'same_product_different_variant' | 'different_item';
 export type RewardRepeatMode = 'one_time' | 'every';
 export type QualificationScope = 'line' | 'assorted_same_product';
 

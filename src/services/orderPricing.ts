@@ -131,7 +131,7 @@ export type SurchargeRule = {
   amount: number | null;
   freeQuantity: number;
   qualificationScope: 'line' | 'assorted_same_product' | string;
-  rewardTargetType: 'same_item' | 'different_item' | string;
+  rewardTargetType: 'same_item' | 'same_product_different_variant' | 'different_item' | string;
   rewardProductId: string | null;
   rewardVariationId: string | null;
   rewardUnitOptionId: string | null;
@@ -153,7 +153,7 @@ export type SurchargeRule = {
 export type SurchargeClassRule = DiscountClassRule & {
   linkedDiscountClassId: string | null;
   rewardQuantity: number | null;
-  rewardTargetType: 'same_item' | 'different_item' | string;
+  rewardTargetType: 'same_item' | 'same_product_different_variant' | 'different_item' | string;
   rewardProductId: string | null;
   rewardVariationId: string | null;
   rewardUnitOptionId: string | null;

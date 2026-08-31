@@ -1308,7 +1308,9 @@ function getAssortedRewardOptions(result: AssortedPromotionResult, products: Ord
   }
   const rewardUnitCode = normalizeUnitCode(result.rewardUnitCode || result.qualifyingUnitCode);
   const fixedVariationId =
-    result.rewardTargetType === 'different_item' && result.rewardVariationId
+    (result.rewardTargetType === 'different_item' ||
+      result.rewardTargetType === 'same_product_different_variant') &&
+    result.rewardVariationId
       ? result.rewardVariationId
       : '';
   const eligibleVariationIds = new Set(result.eligibleVariationIds);

@@ -220,6 +220,7 @@ function buildPromoGiftCheckDescription(item: Pick<
 function normalizeRewardTargetType(value: unknown): SurchargeItem['rewardTargetType'] {
   const normalized = String(value ?? '').trim().toLowerCase();
   if (normalized === 'different_item') return 'different_item';
+  if (normalized === 'same_product_different_variant') return 'same_product_different_variant';
   return 'same_item';
 }
 
@@ -2438,6 +2439,23 @@ export default function AddProduct({
           };
         }
 
+        if (item.rewardTargetType === 'same_product_different_variant') {
+          const localRewardOption = localUnitOptionLookup.get(item.rewardUnitOptionId);
+          const resolvedRewardUnitOptionId =
+            unitOptionLookup.get(item.rewardUnitOptionId) ??
+            (isUuid(item.rewardUnitOptionId) ? item.rewardUnitOptionId : null);
+
+          return {
+            rewardProductId: productId,
+            rewardVariationId: item.rewardVariationId
+              ? resolveVariationDbId(item.rewardVariationId, item.priceCode, 'reward selection')
+              : null,
+            rewardUnitOptionId: resolvedRewardUnitOptionId,
+            rewardUnitCode:
+              localRewardOption?.unitCode?.trim() || item.rewardUnitCode || null,
+          };
+        }
+
         return {
           rewardProductId: item.rewardProductId || null,
           rewardVariationId: item.rewardVariationId || null,
@@ -2695,7 +2713,8 @@ export default function AddProduct({
           rewardProductId:
             !item.hasPromo
               ? ''
-              : item.promoRewardTargetType === 'same_item'
+              : item.promoRewardTargetType === 'same_item' ||
+                  item.promoRewardTargetType === 'same_product_different_variant'
                 ? productId
                 : item.promoRewardProductId,
           rewardVariationId:
