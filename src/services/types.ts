@@ -32,6 +32,9 @@ export type VariationItem = {
   branchName: 'Manila' | 'Cebu' | 'Both' | '';
   price: string;
   skuCode: string;
+  // Phase 2: product_variation_groups.id shared by all six price-class rows
+  // of the same logical variation. null until the row has been saved once.
+  variationGroupId: string | null;
   stockQuantity: string;
   availability: 'Available' | 'Unavailable' | '';
 };

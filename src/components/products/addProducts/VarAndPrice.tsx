@@ -66,6 +66,9 @@ type VariationCard = {
   baseSku: string;
   stockQuantity: string;
   availability: VariationItem['availability'];
+  // Phase 2: stable product_variation_groups.id for this logical variation.
+  // null only for a card that has never been saved to the database yet.
+  variationGroupId: string | null;
   rowIds: Partial<Record<PriceCode, string>>;
   prices: Record<PriceCode, string>;
 };
@@ -315,6 +318,7 @@ function toVariationCards(items: VariationItem[]): VariationCard[] {
     const groupKey = buildGroupKeyFromRow(item);
     const existing = grouped.get(groupKey);
     const code = toPriceCode(item.priceCode);
+    const itemGroupId = item.variationGroupId || null;
     if (!existing) {
       const next: VariationCard = {
         id: buildVariationKey(item.variationName || item.className || groupKey, item.skuCode || ''),
@@ -322,6 +326,7 @@ function toVariationCards(items: VariationItem[]): VariationCard[] {
         baseSku: item.skuCode || '',
         stockQuantity: item.stockQuantity || '0',
         availability: item.availability || 'Available',
+        variationGroupId: itemGroupId,
         rowIds: {},
         prices: { R1: '', R2: '', W1: '', W2: '', SP: '', CP: '' },
       };
@@ -345,6 +350,20 @@ function toVariationCards(items: VariationItem[]): VariationCard[] {
     if (!existing.variationName && (item.variationName || item.className)) {
       existing.variationName = item.variationName || item.className;
     }
+    if (itemGroupId) {
+      if (!existing.variationGroupId) {
+        existing.variationGroupId = itemGroupId;
+      } else if (existing.variationGroupId !== itemGroupId) {
+        // The six R1/R2/W1/W2/SP/CP rows of one logical variation must all
+        // share the same variation_group_id (Phase 1 backfill guarantees
+        // this for pre-existing data). Seeing two different group ids
+        // inside what the app treats as one card means the grouping data
+        // is corrupted — surface it loudly instead of silently picking one.
+        throw new Error(
+          `Variation grouping data is corrupted for "${existing.variationName || groupKey}": price rows reference different variation groups (${existing.variationGroupId} and ${itemGroupId}). Resolve this in the database before editing this product.`,
+        );
+      }
+    }
   }
   return Array.from(grouped.values());
 }
@@ -360,6 +379,7 @@ function flattenCards(cards: VariationCard[]): VariationItem[] {
       branchName: entry.branchName,
       price: card.prices[entry.code],
       skuCode: card.baseSku,
+      variationGroupId: card.variationGroupId,
       stockQuantity: card.stockQuantity || '0',
       availability: card.availability || 'Available',
     })),
@@ -1203,6 +1223,10 @@ export default function VarAndPrice({
       id: nextId,
       variationName: nextName,
       baseSku: nextSku,
+      // A duplicated variation is a brand-new logical variation, not a
+      // continuation of the source card's group — never carry the source's
+      // variation_group_id over onto the copy.
+      variationGroupId: null,
       rowIds: {},
     };
 
@@ -2035,6 +2059,7 @@ export default function VarAndPrice({
       baseSku: defaultBaseSku,
       stockQuantity: '9999',
       availability: 'Available',
+      variationGroupId: null,
       rowIds: {},
       prices: { R1: '', R2: '', W1: '', W2: '', SP: '', CP: '' },
     });

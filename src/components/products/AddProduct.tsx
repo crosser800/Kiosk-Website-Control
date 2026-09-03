@@ -499,6 +499,69 @@ async function syncInventoryLinksForVariationRows(input: {
   }
 }
 
+// Phase 2: logical variation SKU architecture. One product_variation_groups
+// row represents one logical variation; all six R1/R2/W1/W2/SP/CP
+// product_variations rows for that variation reference it via
+// variation_group_id. This does NOT enforce global SKU uniqueness (Phase 2
+// scope) — product_variation_groups only guards against creating two
+// registry rows for the SAME logical variation (product_id +
+// normalized_variation_name + normalized_sku_code).
+function mapVariationGroupSaveError(error: { code?: string; message?: string } | null): Error {
+  if (error?.code === '23505') {
+    return new Error('This logical variation already exists for this product.');
+  }
+  return new Error(error?.message ?? 'Failed to save variation group.');
+}
+
+async function resolveVariationGroupId(identity: {
+  productId: string;
+  variationName: string;
+  skuCode: string;
+  existingGroupId: string | null;
+}): Promise<string> {
+  const variationName = identity.variationName.trim();
+  const skuCode = identity.skuCode.trim();
+  const nowIso = new Date().toISOString();
+
+  if (identity.existingGroupId) {
+    // Preserve the existing logical-variation identity: update the group
+    // row in place rather than resolving/creating a new one, so a rename or
+    // SKU edit on an existing variation keeps the same variation_group_id.
+    const { data, error } = await supabase
+      .from('product_variation_groups')
+      .update({ variation_name: variationName, sku_code: skuCode, updated_at: nowIso })
+      .eq('id', identity.existingGroupId)
+      .select('id')
+      .single();
+    if (error) {
+      throw mapVariationGroupSaveError(error);
+    }
+    if (!data) {
+      throw new Error('Failed to update variation group: no matching group row found.');
+    }
+    return String(data.id);
+  }
+
+  // No known group yet (brand-new logical variation). Upsert on the
+  // Phase 1 identity index so a race with another save resolves to the
+  // same existing group instead of erroring or duplicating it.
+  const { data, error } = await supabase
+    .from('product_variation_groups')
+    .upsert(
+      { product_id: identity.productId, variation_name: variationName, sku_code: skuCode, updated_at: nowIso },
+      { onConflict: 'product_id,normalized_variation_name,normalized_sku_code' },
+    )
+    .select('id')
+    .single();
+  if (error) {
+    throw mapVariationGroupSaveError(error);
+  }
+  if (!data) {
+    throw new Error('Failed to create variation group.');
+  }
+  return String(data.id);
+}
+
 function normalizeHistorySnapshot(snapshot: DiscountHistorySnapshot) {
   return {
     ...snapshot,
@@ -853,7 +916,7 @@ export default function AddProduct({
         supabase
           .from('product_variations')
           .select(
-            'id, price_type, variation_name, class_name, price_code, branch_name, price, sku_code, stock_quantity, availability',
+            'id, price_type, variation_name, class_name, price_code, branch_name, price, sku_code, variation_group_id, stock_quantity, availability',
           )
           .eq('product_id', editProductId)
           .order('sort_order', { ascending: true }),
@@ -962,6 +1025,7 @@ export default function AddProduct({
           branchName: meta?.branchName ?? ((row.branch_name as VariationItem['branchName']) ?? ''),
           price: row.price ? Number(row.price).toLocaleString('en-US') : '',
           skuCode: String(row.sku_code ?? ''),
+          variationGroupId: row.variation_group_id ? String(row.variation_group_id) : null,
           stockQuantity: String(row.stock_quantity ?? '0'),
           availability: (row.availability as VariationItem['availability']) ?? '',
         };
@@ -2053,6 +2117,50 @@ export default function AddProduct({
       if (existingDiscountError) throw new Error(existingDiscountError.message);
       if (existingSurchargeError) throw new Error(existingSurchargeError.message);
 
+      // Phase 2: resolve/create the product_variation_groups row for each
+      // logical variation (one bundle = the six R1/R2/W1/W2/SP/CP rows that
+      // share the same variation name + SKU) before writing product_variations,
+      // so every row in a bundle can be stamped with the same variation_group_id.
+      type VariationGroupBundle = {
+        variationName: string;
+        skuCode: string;
+        existingGroupId: string | null;
+      };
+      const variationGroupBundlesByKey = new Map<string, VariationGroupBundle>();
+      for (const item of variations) {
+        const bundleKey = buildVariationCardKey(item.variationName, item.skuCode);
+        const itemGroupId = item.variationGroupId || null;
+        const existingBundle = variationGroupBundlesByKey.get(bundleKey);
+        if (!existingBundle) {
+          variationGroupBundlesByKey.set(bundleKey, {
+            variationName: item.variationName,
+            skuCode: item.skuCode,
+            existingGroupId: itemGroupId,
+          });
+          continue;
+        }
+        if (itemGroupId && existingBundle.existingGroupId && itemGroupId !== existingBundle.existingGroupId) {
+          throw new Error(
+            `Variation grouping data is corrupted for "${existingBundle.variationName}": price rows reference different variation groups. Resolve this in the database before saving.`,
+          );
+        }
+        if (!existingBundle.existingGroupId && itemGroupId) {
+          existingBundle.existingGroupId = itemGroupId;
+        }
+      }
+
+      const variationGroupIdByBundleKey = new Map<string, string>();
+      for (const bundle of variationGroupBundlesByKey.values()) {
+        const bundleKey = buildVariationCardKey(bundle.variationName, bundle.skuCode);
+        const resolvedGroupId = await resolveVariationGroupId({
+          productId,
+          variationName: bundle.variationName,
+          skuCode: bundle.skuCode,
+          existingGroupId: bundle.existingGroupId,
+        });
+        variationGroupIdByBundleKey.set(bundleKey, resolvedGroupId);
+      }
+
       const variationRows = variations.map((item, index) => ({
         id: getStableUuid(item.id),
         product_id: productId,
@@ -2062,6 +2170,8 @@ export default function AddProduct({
         class_name: item.className,
         price: parseNumber(item.price),
         sku_code: item.skuCode,
+        variation_group_id:
+          variationGroupIdByBundleKey.get(buildVariationCardKey(item.variationName, item.skuCode)) ?? null,
         stock_quantity: Math.max(0, parseInt(item.stockQuantity || '0', 10) || 0),
         availability: item.availability,
         price_code: item.priceCode || null,
