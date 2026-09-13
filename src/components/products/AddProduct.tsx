@@ -6,6 +6,7 @@ import VarAndPrice from './addProducts/VarAndPrice';
 import { supabase } from '../../lib/supabase';
 import { normalizeDiscountKind } from './addProducts/discountLifecycle';
 import { generatePackagingSummary, normalizePackagingUnitCode } from './addProducts/packagingParser';
+import { getLogicalVariationKey } from './addProducts/variationIdentity';
 import type {
   DiscountItem,
   MediaItem,
@@ -132,10 +133,6 @@ function getStringValue(record: Record<string, unknown>, keys: string[]) {
   return '';
 }
 
-function buildVariationCardKey(variationName: string, skuCode: string) {
-  return `${variationName.trim().toLowerCase()}::${skuCode.trim().toLowerCase()}`;
-}
-
 function countActiveVariationCards(variationRows: VariationItem[]) {
   const activeRows = variationRows.filter((variation) => {
     const availability = String(variation.availability ?? '').trim().toLowerCase();
@@ -144,10 +141,12 @@ function countActiveVariationCards(variationRows: VariationItem[]) {
 
   return new Set(
     activeRows.map((variation) =>
-      buildVariationCardKey(
-        variation.variationName || variation.className || '',
-        variation.skuCode || '',
-      ),
+      getLogicalVariationKey({
+        variationGroupId: variation.variationGroupId,
+        variationName: variation.variationName,
+        className: variation.className,
+        skuCode: variation.skuCode,
+      }),
     ),
   ).size;
 }
@@ -364,7 +363,12 @@ function getVariationUnitValidationError(
 ) {
   const variationNameById = new Map(
     variations.map((variation) => [
-      buildVariationCardKey(variation.variationName, variation.skuCode),
+      getLogicalVariationKey({
+        variationGroupId: variation.variationGroupId,
+        variationName: variation.variationName,
+        className: variation.className,
+        skuCode: variation.skuCode,
+      }),
       variation.variationName || variation.className || variation.skuCode || 'Variation',
     ]),
   );
@@ -511,6 +515,90 @@ function mapVariationGroupSaveError(error: { code?: string; message?: string } |
     return new Error('This logical variation already exists for this product.');
   }
   return new Error(error?.message ?? 'Failed to save variation group.');
+}
+
+type VariationGroupBundle = {
+  variationName: string;
+  skuCode: string;
+  existingGroupId: string | null;
+};
+
+function normalizeLogicalVariationSku(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function formatVariationSkuForMessage(value: string) {
+  return value.trim() || 'this SKU';
+}
+
+async function validateLogicalVariationSkuAvailability(bundles: VariationGroupBundle[]) {
+  const claims = bundles
+    .map((bundle) => ({
+      ...bundle,
+      normalizedSkuCode: normalizeLogicalVariationSku(bundle.skuCode),
+    }))
+    .filter((bundle) => bundle.normalizedSkuCode);
+
+  if (claims.length === 0) {
+    return;
+  }
+
+  const normalizedSkuCodes = Array.from(new Set(claims.map((bundle) => bundle.normalizedSkuCode)));
+  const { data, error } = await supabase
+    .from('product_variation_groups')
+    .select('id, normalized_sku_code')
+    .in('normalized_sku_code', normalizedSkuCodes);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const rowsByNormalizedSku = new Map<string, Set<string>>();
+  ((data ?? []) as Array<Record<string, unknown>>).forEach((row) => {
+    const normalizedSkuCode = String(row.normalized_sku_code ?? '').trim().toLowerCase();
+    const groupId = String(row.id ?? '');
+    if (!normalizedSkuCode || !groupId) {
+      return;
+    }
+    const groupIds = rowsByNormalizedSku.get(normalizedSkuCode) ?? new Set<string>();
+    groupIds.add(groupId);
+    rowsByNormalizedSku.set(normalizedSkuCode, groupIds);
+  });
+
+  const claimsByNormalizedSku = new Map<string, typeof claims>();
+  claims.forEach((claim) => {
+    claimsByNormalizedSku.set(claim.normalizedSkuCode, [
+      ...(claimsByNormalizedSku.get(claim.normalizedSkuCode) ?? []),
+      claim,
+    ]);
+  });
+
+  for (const claim of claims) {
+    const existingGroupIds = rowsByNormalizedSku.get(claim.normalizedSkuCode) ?? new Set<string>();
+    const ownGroupStillHasSku =
+      Boolean(claim.existingGroupId) && existingGroupIds.has(String(claim.existingGroupId));
+
+    if (ownGroupStillHasSku) {
+      continue;
+    }
+
+    const sameSaveNewOrChangedClaims = (claimsByNormalizedSku.get(claim.normalizedSkuCode) ?? []).filter(
+      (sameSkuClaim) => {
+        if (sameSkuClaim === claim) {
+          return false;
+        }
+        const sameSkuOwnGroupStillHasSku =
+          Boolean(sameSkuClaim.existingGroupId) && existingGroupIds.has(String(sameSkuClaim.existingGroupId));
+        return !sameSkuOwnGroupStillHasSku;
+      },
+    );
+
+    if (existingGroupIds.size > 0 || sameSaveNewOrChangedClaims.length > 0) {
+      throw new Error(
+        `Variation SKU "${formatVariationSkuForMessage(claim.skuCode)}" is already assigned to another product variation.`,
+      );
+    }
+  }
 }
 
 async function resolveVariationGroupId(identity: {
@@ -1043,11 +1131,12 @@ export default function AddProduct({
       >();
       (variationRes.data ?? []).forEach((row: any) => {
         const variationRowId = String(row.id);
-        const variationName = String(row.variation_name ?? row.class_name ?? '')
-          .trim()
-          .toLowerCase();
-        const skuCode = String(row.sku_code ?? '').trim().toLowerCase();
-        const key = buildVariationCardKey(variationName, skuCode);
+        const key = getLogicalVariationKey({
+          variationGroupId: row.variation_group_id ? String(row.variation_group_id) : null,
+          variationName: String(row.variation_name ?? ''),
+          className: String(row.class_name ?? ''),
+          skuCode: String(row.sku_code ?? ''),
+        });
         variationIdToKey.set(variationRowId, key);
         variationMetaById.set(variationRowId, {
           priceCode: String(row.price_code ?? ''),
@@ -1116,6 +1205,7 @@ export default function AddProduct({
             return {
               id: String(row.id ?? crypto.randomUUID()),
               variationId: variationKey,
+              rawVariationId: sourceVariationId,
               unitCode,
               unitLabel: String(row.unit_label ?? row.unit_code ?? ''),
               baseUnitCode: String(row.base_unit_code ?? '').toLowerCase() || 'pc',
@@ -1133,6 +1223,10 @@ export default function AddProduct({
               weightUnit: ['mg', 'g', 'kg', 'lb'].includes(String(row.weight_unit ?? ''))
                 ? (String(row.weight_unit) as VariationUnitOptionItem['weightUnit'])
                 : 'kg',
+              // weight_mode column does not exist in the live DB yet (migration not applied) —
+              // hardcode 'auto' rather than reading a column that isn't there. See
+              // supabase/migrations/20260914000100_add_weight_mode_to_product_variation_unit_options.sql.
+              weightMode: 'auto',
               lengthValue: row.length_value === null || row.length_value === undefined ? '' : String(row.length_value),
               widthValue: row.width_value === null || row.width_value === undefined ? '' : String(row.width_value),
               heightValue: row.height_value === null || row.height_value === undefined ? '' : String(row.height_value),
@@ -1143,6 +1237,7 @@ export default function AddProduct({
             } satisfies VariationUnitOptionItem;
           })
           .filter(Boolean) as VariationUnitOptionItem[];
+
         mappedUnitOptionsForSnapshot = mappedUnitOptions;
         setVariationUnitOptions(mappedUnitOptions);
       } else {
@@ -1656,6 +1751,8 @@ export default function AddProduct({
     ['mg', 'g', 'kg', 'lb'].includes(value) ? (value as VariationUnitOptionItem['weightUnit']) : 'kg';
   const normalizeDimensionUnit = (value: string): VariationUnitOptionItem['dimensionUnit'] =>
     ['mm', 'cm', 'm', 'in'].includes(value) ? (value as VariationUnitOptionItem['dimensionUnit']) : 'cm';
+  const normalizeWeightMode = (value: string): VariationUnitOptionItem['weightMode'] =>
+    value === 'manual' ? 'manual' : 'auto';
 
   function buildPersistedDiscountSnapshot(row: Record<string, any>): DiscountHistorySnapshot {
     const classes = Array.isArray(row.product_discount_classes)
@@ -2121,14 +2218,19 @@ export default function AddProduct({
       // logical variation (one bundle = the six R1/R2/W1/W2/SP/CP rows that
       // share the same variation name + SKU) before writing product_variations,
       // so every row in a bundle can be stamped with the same variation_group_id.
-      type VariationGroupBundle = {
-        variationName: string;
-        skuCode: string;
-        existingGroupId: string | null;
-      };
       const variationGroupBundlesByKey = new Map<string, VariationGroupBundle>();
+      // Computed once per item here and reused below (never recomputed) so the
+      // bundle key used to resolve variation_group_id and the key used to
+      // stamp it onto each row can never drift apart.
+      const bundleKeyByItemId = new Map<string, string>();
       for (const item of variations) {
-        const bundleKey = buildVariationCardKey(item.variationName, item.skuCode);
+        const bundleKey = getLogicalVariationKey({
+          variationGroupId: item.variationGroupId,
+          variationName: item.variationName,
+          className: item.className,
+          skuCode: item.skuCode,
+        });
+        bundleKeyByItemId.set(item.id, bundleKey);
         const itemGroupId = item.variationGroupId || null;
         const existingBundle = variationGroupBundlesByKey.get(bundleKey);
         if (!existingBundle) {
@@ -2139,19 +2241,18 @@ export default function AddProduct({
           });
           continue;
         }
-        if (itemGroupId && existingBundle.existingGroupId && itemGroupId !== existingBundle.existingGroupId) {
-          throw new Error(
-            `Variation grouping data is corrupted for "${existingBundle.variationName}": price rows reference different variation groups. Resolve this in the database before saving.`,
-          );
-        }
+        // bundleKey already encodes variationGroupId when one exists, so two
+        // items only land in the same bundle here if they already agree on
+        // it — nothing left to reconcile beyond filling it in once.
         if (!existingBundle.existingGroupId && itemGroupId) {
           existingBundle.existingGroupId = itemGroupId;
         }
       }
 
+      await validateLogicalVariationSkuAvailability(Array.from(variationGroupBundlesByKey.values()));
+
       const variationGroupIdByBundleKey = new Map<string, string>();
-      for (const bundle of variationGroupBundlesByKey.values()) {
-        const bundleKey = buildVariationCardKey(bundle.variationName, bundle.skuCode);
+      for (const [bundleKey, bundle] of variationGroupBundlesByKey.entries()) {
         const resolvedGroupId = await resolveVariationGroupId({
           productId,
           variationName: bundle.variationName,
@@ -2170,8 +2271,7 @@ export default function AddProduct({
         class_name: item.className,
         price: parseNumber(item.price),
         sku_code: item.skuCode,
-        variation_group_id:
-          variationGroupIdByBundleKey.get(buildVariationCardKey(item.variationName, item.skuCode)) ?? null,
+        variation_group_id: variationGroupIdByBundleKey.get(bundleKeyByItemId.get(item.id) ?? '') ?? null,
         stock_quantity: Math.max(0, parseInt(item.stockQuantity || '0', 10) || 0),
         availability: item.availability,
         price_code: item.priceCode || null,
@@ -2180,7 +2280,7 @@ export default function AddProduct({
       const { data: insertedVariationRows, error: variationError } = await supabase
         .from('product_variations')
         .upsert(variationRows, { onConflict: 'id' })
-        .select('id, variation_name, class_name, sku_code, price_code');
+        .select('id, variation_name, class_name, sku_code, price_code, variation_group_id');
       if (variationError) throw new Error(variationError.message);
 
       await syncInventoryLinksForVariationRows({
@@ -2242,11 +2342,15 @@ export default function AddProduct({
       const variationClassLookup = new Map<string, string>();
       const variationIdsByCardKey = new Map<string, string[]>();
       (insertedVariationRows ?? []).forEach((row: any) => {
-        const variationName = String(row.variation_name ?? row.class_name ?? '').trim();
         const skuCode = String(row.sku_code ?? '').trim();
         const priceCode = normalizePriceCode(row.price_code);
         const rowId = String(row.id);
-        const cardKey = buildVariationCardKey(variationName, skuCode);
+        const cardKey = getLogicalVariationKey({
+          variationGroupId: row.variation_group_id ? String(row.variation_group_id) : null,
+          variationName: String(row.variation_name ?? ''),
+          className: String(row.class_name ?? ''),
+          skuCode,
+        });
         const className = String(row.class_name ?? row.variation_name ?? 'Promo Class');
         const target: VariationTarget = {
           variationId: rowId,
@@ -2395,6 +2499,7 @@ export default function AddProduct({
             isOrderable: item.isOrderable,
             weightValue: item.weightValue || '',
             weightUnit: normalizeWeightUnit(item.weightUnit),
+            weightMode: normalizeWeightMode(item.weightMode),
             lengthValue: item.lengthValue || '',
             widthValue: item.widthValue || '',
             heightValue: item.heightValue || '',
@@ -2452,6 +2557,8 @@ export default function AddProduct({
           notes: item.notes || null,
           weight_value: parseNullableNonNegativeNumber(item.weightValue),
           weight_unit: normalizeWeightUnit(item.weightUnit),
+          // weight_mode intentionally NOT written — the column does not exist in the live
+          // DB yet (migration not applied). Writing it would make this upsert fail entirely.
           length_value: parseNullableNonNegativeNumber(item.lengthValue),
           width_value: parseNullableNonNegativeNumber(item.widthValue),
           height_value: parseNullableNonNegativeNumber(item.heightValue),

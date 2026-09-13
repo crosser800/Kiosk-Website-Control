@@ -53,6 +53,13 @@ export type ProductUnitAliasDefinition = {
 export type VariationUnitOptionItem = {
   id: string;
   variationId: string;
+  // The untranslated product_variations.id this row was actually fetched
+  // under (before being retagged onto its logical-variation card key). '' for
+  // a row that has never been loaded from the DB yet. Used only as a direct,
+  // key-normalization-independent fallback so a real DB row is never treated
+  // as missing just because the computed logical-variation key didn't match —
+  // never written back to the database.
+  rawVariationId: string;
   unitCode: string;
   unitLabel: string;
   baseUnitCode: string;
@@ -68,6 +75,11 @@ export type VariationUnitOptionItem = {
   notes: string;
   weightValue: string;
   weightUnit: 'mg' | 'g' | 'kg' | 'lb';
+  // 'auto' = weightValue is kept in sync with (base-unit weightValue * quantityInBaseUnit);
+  // 'manual' = the user explicitly edited this row's weight, so auto-sync must not overwrite it.
+  // Meaningless for the base-unit row itself (unitCode === baseUnitCode), which is always the
+  // weight source, never a derived value.
+  weightMode: 'auto' | 'manual';
   lengthValue: string;
   widthValue: string;
   heightValue: string;

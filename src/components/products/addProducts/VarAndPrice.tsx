@@ -18,6 +18,7 @@ import {
   type PromoValidityMode,
 } from './discountLifecycle';
 import { generatePackagingSummary } from './packagingParser';
+import { getLogicalVariationKey } from './variationIdentity';
 import RewardProductSelector from './RewardProductSelector';
 import type {
   DiscountItem,
@@ -171,8 +172,10 @@ const PRICE_CODES: Array<{
   { code: 'CP', label: 'Concept Store', branchName: 'Both', priceType: 'Concept Store' },
 ];
 
+// For brand-new/unsaved variations only (no variation_group_id yet) — see
+// getLogicalVariationKey, the single shared source of truth for identity.
 function buildVariationKey(variationName: string, baseSku: string) {
-  return `${variationName.trim().toLowerCase()}::${baseSku.trim().toLowerCase()}`;
+  return getLogicalVariationKey({ variationGroupId: null, variationName, skuCode: baseSku });
 }
 
 function toSkuToken(value: string) {
@@ -181,18 +184,6 @@ function toSkuToken(value: string) {
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-}
-
-function buildGroupKeyFromRow(item: VariationItem) {
-  const normalizedVariationName = (item.variationName || item.className || '').trim().toLowerCase();
-  const normalizedSku = item.skuCode.trim().toLowerCase();
-  if (normalizedVariationName && normalizedSku) {
-    return `${normalizedVariationName}::${normalizedSku}`;
-  }
-  if (normalizedVariationName) {
-    return `${normalizedVariationName}::`;
-  }
-  return `::${normalizedSku}`;
 }
 
 function formatPriceInput(value: string) {
@@ -268,6 +259,68 @@ function getComputedUnitPrice(card: VariationCard, priceCode: PriceCode, quantit
   return basePrice * unitQuantity;
 }
 
+function isBaseUnitOption(option: Pick<VariationUnitOptionItem, 'unitCode'>, baseUnitCode: string) {
+  return option.unitCode.trim().toLowerCase() === baseUnitCode.trim().toLowerCase();
+}
+
+// blank/invalid base weight or multiplier -> '' (never guess, never show 0 as a real value)
+function computeAutoUnitWeight(baseWeightValue: string, quantityInBaseUnit: string): string {
+  const baseWeight = parseNullableNumberInput(baseWeightValue);
+  if (baseWeight === null || baseWeight < 0) {
+    return '';
+  }
+  const quantity = parseNullableNumberInput(quantityInBaseUnit);
+  if (quantity === null || quantity <= 0) {
+    return '';
+  }
+  const computed = baseWeight * quantity;
+  return Number.isFinite(computed) ? String(computed) : '';
+}
+
+function getCardRawVariationIds(card: VariationCard | undefined): Set<string> {
+  return card ? new Set(Object.values(card.rowIds).filter((value): value is string => Boolean(value))) : new Set();
+}
+
+// Primary match is the computed logical-variation key; the raw id is a
+// direct, key-normalization-independent fallback so a real DB row (attached
+// to any of this card's six price-class rows) is never treated as missing
+// just because the computed key didn't line up. Used everywhere unitOptions
+// is scoped to one card, so a fallback-matched row is consistently included
+// or excluded together, never duplicated.
+function isUnitOptionForCard(
+  item: Pick<VariationUnitOptionItem, 'variationId' | 'rawVariationId'>,
+  cardId: string,
+  cardRawIds: Set<string>,
+): boolean {
+  return item.variationId === cardId || (Boolean(item.rawVariationId) && cardRawIds.has(item.rawVariationId));
+}
+
+// Single choke point for weight auto-sync: recomputes every 'auto' higher-unit
+// row from the card's current base-unit row (base weight x quantityInBaseUnit),
+// inheriting the base row's weightUnit. Rows in 'manual' mode, and the base row
+// itself, are never touched here. If the card has no row matching its own
+// baseUnitCode (legacy data), nothing is recomputed — existing weights stay
+// exactly as entered.
+function syncAutoUnitWeights(
+  options: VariationUnitOptionItem[],
+  baseUnitCode: string,
+): VariationUnitOptionItem[] {
+  const baseRow = options.find((item) => isBaseUnitOption(item, baseUnitCode));
+  if (!baseRow) {
+    return options;
+  }
+  return options.map((item) => {
+    if (item.id === baseRow.id || item.weightMode === 'manual') {
+      return item;
+    }
+    return {
+      ...item,
+      weightValue: computeAutoUnitWeight(baseRow.weightValue, item.quantityInBaseUnit),
+      weightUnit: baseRow.weightUnit,
+    };
+  });
+}
+
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
 }
@@ -315,13 +368,18 @@ function pluralizeUnitLabel(unitLabel: string, quantity: string) {
 function toVariationCards(items: VariationItem[]): VariationCard[] {
   const grouped = new Map<string, VariationCard>();
   for (const item of items) {
-    const groupKey = buildGroupKeyFromRow(item);
+    const groupKey = getLogicalVariationKey({
+      variationGroupId: item.variationGroupId,
+      variationName: item.variationName,
+      className: item.className,
+      skuCode: item.skuCode,
+    });
     const existing = grouped.get(groupKey);
     const code = toPriceCode(item.priceCode);
     const itemGroupId = item.variationGroupId || null;
     if (!existing) {
       const next: VariationCard = {
-        id: buildVariationKey(item.variationName || item.className || groupKey, item.skuCode || ''),
+        id: groupKey,
         variationName: item.variationName || item.className || 'Variation',
         baseSku: item.skuCode || '',
         stockQuantity: item.stockQuantity || '0',
@@ -350,19 +408,12 @@ function toVariationCards(items: VariationItem[]): VariationCard[] {
     if (!existing.variationName && (item.variationName || item.className)) {
       existing.variationName = item.variationName || item.className;
     }
-    if (itemGroupId) {
-      if (!existing.variationGroupId) {
-        existing.variationGroupId = itemGroupId;
-      } else if (existing.variationGroupId !== itemGroupId) {
-        // The six R1/R2/W1/W2/SP/CP rows of one logical variation must all
-        // share the same variation_group_id (Phase 1 backfill guarantees
-        // this for pre-existing data). Seeing two different group ids
-        // inside what the app treats as one card means the grouping data
-        // is corrupted — surface it loudly instead of silently picking one.
-        throw new Error(
-          `Variation grouping data is corrupted for "${existing.variationName || groupKey}": price rows reference different variation groups (${existing.variationGroupId} and ${itemGroupId}). Resolve this in the database before editing this product.`,
-        );
-      }
+    // groupKey now encodes variationGroupId whenever one exists (see
+    // getLogicalVariationKey), so two rows only land in the same `existing`
+    // bucket here if they already agree on it — this is just keeping the
+    // card's own field populated, not a conflict check.
+    if (itemGroupId && !existing.variationGroupId) {
+      existing.variationGroupId = itemGroupId;
     }
   }
   return Array.from(grouped.values());
@@ -688,6 +739,7 @@ function createDefaultUnitOption(
   return {
     id: crypto.randomUUID(),
     variationId,
+    rawVariationId: '',
     unitCode: baseUnitCode,
     unitLabel: baseUnitCode,
     baseUnitCode,
@@ -703,6 +755,7 @@ function createDefaultUnitOption(
     notes: '',
     weightValue: '',
     weightUnit: 'kg',
+    weightMode: 'auto',
     lengthValue: '',
     widthValue: '',
     heightValue: '',
@@ -1015,6 +1068,7 @@ export default function VarAndPrice({
     const mapped = ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
       id: String(row.id ?? ''),
       variationId: String(row.variation_id ?? ''),
+      rawVariationId: String(row.variation_id ?? ''),
       unitCode: String(row.unit_code ?? ''),
       unitLabel: String(row.unit_label ?? row.unit_code ?? ''),
       baseUnitCode: String(row.base_unit_code ?? ''),
@@ -1030,6 +1084,9 @@ export default function VarAndPrice({
       notes: String(row.notes ?? ''),
       weightValue: row.weight_value === null || row.weight_value === undefined ? '' : String(row.weight_value),
       weightUnit: normalizeWeightUnit(row.weight_unit),
+      // weight_mode column does not exist in the live DB yet (migration not applied) —
+      // hardcode 'auto' rather than reading a column that isn't there.
+      weightMode: 'auto',
       lengthValue: row.length_value === null || row.length_value === undefined ? '' : String(row.length_value),
       widthValue: row.width_value === null || row.width_value === undefined ? '' : String(row.width_value),
       heightValue: row.height_value === null || row.height_value === undefined ? '' : String(row.height_value),
@@ -1041,8 +1098,9 @@ export default function VarAndPrice({
   }
 
   function getCardUnitOptions(cardId: string) {
+    const cardRawIds = getCardRawVariationIds(cards.find((item) => item.id === cardId));
     const cardUnitOptions = unitOptions
-      .filter((item) => item.variationId === cardId)
+      .filter((item) => isUnitOptionForCard(item, cardId, cardRawIds))
       .sort((left, right) => Number(left.sortOrder || '0') - Number(right.sortOrder || '0'));
 
     if (cardUnitOptions.length === 0) {
@@ -2006,9 +2064,17 @@ export default function VarAndPrice({
       normalizedNextOptions[0] = { ...normalizedNextOptions[0], isDefault: true };
     }
 
+    const weightSyncedOptions = syncAutoUnitWeights(normalizedNextOptions, normalizedBaseUnitCode);
+
+    // Must exclude the same rows getCardUnitOptions(cardId) included (its
+    // primary key OR raw-id fallback) — otherwise a row only reachable via
+    // the raw-id fallback would be kept here under its old key AND re-added
+    // above under the corrected one, duplicating it in state (and, at save
+    // time, in the upsert payload).
+    const cardRawIds = getCardRawVariationIds(cards.find((item) => item.id === cardId));
     onUnitOptionsChange([
-      ...unitOptions.filter((item) => item.variationId !== cardId),
-      ...normalizedNextOptions,
+      ...unitOptions.filter((item) => !isUnitOptionForCard(item, cardId, cardRawIds)),
+      ...weightSyncedOptions,
     ]);
   }
 
@@ -2085,7 +2151,14 @@ export default function VarAndPrice({
       : toSkuToken(defaultBaseSku) || toSkuToken(activeCard.variationName) || 'VARIATION';
     setVariationModalError('');
     const previous = cards.find((card) => card.id === activeCard.id);
-    const nextId = buildVariationKey(activeCard.variationName, resolvedBaseSku);
+    // A persisted card keeps its variation_group_id-based id even when
+    // renamed/re-SKU'd (the group id itself doesn't change); only a genuinely
+    // new card (activeCard.variationGroupId === null) falls back to text.
+    const nextId = getLogicalVariationKey({
+      variationGroupId: activeCard.variationGroupId,
+      variationName: activeCard.variationName,
+      skuCode: resolvedBaseSku,
+    });
     const nextCard = { ...activeCard, id: nextId, baseSku: resolvedBaseSku };
     const exists = cards.some((card) => card.id === activeCard.id);
     const nextCards = exists
@@ -2117,8 +2190,9 @@ export default function VarAndPrice({
   }
 
   function deleteCard(cardId: string) {
+    const cardRawIds = getCardRawVariationIds(cards.find((card) => card.id === cardId));
     pushCards(cards.filter((card) => card.id !== cardId));
-    onUnitOptionsChange(unitOptions.filter((item) => item.variationId !== cardId));
+    onUnitOptionsChange(unitOptions.filter((item) => !isUnitOptionForCard(item, cardId, cardRawIds)));
     onDiscountsChange(discounts.filter((item) => item.variationId !== cardId));
     onSurchargesChange(surcharges.filter((item) => item.variationId !== cardId));
     if (activeVariationTabId === cardId) {
@@ -2725,6 +2799,7 @@ export default function VarAndPrice({
             const cardUnitOptions = getCardUnitOptions(card.id);
             const selectedPreviewMedia = getSelectedPreviewMedia(card.id);
             const packagingSummary = generatePackagingSummary(cardUnitOptions, baseUnitCode);
+            const hasBaseUnitRow = cardUnitOptions.some((item) => isBaseUnitOption(item, baseUnitCode));
 
             return (
               <article key={card.id} className={styles.variationCard}>
@@ -2819,6 +2894,11 @@ export default function VarAndPrice({
                           {packagingSummary.warnings.length > 0 ? (
                             <span className={styles.parserMessage}>{packagingSummary.warnings.join(' ')}</span>
                           ) : null}
+                          {!hasBaseUnitRow ? (
+                            <span className={styles.parserMessage}>
+                              Base unit row missing — weight auto-sync unavailable.
+                            </span>
+                          ) : null}
                         </div>
                       </div>
                     </div>
@@ -2882,6 +2962,7 @@ export default function VarAndPrice({
                             {
                               id: crypto.randomUUID(),
                               variationId: card.id,
+                              rawVariationId: '',
                               unitCode: '',
                               unitLabel: '',
                               baseUnitCode,
@@ -2897,6 +2978,7 @@ export default function VarAndPrice({
                               notes: '',
                               weightValue: '',
                               weightUnit: 'kg',
+                              weightMode: 'auto',
                               lengthValue: '',
                               widthValue: '',
                               heightValue: '',
@@ -2922,7 +3004,9 @@ export default function VarAndPrice({
                         <span>Actions</span>
                       </div>
 
-                      {cardUnitOptions.map((option) => (
+                      {cardUnitOptions.map((option) => {
+                        const isBaseUnitRow = isBaseUnitOption(option, baseUnitCode);
+                        return (
                           <div key={option.id} className={styles.orderUnitRow}>
                             <div className={styles.orderUnitCellIndex}>
                               {cardUnitOptions.findIndex((item) => item.id === option.id) + 1}
@@ -3012,6 +3096,7 @@ export default function VarAndPrice({
                                           ? {
                                               ...item,
                                               weightValue: sanitizeNonNegativeNumericInput(event.target.value),
+                                              weightMode: isBaseUnitRow ? item.weightMode : 'manual',
                                             }
                                           : item,
                                       ),
@@ -3029,6 +3114,7 @@ export default function VarAndPrice({
                                           ? {
                                               ...item,
                                               weightUnit: normalizeWeightUnit(event.target.value),
+                                              weightMode: isBaseUnitRow ? item.weightMode : 'manual',
                                             }
                                           : item,
                                       ),
@@ -3042,6 +3128,36 @@ export default function VarAndPrice({
                                   ))}
                                 </select>
                               </div>
+
+                              {!isBaseUnitRow ? (
+                                <div className={styles.weightModeRow}>
+                                  <span
+                                    className={
+                                      option.weightMode === 'manual'
+                                        ? `${styles.weightModeBadge} ${styles.weightModeBadgeManual}`
+                                        : styles.weightModeBadge
+                                    }
+                                  >
+                                    {option.weightMode === 'manual' ? 'Manual' : 'Auto'}
+                                  </span>
+                                  {option.weightMode === 'manual' && hasBaseUnitRow ? (
+                                    <button
+                                      type="button"
+                                      className={`${styles.smallAction} ${styles.weightResetButton}`}
+                                      title="Recompute this weight from the base unit weight"
+                                      onClick={() =>
+                                        updateCardUnitOptions(card.id, (currentOptions) =>
+                                          currentOptions.map((item) =>
+                                            item.id === option.id ? { ...item, weightMode: 'auto' } : item,
+                                          ),
+                                        )
+                                      }
+                                    >
+                                      Reset
+                                    </button>
+                                  ) : null}
+                                </div>
+                              ) : null}
 
                               <span className={styles.fieldLabel}>Package Dimensions</span>
                               <div className={styles.dimensionInline}>
@@ -3205,7 +3321,8 @@ export default function VarAndPrice({
                               </button>
                             </div>
                           </div>
-                      ))}
+                        );
+                      })}
 
                       <p className={styles.orderUnitsFooterNote}>
                         You can adjust the order rows per variation before saving. Computed prices use each price class base price multiplied by the unit contains quantity.
