@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { groupPermissionsByModule } from '../../services/accounts';
+import AgentUsernamePreviewModal from './AgentUsernamePreviewModal';
 import styles from './AccountsSummary.module.css';
 
 export type AccountView = 'admins' | 'agents';
@@ -270,6 +271,7 @@ export default function AccountsSummary({
   const [currentPage, setCurrentPage] = useState(1);
   const [accessDetailsAccount, setAccessDetailsAccount] = useState<AccountSummaryItem | null>(null);
   const [profileImageViewer, setProfileImageViewer] = useState<{ url: string; name: string } | null>(null);
+  const [isUsernamePreviewOpen, setIsUsernamePreviewOpen] = useState(false);
 
   const agentGroupOptions = useMemo(() => {
     const groups = new Map<string, { id: string; label: string }>();
@@ -454,6 +456,16 @@ export default function AccountsSummary({
                 ))}
               </select>
             </label>
+          ) : null}
+
+          {activeView === 'agents' ? (
+            <button
+              type="button"
+              className={styles.primaryButton}
+              onClick={() => setIsUsernamePreviewOpen(true)}
+            >
+              <span>Preview / Generate Internal Accounts</span>
+            </button>
           ) : null}
 
           <button
@@ -727,6 +739,10 @@ export default function AccountsSummary({
           name={profileImageViewer.name}
           onClose={() => setProfileImageViewer(null)}
         />
+      ) : null}
+
+      {isUsernamePreviewOpen ? (
+        <AgentUsernamePreviewModal onClose={() => setIsUsernamePreviewOpen(false)} />
       ) : null}
     </section>
   );

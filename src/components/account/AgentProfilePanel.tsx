@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { AccountSummaryItem } from './AccountsSummary';
 import { loadAccountItems } from '../../services/accounts';
+import {
+  createAgentInternalAccount,
+  getAgentInternalAccount,
+  resetAgentInternalPassword,
+  updateAgentInternalAccountStatus,
+} from '../../services/agentInternalAccounts';
+import type {
+  AgentInternalAccount,
+  AgentInternalAccountStatus,
+  GeneratedAgentCredential,
+} from '../../services/agentInternalAccounts';
 import { supabase } from '../../lib/supabase';
 import type { OrderPriceCode } from '../../services/orderPricing';
 import SearchableSelect from '../orders/SearchableSelect';
@@ -511,9 +522,41 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [resetMessage, setResetMessage] = useState('');
   const [resetError, setResetError] = useState('');
+  const [internalAccount, setInternalAccount] = useState<AgentInternalAccount | null>(null);
+  const [isLoadingInternalAccount, setIsLoadingInternalAccount] = useState(true);
+  const [internalAccountError, setInternalAccountError] = useState('');
+  const [isCreatingInternalAccount, setIsCreatingInternalAccount] = useState(false);
+  const [isResettingInternalPassword, setIsResettingInternalPassword] = useState(false);
+  const [isUpdatingInternalAccountStatus, setIsUpdatingInternalAccountStatus] = useState(false);
+  const [isResetInternalConfirmOpen, setIsResetInternalConfirmOpen] = useState(false);
+  const [generatedCredential, setGeneratedCredential] = useState<GeneratedAgentCredential | null>(null);
+  const [credentialCopyNotice, setCredentialCopyNotice] = useState('');
 
   useEffect(() => {
     void loadProfileDraft();
+  }, [account.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoadingInternalAccount(true);
+    setInternalAccountError('');
+
+    getAgentInternalAccount(account.id)
+      .then((result) => {
+        if (!cancelled) setInternalAccount(result);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setInternalAccountError(error instanceof Error ? error.message : 'Failed to load internal account.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingInternalAccount(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [account.id]);
 
   useEffect(
@@ -1109,6 +1152,68 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
     }
   }
 
+  async function handleCreateInternalAccount() {
+    if (isCreatingInternalAccount) return;
+
+    setIsCreatingInternalAccount(true);
+    setInternalAccountError('');
+    setCredentialCopyNotice('');
+
+    try {
+      const credential = await createAgentInternalAccount(agentDraft.id);
+      setGeneratedCredential(credential);
+      setInternalAccount(await getAgentInternalAccount(agentDraft.id));
+    } catch (error) {
+      setInternalAccountError(error instanceof Error ? error.message : 'Unable to create the internal account.');
+    } finally {
+      setIsCreatingInternalAccount(false);
+    }
+  }
+
+  async function handleResetInternalPassword() {
+    if (isResettingInternalPassword) return;
+
+    setIsResettingInternalPassword(true);
+    setInternalAccountError('');
+    setCredentialCopyNotice('');
+
+    try {
+      const credential = await resetAgentInternalPassword(agentDraft.id);
+      setGeneratedCredential(credential);
+      setInternalAccount(await getAgentInternalAccount(agentDraft.id));
+      setIsResetInternalConfirmOpen(false);
+    } catch (error) {
+      setInternalAccountError(error instanceof Error ? error.message : 'Unable to reset the internal password.');
+    } finally {
+      setIsResettingInternalPassword(false);
+    }
+  }
+
+  async function handleUpdateInternalAccountStatus(status: AgentInternalAccountStatus) {
+    if (isUpdatingInternalAccountStatus || internalAccount?.status === status) return;
+
+    setIsUpdatingInternalAccountStatus(true);
+    setInternalAccountError('');
+
+    try {
+      await updateAgentInternalAccountStatus(agentDraft.id, status);
+      setInternalAccount(await getAgentInternalAccount(agentDraft.id));
+    } catch (error) {
+      setInternalAccountError(error instanceof Error ? error.message : 'Unable to update the internal account status.');
+    } finally {
+      setIsUpdatingInternalAccountStatus(false);
+    }
+  }
+
+  async function handleCopyCredential(value: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCredentialCopyNotice(`${label} copied to clipboard.`);
+    } catch {
+      setCredentialCopyNotice(`Unable to copy ${label.toLowerCase()} automatically — copy it manually.`);
+    }
+  }
+
   const selectedPriceLabel =
     priceDraft.length === 0
       ? 'No price access enabled'
@@ -1429,27 +1534,74 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
                         ) : null}
                       </article>
                       <article className={styles.settingsCard}>
-                        <h4>Security</h4>
-                        <p>Resetting the password signs the agent out and requires a new password on the next login.</p>
-                        {agentDraft.mustChangePassword ? (
-                          <span className={styles.dirtyPill}>Password change required</span>
-                        ) : null}
-                        {agentDraft.passwordResetAt ? (
-                          <p>Last reset: {formatDateTime(agentDraft.passwordResetAt)}</p>
-                        ) : null}
-                        {!agentDraft.authUserId ? (
-                          <p className={styles.inlineNotice}>This agent is not connected to an authentication account.</p>
-                        ) : null}
-                        {resetMessage ? <p className={styles.successMessage}>{resetMessage}</p> : null}
-                        {resetError ? <p className={styles.validationError}>{resetError}</p> : null}
-                        <button
-                          type="button"
-                          className={styles.secondaryButton}
-                          disabled={!agentDraft.authUserId || isResettingPassword}
-                          onClick={() => setIsResetConfirmOpen(true)}
-                        >
-                          {isResettingPassword ? 'Resetting Password...' : 'Reset Password'}
-                        </button>
+                        <h4>Internal Account</h4>
+                        <p>
+                          Username/password credentials this agent uses directly, independent of the old
+                          authentication link above — the credentials the upcoming kiosk/app login will use.
+                        </p>
+                        {isLoadingInternalAccount ? (
+                          <p className={styles.inlineNotice}>Loading internal account...</p>
+                        ) : internalAccount ? (
+                          <>
+                            <div className={styles.summaryField}>
+                              <span>Username</span>
+                              <strong>{internalAccount.username}</strong>
+                            </div>
+                            <div className={styles.summaryField}>
+                              <span>Internal Account Status</span>
+                              <strong>{internalAccount.status}</strong>
+                            </div>
+                            {internalAccount.mustChangePassword ? (
+                              <span className={styles.dirtyPill}>Password change required</span>
+                            ) : null}
+                            <p>
+                              Last login:{' '}
+                              {internalAccount.lastLoginAt ? formatDateTime(internalAccount.lastLoginAt) : 'Never'}
+                            </p>
+                            {internalAccount.passwordResetAt ? (
+                              <p>Password reset at: {formatDateTime(internalAccount.passwordResetAt)}</p>
+                            ) : null}
+                            <div className={styles.segmented}>
+                              {(['Active', 'Inactive', 'Locked'] as AgentInternalAccountStatus[]).map((status) => (
+                                <button
+                                  key={status}
+                                  type="button"
+                                  className={internalAccount.status === status ? styles.segmentActive : ''}
+                                  disabled={isUpdatingInternalAccountStatus}
+                                  onClick={() => void handleUpdateInternalAccountStatus(status)}
+                                >
+                                  {status}
+                                </button>
+                              ))}
+                            </div>
+                            {internalAccountError ? (
+                              <p className={styles.validationError}>{internalAccountError}</p>
+                            ) : null}
+                            <button
+                              type="button"
+                              className={styles.secondaryButton}
+                              disabled={isResettingInternalPassword}
+                              onClick={() => setIsResetInternalConfirmOpen(true)}
+                            >
+                              {isResettingInternalPassword ? 'Resetting Password...' : 'Reset Password'}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <p className={styles.inlineNotice}>This agent does not have an internal account yet.</p>
+                            {internalAccountError ? (
+                              <p className={styles.validationError}>{internalAccountError}</p>
+                            ) : null}
+                            <button
+                              type="button"
+                              className={styles.secondaryButton}
+                              disabled={isCreatingInternalAccount}
+                              onClick={() => void handleCreateInternalAccount()}
+                            >
+                              {isCreatingInternalAccount ? 'Creating Account...' : 'Create Internal Account'}
+                            </button>
+                          </>
+                        )}
                       </article>
                       <article className={`${styles.settingsCard} ${styles.dangerCard}`}>
                         <h4>Danger Zone</h4>
@@ -1522,6 +1674,7 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
             <p>
               This will reset the agent's password to the temporary password "password", sign out the agent's active sessions, and require the agent to create a new password on the next login.
             </p>
+            {resetMessage ? <p className={styles.successMessage}>{resetMessage}</p> : null}
             {resetError ? <p className={styles.validationError}>{resetError}</p> : null}
             <div className={styles.confirmActions}>
               <button
@@ -1539,6 +1692,81 @@ export default function AgentProfilePanel({ account, onSave, onClose }: AgentPro
                 disabled={isResettingPassword}
               >
                 {isResettingPassword ? 'Resetting Password...' : 'Reset Password'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isResetInternalConfirmOpen ? (
+        <div className={styles.confirmOverlay} role="presentation">
+          <div className={styles.confirmModal} role="dialog" aria-modal="true" aria-label="Reset agent internal password">
+            <h3>Reset Internal Password</h3>
+            <p>
+              This will generate a new temporary password for this agent's internal account. The current password
+              stops working immediately, and the agent will be required to change it on next use.
+            </p>
+            {internalAccountError ? <p className={styles.validationError}>{internalAccountError}</p> : null}
+            <div className={styles.confirmActions}>
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() => setIsResetInternalConfirmOpen(false)}
+                disabled={isResettingInternalPassword}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={styles.dangerButton}
+                onClick={() => void handleResetInternalPassword()}
+                disabled={isResettingInternalPassword}
+              >
+                {isResettingInternalPassword ? 'Resetting Password...' : 'Reset Password'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {generatedCredential ? (
+        <div className={styles.confirmOverlay} role="presentation">
+          <div className={styles.confirmModal} role="dialog" aria-modal="true" aria-label="Internal account credentials">
+            <h3>Internal Account Credentials</h3>
+            <p className={styles.successMessage}>Password reset successfully.</p>
+            <p className={styles.inlineNotice}>
+              Development phase only: every account currently uses the fixed temporary password below rather than a
+              unique generated one. The agent must change it after first use.
+            </p>
+            <div className={styles.summaryField}>
+              <span>Username</span>
+              <strong>{generatedCredential.username}</strong>
+              <button type="button" className={styles.secondaryButton} onClick={() => void handleCopyCredential(generatedCredential.username, 'Username')}>
+                Copy
+              </button>
+            </div>
+            <div className={styles.summaryField}>
+              <span>Temporary Password</span>
+              <strong>{generatedCredential.temporaryPassword}</strong>
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() => void handleCopyCredential(generatedCredential.temporaryPassword, 'Temporary password')}
+              >
+                Copy
+              </button>
+            </div>
+            {credentialCopyNotice ? <p className={styles.successMessage}>{credentialCopyNotice}</p> : null}
+            <div className={styles.confirmActions}>
+              <button
+                type="button"
+                className={styles.primaryButton}
+                onClick={() => {
+                  setGeneratedCredential(null);
+                  setCredentialCopyNotice('');
+                }}
+              >
+                Done
               </button>
             </div>
           </div>

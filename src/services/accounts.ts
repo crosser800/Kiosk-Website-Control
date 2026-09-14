@@ -5,6 +5,7 @@ import type {
   AccountView,
 } from '../components/account/AccountsSummary';
 import { getStoredInternalSessionToken } from './internalAdminAuth';
+import { createAgentInternalAccount } from './agentInternalAccounts';
 import type { OrderPriceCode } from './orderPricing';
 import {
   ADMIN_PROFILE_BUCKET,
@@ -925,8 +926,19 @@ async function addAgentAccountItem(account: AccountInput) {
     }
   }
 
+  let internalAccountWarning = '';
+  if (agentId && account.status === 'Active') {
+    try {
+      await createAgentInternalAccount(agentId);
+    } catch (internalAccountError) {
+      console.error('Agent internal account creation failed', internalAccountError);
+      internalAccountWarning = 'Agent was created, but the internal login account could not be created.';
+    }
+  }
+
   const accounts = (await loadAccountItems()) as AccountCreateResult;
-  if (profileWarning) accounts.warning = profileWarning;
+  const warnings = [profileWarning, internalAccountWarning].filter(Boolean);
+  if (warnings.length > 0) accounts.warning = warnings.join(' ');
 
   return accounts;
 }
