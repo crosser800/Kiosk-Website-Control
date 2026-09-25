@@ -2368,6 +2368,32 @@ export default function AddProduct({
         variationIdsByCardKey.set(cardKey, [...(variationIdsByCardKey.get(cardKey) ?? []), rowId]);
       });
 
+      // Alias the PRE-SAVE logical key (the `text:<name>::<sku>` key a
+      // brand-new variation carries before it has a variation_group_id) to
+      // the same resolved target above, keyed per price code. A discount
+      // created against that new variation in this same session stores this
+      // pre-save key in discount.variationId; without this alias it can
+      // never resolve once resolveVariationGroupId mints a real group id
+      // during this save, because the lookup above is only keyed by the
+      // *post-save* cardKey (`group:<newId>`) and the db row id.
+      //
+      // Scoped strictly to `variations`/`bundleKeyByItemId`, both local to
+      // this one save call for this one productId — never a global/fuzzy
+      // name+SKU lookup, and never touches the canonical group:<id> or
+      // <db-row-id> keys set above, so already-persisted/reopened variations
+      // resolve exactly as before.
+      variations.forEach((item) => {
+        const priceCode = normalizePriceCode(item.priceCode);
+        const dbRowId = getStableUuid(item.id);
+        const canonicalTarget = variationTargetLookup.get(buildVariationTargetKey(dbRowId, priceCode));
+        if (!canonicalTarget) return;
+        const preSaveBundleKey = bundleKeyByItemId.get(item.id) ?? '';
+        const preSaveAliasKey = buildVariationTargetKey(preSaveBundleKey, priceCode);
+        if (!preSaveAliasKey) return;
+        variationTargetLookup.set(preSaveAliasKey, canonicalTarget);
+        variationClassLookup.set(preSaveAliasKey, canonicalTarget.className);
+      });
+
       const productImageMediaById = new Map(
         persistedMediaItems
           .filter((item) => item.isExisting && item.type === 'image' && !item.variationId)
