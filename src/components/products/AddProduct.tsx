@@ -824,7 +824,7 @@ export default function AddProduct({
   // product_discounts headers that loaded with zero product_discount_classes
   // rows (typically left behind by an earlier failed save). They have no
   // variation target, so they are kept OUT of `discounts` (never resubmitted)
-  // and are also never deleted/retired by the save — they are only reported.
+  // and are also never deleted/retired by the save. Not shown in the UI.
   const [unresolvedDiscountHeaders, setUnresolvedDiscountHeaders] = useState<
     Array<{ id: string; discountName: string; priceCode: string; status: string }>
   >([]);
@@ -833,8 +833,6 @@ export default function AddProduct({
   const [unresolvedSurchargeHeaders, setUnresolvedSurchargeHeaders] = useState<
     Array<{ id: string; surchargeName: string; surchargeType: string; priceCode: string; status: string }>
   >([]);
-  const [showStaleDiscountDetails, setShowStaleDiscountDetails] = useState(false);
-  const [showStaleSurchargeDetails, setShowStaleSurchargeDetails] = useState(false);
   const [loadedExistingMediaIds, setLoadedExistingMediaIds] = useState<string[]>([]);
   const [loadedExistingMediaItems, setLoadedExistingMediaItems] = useState<MediaItem[]>([]);
   const [submitError, setSubmitError] = useState('');
@@ -1086,8 +1084,6 @@ export default function AddProduct({
       setSaveNotice(null);
       setUnresolvedDiscountHeaders([]);
       setUnresolvedSurchargeHeaders([]);
-      setShowStaleDiscountDetails(false);
-      setShowStaleSurchargeDetails(false);
 
       if (!editProductId) {
         return;
@@ -3548,56 +3544,6 @@ export default function AddProduct({
           >
             {saveNotice.message}
           </p>
-        ) : null}
-        {unresolvedDiscountHeaders.length > 0 ? (
-          <div className={`${styles.saveNotice} ${styles.saveNoticeWarning}`}>
-            {unresolvedDiscountHeaders.length} incomplete old discount record
-            {unresolvedDiscountHeaders.length === 1 ? ' was' : 's were'} found. They are ignored and will
-            not be resubmitted.
-            <button
-              type="button"
-              className={styles.staleNoticeToggle}
-              aria-expanded={showStaleDiscountDetails}
-              onClick={() => setShowStaleDiscountDetails((current) => !current)}
-            >
-              {showStaleDiscountDetails ? 'Hide details' : 'Show details'}
-            </button>
-            {showStaleDiscountDetails ? (
-              <ul className={styles.staleNoticeDetails}>
-                {unresolvedDiscountHeaders.map((header) => (
-                  <li key={header.id}>
-                    {header.discountName || 'Unnamed discount'} ({header.priceCode || 'no price code'},{' '}
-                    {header.status})
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        ) : null}
-        {unresolvedSurchargeHeaders.length > 0 ? (
-          <div className={`${styles.saveNotice} ${styles.saveNoticeWarning}`}>
-            {unresolvedSurchargeHeaders.length} incomplete old promo/surcharge record
-            {unresolvedSurchargeHeaders.length === 1 ? ' was' : 's were'} found. They are ignored and
-            will not be resubmitted.
-            <button
-              type="button"
-              className={styles.staleNoticeToggle}
-              aria-expanded={showStaleSurchargeDetails}
-              onClick={() => setShowStaleSurchargeDetails((current) => !current)}
-            >
-              {showStaleSurchargeDetails ? 'Hide details' : 'Show details'}
-            </button>
-            {showStaleSurchargeDetails ? (
-              <ul className={styles.staleNoticeDetails}>
-                {unresolvedSurchargeHeaders.map((header) => (
-                  <li key={header.id}>
-                    {header.surchargeName || 'Unnamed promo/surcharge'} ({header.surchargeType || 'no type'},{' '}
-                    {header.priceCode || 'no price code'}, {header.status})
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
         ) : null}
 
         {!isEditorLoading && activeSection === 'Basic Information' ? (
