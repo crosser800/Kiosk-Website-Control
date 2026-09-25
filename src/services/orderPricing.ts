@@ -58,7 +58,8 @@ export type PromotionIneligibilityReason =
   | 'above_maximum_quantity'
   | 'wrong_branch'
   | 'wrong_price_type'
-  | 'wrong_variation';
+  | 'wrong_variation'
+  | 'unresolved_configuration';
 
 export type PromotionEligibility = {
   id: string;
@@ -652,7 +653,12 @@ function getRuleIneligibilityReasons(
   if (!isNullableTextMatch(rule.priceCode, context.price.priceCode)) {
     reasons.push('wrong_price_class');
   }
-  if (rule.classes.length > 0) {
+  if (rule.classes.length === 0) {
+    // Fail closed: a rule with no class rows is incomplete configuration,
+    // never an implicit product-wide rule (orderCatalog already excludes
+    // these; this guards any other caller of calculateOrderLine).
+    reasons.push('unresolved_configuration');
+  } else {
     const classReasons = rule.classes.map((item) => getClassIneligibilityReasons(item, context));
     if (!classReasons.some((item) => item.length === 0)) {
       reasons.push(...Array.from(new Set(classReasons.flat())));
@@ -696,20 +702,10 @@ function getAssortedRuleMatch(rule: SurchargeRule, context: RuleMatchContext) {
     return null;
   }
 
+  // Fail closed: a promo with no class rows is incomplete configuration and
+  // never qualifies (previously it matched every variation of the product).
   if (rule.classes.length === 0) {
-    return {
-      thresholdQuantity: rule.minQuantity,
-      rewardQuantity: rule.freeQuantity,
-      qualifyingUnitCode: context.unitOption.unitCode,
-      rewardUnitCode: rule.rewardUnitCode,
-      rewardRepeatMode: rule.rewardRepeatMode || 'one_time',
-      rewardEveryQuantity: rule.rewardEveryQuantity ?? rule.minQuantity,
-      rewardTargetType: rule.rewardTargetType || 'same_item',
-      rewardProductId: rule.rewardProductId,
-      rewardVariationId: rule.rewardVariationId,
-      rewardUnitOptionId: rule.rewardUnitOptionId,
-      eligibleVariationIds: [context.variationId],
-    };
+    return null;
   }
 
   const matchingClass = rule.classes.find(

@@ -263,6 +263,27 @@ function isBaseUnitOption(option: Pick<VariationUnitOptionItem, 'unitCode'>, bas
   return option.unitCode.trim().toLowerCase() === baseUnitCode.trim().toLowerCase();
 }
 
+// Price of ONE selected order unit for the discount preview:
+//   no option / base unit -> the price-class base price
+//   package unit          -> price_override when valid and > 0,
+//                            otherwise base price x quantity_in_base_unit
+function getSelectedUnitPrice(
+  card: VariationCard,
+  priceCode: PriceCode,
+  option: VariationUnitOptionItem | null,
+  baseUnitCode: string,
+) {
+  const basePrice = parseNumberInput(card.prices[priceCode]);
+  if (!option || isBaseUnitOption(option, baseUnitCode)) {
+    return basePrice;
+  }
+  const override = parseNumberInput(option.priceOverride);
+  if (Number.isFinite(override) && override > 0) {
+    return override;
+  }
+  return getComputedUnitPrice(card, priceCode, option.quantityInBaseUnit);
+}
+
 // blank/invalid base weight or multiplier -> '' (never guess, never show 0 as a real value)
 function computeAutoUnitWeight(baseWeightValue: string, quantityInBaseUnit: string): string {
   const baseWeight = parseNullableNumberInput(baseWeightValue);
@@ -3725,14 +3746,40 @@ export default function VarAndPrice({
                           discountContext.variationId,
                           rule.unitOptionId,
                         );
-                        const previewQuantityInBaseUnit =
-                          rule.unitCondition === 'selected_unit'
-                            ? selectedOption?.quantityInBaseUnit ?? '1'
-                            : '1';
+                        const cardBaseUnitCode = getCardBaseUnitCode(discountContext.variationId);
+                        // Price of one selected order unit (base unit for any_unit rules).
                         const basePrice = currentCard
-                          ? getComputedUnitPrice(currentCard, discountContext.code, previewQuantityInBaseUnit)
+                          ? getSelectedUnitPrice(
+                              currentCard,
+                              discountContext.code,
+                              rule.unitCondition === 'selected_unit' ? selectedOption : null,
+                              cardBaseUnitCode,
+                            )
                           : 0;
                         const stackingPreview = buildStackingPreview(ruleGroup.rows, basePrice);
+                        // Minimum qualifying order: the rule's own min quantity, in the
+                        // selected order unit (selected_unit) or the base unit (any_unit —
+                        // matched against base quantity), run through the SAME stacking
+                        // helper with the gross line amount as its base.
+                        const minOrderQuantityText = rule.minOrderQuantity || '1';
+                        const minOrderQuantity = parseNumberInput(minOrderQuantityText);
+                        const minOrderUnitLabel =
+                          rule.unitCondition === 'selected_unit'
+                            ? getUnitOptionLabel(selectedOption) || 'unit'
+                            : cardBaseUnitCode || 'unit';
+                        const minOrderGross = roundMoney(basePrice * minOrderQuantity);
+                        const minOrderPreview = buildStackingPreview(ruleGroup.rows, minOrderGross);
+                        const minOrderUnavailableReason =
+                          rule.unitCondition === 'selected_unit' && !selectedOption
+                            ? 'Select an order unit to preview the minimum qualifying order.'
+                            : minOrderQuantity <= 0
+                              ? 'Enter a minimum order quantity to preview the minimum qualifying order.'
+                              : basePrice <= 0
+                                ? 'Enter a price for this price class to preview the minimum qualifying order.'
+                                : '';
+                        const hasFixedAmountStack = ruleGroup.rows.some(
+                          (row) => row.discountType === 'Amount' && row.amount.trim(),
+                        );
                         const minBasePreview = computeBaseQuantityPreview(
                           discountContext.variationId,
                           rule.unitCondition,
@@ -4098,6 +4145,9 @@ export default function VarAndPrice({
                               + Add Adjustment Stack
                             </button>
 
+                            <h5 className={styles.modalSectionTitle}>
+                              Per {rule.unitCondition === 'selected_unit' ? 'Selected Unit' : 'Unit'} ({minOrderUnitLabel})
+                            </h5>
                             <div className={styles.adjustmentSummary}>
                               <div className={styles.adjustmentSummaryRow}>
                                 <span>Base</span>
@@ -4130,6 +4180,61 @@ export default function VarAndPrice({
                                 </div>
                               </div>
                             </div>
+
+                            <h5 className={styles.modalSectionTitle}>Minimum Qualifying Order</h5>
+                            {minOrderUnavailableReason ? (
+                              <p className={styles.encoderPreviewText}>{minOrderUnavailableReason}</p>
+                            ) : (
+                              <div className={styles.adjustmentSummary}>
+                                <div className={styles.adjustmentSummaryRow}>
+                                  <span>Minimum Qty</span>
+                                  <strong>
+                                    {minOrderQuantityText} {pluralizeUnitLabel(minOrderUnitLabel, minOrderQuantityText)}
+                                  </strong>
+                                </div>
+                                <div className={styles.adjustmentSummaryRow}>
+                                  <span>Gross</span>
+                                  <strong>
+                                    {minOrderQuantityText} × {formatCurrency(basePrice)} = {formatCurrency(minOrderGross)}
+                                  </strong>
+                                </div>
+                                {minOrderPreview.steps.length > 1
+                                  ? minOrderPreview.steps.map((step, stepIndex) => (
+                                      <div key={step.id} className={styles.adjustmentSummaryRow}>
+                                        <span>
+                                          After{' '}
+                                          {getAdjustmentValueLabel(
+                                            ruleGroup.rows[stepIndex]?.adjustmentKind ?? 'Discount',
+                                            ruleGroup.rows[stepIndex]?.discountType ?? 'Percent',
+                                            ruleGroup.rows[stepIndex]?.amount ?? '',
+                                          )}
+                                        </span>
+                                        <strong>{formatCurrency(step.after)}</strong>
+                                      </div>
+                                    ))
+                                  : null}
+                                <div className={styles.adjustmentSummaryRow}>
+                                  <span>{minOrderPreview.steps.length > 1 ? 'Total Discount' : 'Discount'}</span>
+                                  <strong>{formatCurrency(minOrderPreview.totalDiscount)}</strong>
+                                </div>
+                                {minOrderPreview.totalSurcharge > 0 ? (
+                                  <div className={styles.adjustmentSummaryRow}>
+                                    <span>Total Surcharge</span>
+                                    <strong>{formatCurrency(minOrderPreview.totalSurcharge)}</strong>
+                                  </div>
+                                ) : null}
+                                <div className={`${styles.adjustmentSummaryRow} ${styles.adjustmentSummaryFinal}`}>
+                                  <span>Final</span>
+                                  <strong>{formatCurrency(minOrderPreview.finalPrice)}</strong>
+                                </div>
+                              </div>
+                            )}
+                            {!minOrderUnavailableReason && hasFixedAmountStack ? (
+                              <p className={styles.encoderPreviewText}>
+                                Fixed-amount stacks are deducted once from the order line total here (as order
+                                pricing applies them); the per-unit preview above deducts them from one unit.
+                              </p>
+                            ) : null}
 
                             <div className={styles.encoderPreviewSection}>
                               <h5 className={styles.modalSectionTitle}>Discount Rule Preview</h5>

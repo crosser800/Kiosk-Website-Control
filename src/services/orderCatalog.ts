@@ -246,6 +246,13 @@ export async function loadOrderCatalog(): Promise<OrderCatalogProduct[]> {
     throw new Error(loadError.message);
   }
 
+  warnSkippedZeroClassRules({
+    discounts: (discountsRes.data ?? []) as DiscountRow[],
+    discountClasses: (discountClassesRes.data ?? []) as DiscountClassRow[],
+    surcharges: (surchargesRes.data ?? []) as SurchargeRow[],
+    surchargeClasses: (surchargeClassesRes.data ?? []) as SurchargeClassRow[],
+  });
+
   return buildOrderCatalog({
     products: (productsRes.data ?? []) as ProductRow[],
     variations: (variationsRes.data ?? []) as VariationRow[],
@@ -255,6 +262,25 @@ export async function loadOrderCatalog(): Promise<OrderCatalogProduct[]> {
     surcharges: (surchargesRes.data ?? []) as SurchargeRow[],
     surchargeClasses: (surchargeClassesRes.data ?? []) as SurchargeClassRow[],
   });
+}
+
+// Developer-facing diagnostic only (console): how many headers buildOrderCatalog
+// will skip because they have no class rows.
+function warnSkippedZeroClassRules(input: {
+  discounts: DiscountRow[];
+  discountClasses: DiscountClassRow[];
+  surcharges: SurchargeRow[];
+  surchargeClasses: SurchargeClassRow[];
+}) {
+  const discountIdsWithClasses = new Set(input.discountClasses.map((row) => String(row.discount_id ?? '')));
+  const surchargeIdsWithClasses = new Set(input.surchargeClasses.map((row) => String(row.surcharge_id ?? '')));
+  const skippedDiscounts = input.discounts.filter((row) => !discountIdsWithClasses.has(String(row.id))).length;
+  const skippedSurcharges = input.surcharges.filter((row) => !surchargeIdsWithClasses.has(String(row.id))).length;
+  if (skippedDiscounts > 0 || skippedSurcharges > 0) {
+    console.warn(
+      `[order-catalog] Skipped ${skippedDiscounts} discount and ${skippedSurcharges} promo/surcharge header(s) with no class rows (unresolved configuration; not applied to pricing).`,
+    );
+  }
 }
 
 export async function loadOrderPriceClasses(): Promise<OrderCatalogPriceClass[]> {
@@ -297,12 +323,17 @@ export function buildOrderCatalog(input: {
   return input.products.map((product) => {
     const productId = String(product.id);
     const groupedVariations = groupVariationRows(variationsByProductId.get(productId) ?? []);
-    const productDiscounts = (discountsByProductId.get(productId) ?? []).map((row) =>
-      mapDiscountRule(row, discountClassesByDiscountId.get(String(row.id)) ?? []),
-    );
-    const productSurcharges = (surchargesByProductId.get(productId) ?? []).map((row) =>
-      mapSurchargeRule(row, surchargeClassesBySurchargeId.get(String(row.id)) ?? []),
-    );
+    // A header with zero class rows is incomplete configuration (typically
+    // left behind by a failed Product editor save), NOT a product-wide rule:
+    // nothing declares a header as intentionally product-wide, and the editor
+    // always writes variation-targeted class rows. Exclude such headers from
+    // pricing entirely rather than attaching them to every variation.
+    const productDiscounts = (discountsByProductId.get(productId) ?? [])
+      .map((row) => mapDiscountRule(row, discountClassesByDiscountId.get(String(row.id)) ?? []))
+      .filter((rule) => rule.classes.length > 0);
+    const productSurcharges = (surchargesByProductId.get(productId) ?? [])
+      .map((row) => mapSurchargeRule(row, surchargeClassesBySurchargeId.get(String(row.id)) ?? []))
+      .filter((rule) => rule.classes.length > 0);
 
     return {
       id: productId,
@@ -401,13 +432,16 @@ function buildCatalogVariation(input: {
       ...rule,
       classes: rule.classes.filter((item) => !item.variationId || rowIds.has(item.variationId)),
     }))
-    .filter((rule) => input.discounts.find((item) => item.id === rule.id)?.classes.length === 0 || rule.classes.length > 0);
+    // Only rules with at least one class row for THIS variation. (Previously a
+    // rule with zero class rows was also kept here, i.e. attached to every
+    // variation of the product.)
+    .filter((rule) => rule.classes.length > 0);
   const groupedSurcharges = input.surcharges
     .map((rule) => ({
       ...rule,
       classes: rule.classes.filter((item) => !item.variationId || rowIds.has(item.variationId)),
     }))
-    .filter((rule) => input.surcharges.find((item) => item.id === rule.id)?.classes.length === 0 || rule.classes.length > 0);
+    .filter((rule) => rule.classes.length > 0);
 
   return {
     id: buildVariationGroupingKey(firstRow),

@@ -169,6 +169,95 @@ function getSyntheticParentUuid(value: string | null | undefined) {
   return isUuid(possibleUuid) ? possibleUuid : '';
 }
 
+// Exact pre-save -> persisted identity captured during one product save, used
+// to reconcile editor state so a retry (or a second save) in the same session
+// sees the variation as the persisted one instead of a brand-new one.
+//   groupIdByPreSaveKey: pre-save logical key -> resolved variation_group_id
+//   logicalKeyMap:       pre-save logical key -> `group:<id>` (changed keys only)
+//   rowIdMap:            pre-save VariationItem.id -> persisted row id (changed only)
+type PersistedVariationIdentity = {
+  groupIdByPreSaveKey: Map<string, string>;
+  logicalKeyMap: Map<string, string>;
+  rowIdMap: Map<string, string>;
+};
+
+function remapVariationReference(value: string, identity: PersistedVariationIdentity) {
+  return identity.logicalKeyMap.get(value) ?? identity.rowIdMap.get(value) ?? value;
+}
+
+function applyPersistedIdentityToVariations(
+  items: VariationItem[],
+  identity: PersistedVariationIdentity,
+): VariationItem[] {
+  return items.map((item) => {
+    const preSaveKey = getLogicalVariationKey({
+      variationGroupId: item.variationGroupId,
+      variationName: item.variationName,
+      className: item.className,
+      skuCode: item.skuCode,
+    });
+    const persistedGroupId = identity.groupIdByPreSaveKey.get(preSaveKey);
+    const persistedRowId = identity.rowIdMap.get(item.id);
+    if (!persistedGroupId && !persistedRowId) return item;
+    return {
+      ...item,
+      id: persistedRowId ?? item.id,
+      variationGroupId: persistedGroupId ?? item.variationGroupId,
+    };
+  });
+}
+
+function applyPersistedIdentityToUnitOptions(
+  items: VariationUnitOptionItem[],
+  identity: PersistedVariationIdentity,
+): VariationUnitOptionItem[] {
+  return items.map((item) => ({
+    ...item,
+    variationId: remapVariationReference(item.variationId, identity),
+    rawVariationId: item.rawVariationId
+      ? identity.rowIdMap.get(item.rawVariationId) ?? item.rawVariationId
+      : item.rawVariationId,
+  }));
+}
+
+function applyPersistedIdentityToPreviewMedia(
+  mediaByCardId: Record<string, string>,
+  identity: PersistedVariationIdentity,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(mediaByCardId).map(([cardKey, mediaId]) => [
+      identity.logicalKeyMap.get(cardKey) ?? cardKey,
+      mediaId,
+    ]),
+  );
+}
+
+function applyPersistedIdentityToDiscounts(
+  items: DiscountItem[],
+  identity: PersistedVariationIdentity,
+): DiscountItem[] {
+  return items.map((item) => ({
+    ...item,
+    variationId: remapVariationReference(item.variationId, identity),
+    promoRewardVariationId: item.promoRewardVariationId
+      ? remapVariationReference(item.promoRewardVariationId, identity)
+      : item.promoRewardVariationId,
+  }));
+}
+
+function applyPersistedIdentityToSurcharges(
+  items: SurchargeItem[],
+  identity: PersistedVariationIdentity,
+): SurchargeItem[] {
+  return items.map((item) => ({
+    ...item,
+    variationId: remapVariationReference(item.variationId, identity),
+    rewardVariationId: item.rewardVariationId
+      ? remapVariationReference(item.rewardVariationId, identity)
+      : item.rewardVariationId,
+  }));
+}
+
 type PromoGiftCheckMeta = {
   giftCheckId: string;
   giftCheckCode: string;
@@ -732,6 +821,20 @@ export default function AddProduct({
   const [variationUnitOptions, setVariationUnitOptions] = useState<VariationUnitOptionItem[]>([]);
   const [discounts, setDiscounts] = useState<DiscountItem[]>([]);
   const [surcharges, setSurcharges] = useState<SurchargeItem[]>([]);
+  // product_discounts headers that loaded with zero product_discount_classes
+  // rows (typically left behind by an earlier failed save). They have no
+  // variation target, so they are kept OUT of `discounts` (never resubmitted)
+  // and are also never deleted/retired by the save — they are only reported.
+  const [unresolvedDiscountHeaders, setUnresolvedDiscountHeaders] = useState<
+    Array<{ id: string; discountName: string; priceCode: string; status: string }>
+  >([]);
+  // Same treatment for product_surcharges (promo/freebie/surcharge) headers
+  // with zero product_surcharge_classes rows.
+  const [unresolvedSurchargeHeaders, setUnresolvedSurchargeHeaders] = useState<
+    Array<{ id: string; surchargeName: string; surchargeType: string; priceCode: string; status: string }>
+  >([]);
+  const [showStaleDiscountDetails, setShowStaleDiscountDetails] = useState(false);
+  const [showStaleSurchargeDetails, setShowStaleSurchargeDetails] = useState(false);
   const [loadedExistingMediaIds, setLoadedExistingMediaIds] = useState<string[]>([]);
   const [loadedExistingMediaItems, setLoadedExistingMediaItems] = useState<MediaItem[]>([]);
   const [submitError, setSubmitError] = useState('');
@@ -981,6 +1084,10 @@ export default function AddProduct({
       setActiveSection(initialSection);
       setSubmitError('');
       setSaveNotice(null);
+      setUnresolvedDiscountHeaders([]);
+      setUnresolvedSurchargeHeaders([]);
+      setShowStaleDiscountDetails(false);
+      setShowStaleSurchargeDetails(false);
 
       if (!editProductId) {
         return;
@@ -1244,69 +1351,28 @@ export default function AddProduct({
         setVariationUnitOptions([]);
       }
 
+      const loadedUnresolvedDiscountHeaders: Array<{
+        id: string;
+        discountName: string;
+        priceCode: string;
+        status: string;
+      }> = [];
       const mappedDiscounts: DiscountItem[] = (discountRes.data ?? []).flatMap((row: any) => {
         const classes = Array.isArray(row.product_discount_classes)
           ? row.product_discount_classes
           : [];
         if (classes.length === 0) {
-          return [
-            {
-              id: String(row.id),
-              discountRecordId: String(row.id),
-              discountClassId: '',
-              variationId: '',
-              discountKind: normalizeDiscountKind(row.discount_kind),
-              discountName: String(row.discount_name ?? ''),
-              discountType: (row.discount_type as DiscountItem['discountType']) ?? 'Percent',
-              amount: String(
-                row.discount_type === 'Percent' ? row.discount_percent ?? '' : row.amount ?? '',
-              ),
-              minQuantity: String(row.min_quantity ?? '1'),
-              maxQuantity: String(row.max_quantity ?? ''),
-              branchName: (row.branch_name as DiscountItem['branchName']) ?? '',
-              priceType: (row.price_type as DiscountItem['priceType']) ?? '',
-              priceCode: (row.price_code as DiscountItem['priceCode']) ?? '',
-              calculationMethod: normalizeCalculationMethod(row.calculation_method),
-              applySequence: String(row.apply_sequence ?? '1'),
-              discountGroup: String(row.discount_group ?? ''),
-              appliesTo: (row.applies_to as DiscountItem['appliesTo']) ?? 'UnitPrice',
-              stackable: Boolean(row.stackable ?? true),
-              description: String(row.description ?? ''),
-              status: String(row.status ?? 'Active') === 'Inactive' ? 'Inactive' : 'Active',
-              priority: String(row.priority ?? '0'),
-              startsAt: String(row.starts_at ?? ''),
-              endsAt: String(row.ends_at ?? ''),
-              unitOptionId: '',
-              orderUnitCode: '',
-              unitCondition: 'any_unit',
-              minOrderQuantity: String(row.min_quantity ?? '1'),
-              maxOrderQuantity: String(row.max_quantity ?? ''),
-              minBaseQuantity: '',
-              maxBaseQuantity: '',
-              unitRuleLabel: '',
-              unitRuleNotes: '',
-              hasPromo: false,
-              promoType: 'Freebie',
-              promoRewardUnitCode: '',
-              promoRewardQuantity: '1',
-              promoRewardLabel: '',
-              promoSourceSurchargeId: '',
-              promoRewardTargetType: 'same_item',
-              promoRewardProductId: '',
-              promoRewardProductLabel: '',
-              promoRewardVariationId: '',
-              promoRewardVariationLabel: '',
-              promoRewardUnitOptionId: '',
-              promoRewardRepeatMode: 'one_time',
-              promoRewardEveryQuantity: '',
-              promoQualificationScope: 'line',
-              promoGiftCheckEnabled: false,
-              promoGiftCheckId: '',
-              promoGiftCheckCode: '',
-              promoGiftCheckName: '',
-              promoGiftCheckQuantity: '',
-            },
-          ];
+          // No class row means no variation target: mapping this to an
+          // editable discount would give it variationId '' — invisible in
+          // every variation card, yet resubmitted on Save where it can never
+          // resolve. Report it instead of loading it.
+          loadedUnresolvedDiscountHeaders.push({
+            id: String(row.id),
+            discountName: String(row.discount_name ?? ''),
+            priceCode: normalizePriceCode(row.price_code),
+            status: String(row.status ?? 'Active'),
+          });
+          return [];
         }
         return classes.map((classRow: any, classIndex: number) => {
           const rawVariationId = String(classRow.variation_id ?? '');
@@ -1379,61 +1445,29 @@ export default function AddProduct({
           };
         });
       });
+      const loadedUnresolvedSurchargeHeaders: Array<{
+        id: string;
+        surchargeName: string;
+        surchargeType: string;
+        priceCode: string;
+        status: string;
+      }> = [];
       const mappedSurcharges: SurchargeItem[] = (surchargeRes.data ?? []).flatMap((row: any) => {
         const classes = Array.isArray(row.product_surcharge_classes)
           ? row.product_surcharge_classes
           : [];
         if (classes.length === 0) {
-          return [
-            {
-              id: String(row.id),
-              linkedDiscountId: String(row.linked_discount_id ?? ''),
-              linkedDiscountClassId: '',
-              variationId: '',
-              surchargeName: String(row.surcharge_name ?? ''),
-              surchargeType: (row.surcharge_type as SurchargeItem['surchargeType']) ?? 'Amount',
-              amount: String(
-                row.surcharge_type === 'Percent' ? row.surcharge_percent ?? '' : row.amount ?? '',
-              ),
-              freeQuantity: String(row.free_quantity ?? '0'),
-              minQuantity: String(row.min_quantity ?? '1'),
-              maxQuantity: String(row.max_quantity ?? ''),
-              branchName: (row.branch_name as SurchargeItem['branchName']) ?? '',
-              priceType: (row.price_type as SurchargeItem['priceType']) ?? '',
-              priceCode: (row.price_code as SurchargeItem['priceCode']) ?? '',
-              description: String(row.description ?? ''),
-              status: String(row.status ?? 'Active') === 'Inactive' ? 'Inactive' : 'Active',
-              priority: String(row.priority ?? '0'),
-              startsAt: String(row.starts_at ?? ''),
-              endsAt: String(row.ends_at ?? ''),
-              unitOptionId: '',
-              orderUnitCode: '',
-              unitCondition: 'any_unit',
-              minOrderQuantity: String(row.min_quantity ?? '1'),
-              maxOrderQuantity: String(row.max_quantity ?? ''),
-              minBaseQuantity: '',
-              maxBaseQuantity: '',
-              rewardUnitCode: '',
-              rewardQuantity: String(row.free_quantity ?? '0'),
-              rewardLabel: String(row.free_item_label ?? ''),
-              unitRuleLabel: '',
-              unitRuleNotes: '',
-              rewardTargetType: normalizeRewardTargetType(row.reward_target_type),
-              rewardProductId: String(row.reward_product_id ?? ''),
-              rewardVariationId: String(row.reward_variation_id ?? ''),
-              rewardUnitOptionId: String(row.reward_unit_option_id ?? ''),
-              rewardRepeatMode:
-                String(row.reward_repeat_mode ?? '').toLowerCase() === 'every'
-                  ? 'every'
-                  : 'one_time',
-              rewardEveryQuantity: String(row.reward_every_quantity ?? ''),
-              qualificationScope:
-                String(row.qualification_scope ?? '').toLowerCase() === 'assorted_same_product'
-                  ? 'assorted_same_product'
-                  : 'line',
-              ...parsePromoGiftCheckMeta(row.description),
-            },
-          ];
+          // Same rule as zero-class discount headers: no class row means no
+          // variation target, so don't load it as an editable rule with
+          // variationId '' (invisible, yet resubmitted and unresolvable on Save).
+          loadedUnresolvedSurchargeHeaders.push({
+            id: String(row.id),
+            surchargeName: String(row.surcharge_name ?? ''),
+            surchargeType: String(row.surcharge_type ?? ''),
+            priceCode: normalizePriceCode(row.price_code),
+            status: String(row.status ?? 'Active'),
+          });
+          return [];
         }
 
         return classes.map((classRow: any, classIndex: number) => {
@@ -1585,6 +1619,8 @@ export default function AddProduct({
       });
 
       setDiscounts(mergedDiscounts);
+      setUnresolvedDiscountHeaders(loadedUnresolvedDiscountHeaders);
+      setUnresolvedSurchargeHeaders(loadedUnresolvedSurchargeHeaders);
       const unmergedSurcharges = mappedSurcharges.filter((item) => !matchedSurchargeIds.has(item.id));
       setSurcharges(unmergedSurcharges);
       savedDraftRef.current = cloneSectionDraftState({
@@ -2251,19 +2287,62 @@ export default function AddProduct({
 
       await validateLogicalVariationSkuAvailability(Array.from(variationGroupBundlesByKey.values()));
 
+      // One persisted row id per item, computed once and shared by the row
+      // upsert, the state reconciliation below and the pre-save alias block
+      // (for a non-UUID item.id, getStableUuid mints a new id on every call).
+      const persistedRowIds = variations.map((item) => getStableUuid(item.id));
+
+      // Each product_variation_groups row is committed as soon as it resolves.
+      // Reconcile editor state with whatever identity has been persisted — in
+      // a finally, so it also happens when a later group or any later phase
+      // fails — so a same-session retry sends variationGroupId (hence
+      // `group:<id>` keys) and the SKU check recognizes the variation as the
+      // same one instead of a new claim on an already-owned SKU. Built only
+      // from this save's own bundleKeyByItemId / variationGroupIdByBundleKey /
+      // persistedRowIds — exact keys, no fuzzy matching.
+      const persistedIdentity: PersistedVariationIdentity = {
+        groupIdByPreSaveKey: new Map(),
+        logicalKeyMap: new Map(),
+        rowIdMap: new Map(),
+      };
       const variationGroupIdByBundleKey = new Map<string, string>();
-      for (const [bundleKey, bundle] of variationGroupBundlesByKey.entries()) {
-        const resolvedGroupId = await resolveVariationGroupId({
-          productId,
-          variationName: bundle.variationName,
-          skuCode: bundle.skuCode,
-          existingGroupId: bundle.existingGroupId,
+      try {
+        for (const [bundleKey, bundle] of variationGroupBundlesByKey.entries()) {
+          const resolvedGroupId = await resolveVariationGroupId({
+            productId,
+            variationName: bundle.variationName,
+            skuCode: bundle.skuCode,
+            existingGroupId: bundle.existingGroupId,
+          });
+          variationGroupIdByBundleKey.set(bundleKey, resolvedGroupId);
+        }
+      } finally {
+        variations.forEach((item, index) => {
+          const preSaveKey = bundleKeyByItemId.get(item.id) ?? '';
+          const groupId = variationGroupIdByBundleKey.get(preSaveKey);
+          if (preSaveKey && groupId) {
+            persistedIdentity.groupIdByPreSaveKey.set(preSaveKey, groupId);
+            const persistedKey = getLogicalVariationKey({ variationGroupId: groupId });
+            if (persistedKey !== preSaveKey) {
+              persistedIdentity.logicalKeyMap.set(preSaveKey, persistedKey);
+            }
+          }
+          const persistedRowId = persistedRowIds[index];
+          if (persistedRowId !== item.id) {
+            persistedIdentity.rowIdMap.set(item.id, persistedRowId);
+          }
         });
-        variationGroupIdByBundleKey.set(bundleKey, resolvedGroupId);
+        setVariations((current) => applyPersistedIdentityToVariations(current, persistedIdentity));
+        setVariationUnitOptions((current) => applyPersistedIdentityToUnitOptions(current, persistedIdentity));
+        setVariationPreviewMediaByCardId((current) =>
+          applyPersistedIdentityToPreviewMedia(current, persistedIdentity),
+        );
+        setDiscounts((current) => applyPersistedIdentityToDiscounts(current, persistedIdentity));
+        setSurcharges((current) => applyPersistedIdentityToSurcharges(current, persistedIdentity));
       }
 
       const variationRows = variations.map((item, index) => ({
-        id: getStableUuid(item.id),
+        id: persistedRowIds[index],
         product_id: productId,
         branch_name: PRICE_CODE_META[item.priceCode]?.branchName ?? item.branchName,
         price_type: PRICE_CODE_META[item.priceCode]?.priceType ?? item.priceType,
@@ -2277,6 +2356,7 @@ export default function AddProduct({
         price_code: item.priceCode || null,
         sort_order: index,
       }));
+
       const { data: insertedVariationRows, error: variationError } = await supabase
         .from('product_variations')
         .upsert(variationRows, { onConflict: 'id' })
@@ -2382,16 +2462,27 @@ export default function AddProduct({
       // name+SKU lookup, and never touches the canonical group:<id> or
       // <db-row-id> keys set above, so already-persisted/reopened variations
       // resolve exactly as before.
-      variations.forEach((item) => {
+      //
+      // registeredAliasTargets records each alias key -> the exact target
+      // object it was registered for, so requireExactVariationTarget can
+      // accept a lookup hit that came through this alias (whose cardKey is
+      // the post-save `group:<id>`, not the requested pre-save key) without
+      // loosening validation for any other key.
+      const registeredAliasTargets = new Map<string, VariationTarget>();
+      variations.forEach((item, index) => {
         const priceCode = normalizePriceCode(item.priceCode);
-        const dbRowId = getStableUuid(item.id);
+        const dbRowId = persistedRowIds[index];
         const canonicalTarget = variationTargetLookup.get(buildVariationTargetKey(dbRowId, priceCode));
         if (!canonicalTarget) return;
         const preSaveBundleKey = bundleKeyByItemId.get(item.id) ?? '';
         const preSaveAliasKey = buildVariationTargetKey(preSaveBundleKey, priceCode);
         if (!preSaveAliasKey) return;
+        // Never repoint a key that already resolves to a different target.
+        const existingTarget = variationTargetLookup.get(preSaveAliasKey);
+        if (existingTarget && existingTarget !== canonicalTarget) return;
         variationTargetLookup.set(preSaveAliasKey, canonicalTarget);
         variationClassLookup.set(preSaveAliasKey, canonicalTarget.className);
+        registeredAliasTargets.set(preSaveAliasKey, canonicalTarget);
       });
 
       const productImageMediaById = new Map(
@@ -2456,8 +2547,13 @@ export default function AddProduct({
         const normalizedVariationKey = String(variationIdOrKey ?? '').trim().toLowerCase();
         const directRowKey = buildVariationTargetKey(target.variationId, normalizedPriceCode);
         const requestedKey = buildVariationTargetKey(variationIdOrKey, normalizedPriceCode);
+        // Exact pre-registered alias: this requested key + price code was
+        // explicitly mapped to this very target during this save.
+        const matchesRegisteredAlias = registeredAliasTargets.get(requestedKey) === target;
         const matchesLogicalVariation =
-          target.cardKey === normalizedVariationKey || directRowKey === requestedKey;
+          target.cardKey === normalizedVariationKey ||
+          directRowKey === requestedKey ||
+          matchesRegisteredAlias;
 
         if (
           target.priceCode !== normalizedPriceCode ||
@@ -2716,42 +2812,112 @@ export default function AddProduct({
         snapshot: DiscountHistorySnapshot;
       }> = [];
 
+      // Zero-class headers reported at load (see unresolvedDiscountHeaders):
+      // not part of `discounts`, and must not be treated as "removed" below —
+      // this save neither resubmits nor deletes/retires them.
+      const preservedDiscountHeaderIds = new Set(unresolvedDiscountHeaders.map((header) => header.id));
+
+      // Build and validate EVERY discount header + class payload in memory
+      // first. Exact variation resolution (resolveVariationDbId) can throw;
+      // doing it here, before any product_discounts upsert or
+      // product_discount_classes delete, means a resolver error can no longer
+      // leave a committed header with zero class rows behind.
+      const discountEntries = Array.from(
+        discounts.reduce<Map<string, { source: DiscountItem; index: number }>>((entries, item, index) => {
+          const persistedId = getStableUuid(item.discountRecordId || item.id);
+          if (!entries.has(persistedId)) {
+            entries.set(persistedId, { source: item, index });
+          }
+          discountIdBySourceId.set(item.id, persistedId);
+          return entries;
+        }, new Map()),
+      );
+      const discountRows = discountEntries.map(([id, { source: item, index }]) => ({
+        id,
+        product_id: productId,
+        discount_kind: item.discountKind || null,
+        discount_name: item.discountName,
+        discount_type: item.discountType,
+        discount_percent:
+          item.discountType === 'Percent' ? parseNumber(item.amount) : null,
+        amount: item.discountType === 'Amount' ? parseNumber(item.amount) : null,
+        description: item.description || null,
+        status: item.status || 'Active',
+        min_quantity: Math.max(1, parseInt(item.minQuantity || '1', 10)),
+        max_quantity: item.maxQuantity ? parseInt(item.maxQuantity, 10) : null,
+        branch_name: item.branchName || null,
+        price_type: item.priceType || null,
+        price_code: normalizePriceCode(item.priceCode) || null,
+        calculation_method: normalizeCalculationMethod(item.calculationMethod),
+        apply_sequence: Math.max(1, parseInt(item.applySequence || '1', 10)),
+        discount_group: item.discountGroup || null,
+        applies_to: item.appliesTo || null,
+        stackable: item.stackable,
+        priority: parseInt(item.priority || String(index), 10) || index,
+        starts_at: item.startsAt || null,
+        ends_at: item.endsAt || null,
+      }));
+      const discountClassRows = discounts.map((source) => ({
+              discount_id: discountIdBySourceId.get(source.id) ?? getStableUuid(source.discountRecordId || source.id),
+              variation_id: resolveVariationDbId(source.variationId, source.priceCode, 'discount'),
+              class_name: resolveVariationClassName(
+                source.variationId,
+                source.priceCode,
+                source.discountName || 'Discount Class',
+              ),
+              price_code: normalizePriceCode(source.priceCode) || null,
+              branch_name: source.branchName || null,
+              price_type: source.priceType || null,
+              unit_option_id:
+                source.unitCondition === 'selected_unit'
+                  ? unitOptionLookup.get(source.unitOptionId) ?? null
+                  : null,
+              order_unit_code:
+                source.unitCondition === 'selected_unit'
+                  ? source.orderUnitCode || null
+                  : null,
+              unit_condition: source.unitCondition || 'any_unit',
+              min_order_quantity: Math.max(
+                1,
+                Number(source.minOrderQuantity || source.minQuantity || '1') || 1,
+              ),
+              max_order_quantity: source.maxOrderQuantity
+                ? Number(source.maxOrderQuantity)
+                : null,
+              min_base_quantity: source.minBaseQuantity
+                ? Number(source.minBaseQuantity)
+                : null,
+              max_base_quantity: source.maxBaseQuantity
+                ? Number(source.maxBaseQuantity)
+                : null,
+              unit_rule_label: null,
+              unit_rule_notes: null,
+            }));
+      assertUniqueExactClassTargets(discountClassRows, 'discount_id', 'discount class');
+
+      // Pre-flight the exact variation targets the promo/surcharge phase below
+      // will resolve, so an unresolvable surcharge/reward target also fails
+      // here — before the discount tables (or surcharge tables) are touched.
+      surcharges.forEach((item) => {
+        resolveVariationDbId(item.variationId, item.priceCode, 'promo/surcharge');
+        resolveRewardSelection(item);
+      });
+      discounts
+        .filter((item) => item.hasPromo || item.promoGiftCheckEnabled)
+        .forEach((item) => {
+          resolveRewardSelection({
+            variationId: item.variationId,
+            priceCode: item.priceCode,
+            rewardTargetType: item.hasPromo ? item.promoRewardTargetType : 'same_item',
+            qualificationScope: item.promoQualificationScope || 'line',
+            rewardProductId: item.hasPromo ? item.promoRewardProductId : '',
+            rewardVariationId: item.hasPromo ? item.promoRewardVariationId : '',
+            rewardUnitOptionId: item.hasPromo ? item.promoRewardUnitOptionId : '',
+            rewardUnitCode: item.hasPromo ? item.promoRewardUnitCode : '',
+          });
+        });
+
       if (discounts.length > 0) {
-        const discountEntries = Array.from(
-          discounts.reduce<Map<string, { source: DiscountItem; index: number }>>((entries, item, index) => {
-            const persistedId = getStableUuid(item.discountRecordId || item.id);
-            if (!entries.has(persistedId)) {
-              entries.set(persistedId, { source: item, index });
-            }
-            discountIdBySourceId.set(item.id, persistedId);
-            return entries;
-          }, new Map()),
-        );
-        const discountRows = discountEntries.map(([id, { source: item, index }]) => ({
-          id,
-          product_id: productId,
-          discount_kind: item.discountKind || null,
-          discount_name: item.discountName,
-          discount_type: item.discountType,
-          discount_percent:
-            item.discountType === 'Percent' ? parseNumber(item.amount) : null,
-          amount: item.discountType === 'Amount' ? parseNumber(item.amount) : null,
-          description: item.description || null,
-          status: item.status || 'Active',
-          min_quantity: Math.max(1, parseInt(item.minQuantity || '1', 10)),
-          max_quantity: item.maxQuantity ? parseInt(item.maxQuantity, 10) : null,
-          branch_name: item.branchName || null,
-          price_type: item.priceType || null,
-          price_code: normalizePriceCode(item.priceCode) || null,
-          calculation_method: normalizeCalculationMethod(item.calculationMethod),
-          apply_sequence: Math.max(1, parseInt(item.applySequence || '1', 10)),
-          discount_group: item.discountGroup || null,
-          applies_to: item.appliesTo || null,
-          stackable: item.stackable,
-          priority: parseInt(item.priority || String(index), 10) || index,
-          starts_at: item.startsAt || null,
-          ends_at: item.endsAt || null,
-        }));
         const { error: discountInsertError } = await supabase
           .from('product_discounts')
           .upsert(discountRows, { onConflict: 'id' })
@@ -2761,7 +2927,7 @@ export default function AddProduct({
         const submittedDiscountIds = new Set(discountRows.map((row) => String(row.id)));
         const removedDiscountIds = ((existingDiscountRows ?? []) as Array<Record<string, unknown>>)
           .map((row) => String(row.id ?? ''))
-          .filter((id) => id && !submittedDiscountIds.has(id));
+          .filter((id) => id && !submittedDiscountIds.has(id) && !preservedDiscountHeaderIds.has(id));
         const submittedDiscountIdList = Array.from(submittedDiscountIds);
         if (submittedDiscountIdList.length > 0) {
           const { error: deleteDiscountClassError } = await supabase
@@ -2771,43 +2937,6 @@ export default function AddProduct({
           if (deleteDiscountClassError) throw new Error(deleteDiscountClassError.message);
         }
 
-        const discountClassRows = discounts.map((source) => ({
-                discount_id: discountIdBySourceId.get(source.id) ?? getStableUuid(source.discountRecordId || source.id),
-                variation_id: resolveVariationDbId(source.variationId, source.priceCode, 'discount'),
-                class_name: resolveVariationClassName(
-                  source.variationId,
-                  source.priceCode,
-                  source.discountName || 'Discount Class',
-                ),
-                price_code: normalizePriceCode(source.priceCode) || null,
-                branch_name: source.branchName || null,
-                price_type: source.priceType || null,
-                unit_option_id:
-                  source.unitCondition === 'selected_unit'
-                    ? unitOptionLookup.get(source.unitOptionId) ?? null
-                    : null,
-                order_unit_code:
-                  source.unitCondition === 'selected_unit'
-                    ? source.orderUnitCode || null
-                    : null,
-                unit_condition: source.unitCondition || 'any_unit',
-                min_order_quantity: Math.max(
-                  1,
-                  Number(source.minOrderQuantity || source.minQuantity || '1') || 1,
-                ),
-                max_order_quantity: source.maxOrderQuantity
-                  ? Number(source.maxOrderQuantity)
-                  : null,
-                min_base_quantity: source.minBaseQuantity
-                  ? Number(source.minBaseQuantity)
-                  : null,
-                max_base_quantity: source.maxBaseQuantity
-                  ? Number(source.maxBaseQuantity)
-                  : null,
-                unit_rule_label: null,
-                unit_rule_notes: null,
-              }));
-        assertUniqueExactClassTargets(discountClassRows, 'discount_id', 'discount class');
         if (discountClassRows.length > 0) {
           const { data: insertedDiscountClassRows, error: classInsertError } = await supabase
             .from('product_discount_classes')
@@ -2869,7 +2998,7 @@ export default function AddProduct({
       } else {
         const removedDiscountIds = ((existingDiscountRows ?? []) as Array<Record<string, unknown>>)
           .map((row) => String(row.id ?? ''))
-          .filter(Boolean);
+          .filter((id) => id && !preservedDiscountHeaderIds.has(id));
 
         if (removedDiscountIds.length > 0) {
           const { data: referencedDiscountRows, error: referencedDiscountError } = await supabase
@@ -3039,9 +3168,12 @@ export default function AddProduct({
         new Map(),
       );
       const submittedSurchargeIds = new Set(Array.from(persistedSurchargeIdBySourceId.values()));
+      // Zero-class surcharge headers reported at load are neither resubmitted
+      // nor deleted/retired here (see unresolvedSurchargeHeaders).
+      const preservedSurchargeHeaderIds = new Set(unresolvedSurchargeHeaders.map((header) => header.id));
       const removedSurchargeIds = ((existingSurchargeRows ?? []) as Array<Record<string, unknown>>)
         .map((row) => String(row.id ?? ''))
-        .filter((id) => id && !submittedSurchargeIds.has(id));
+        .filter((id) => id && !submittedSurchargeIds.has(id) && !preservedSurchargeHeaderIds.has(id));
 
       if (resolvedSurchargesToSave.length > 0) {
         const surchargeEntries = Array.from(
@@ -3092,21 +3224,8 @@ export default function AddProduct({
           starts_at: item.startsAt || null,
           ends_at: item.endsAt || null,
         }));
-        const { error: surchargeInsertError } = await supabase
-          .from('product_surcharges')
-          .upsert(surchargeRows, { onConflict: 'id' })
-          .select('id');
-        if (surchargeInsertError) throw new Error(surchargeInsertError.message);
-
-        const submittedSurchargeIdList = Array.from(submittedSurchargeIds);
-        if (submittedSurchargeIdList.length > 0) {
-          const { error: deleteSurchargeClassError } = await supabase
-            .from('product_surcharge_classes')
-            .delete()
-            .in('surcharge_id', submittedSurchargeIdList);
-          if (deleteSurchargeClassError) throw new Error(deleteSurchargeClassError.message);
-        }
-
+        // Built (and duplicate-checked) before the surcharge upsert/class
+        // delete below, so a failure here leaves existing surcharge data intact.
         const classRows = resolvedSurchargesToSave.map((source) => ({
                 surcharge_id: persistedSurchargeIdBySourceId.get(source.id) ?? getStableUuid(source.id),
                 linked_discount_class_id: source.linkedDiscountClassId || null,
@@ -3159,6 +3278,21 @@ export default function AddProduct({
                 unit_rule_notes: null,
               }));
         assertUniqueExactClassTargets(classRows, 'surcharge_id', 'promo/surcharge class');
+
+        const { error: surchargeInsertError } = await supabase
+          .from('product_surcharges')
+          .upsert(surchargeRows, { onConflict: 'id' })
+          .select('id');
+        if (surchargeInsertError) throw new Error(surchargeInsertError.message);
+
+        const submittedSurchargeIdList = Array.from(submittedSurchargeIds);
+        if (submittedSurchargeIdList.length > 0) {
+          const { error: deleteSurchargeClassError } = await supabase
+            .from('product_surcharge_classes')
+            .delete()
+            .in('surcharge_id', submittedSurchargeIdList);
+          if (deleteSurchargeClassError) throw new Error(deleteSurchargeClassError.message);
+        }
 
         if (classRows.length > 0) {
           const { error: surchargeClassInsertError } = await supabase
@@ -3225,9 +3359,23 @@ export default function AddProduct({
         type: 'success',
         message: `${isEditMode ? 'Product updated' : 'Product created'} successfully.`,
       });
+      // Snapshot what was saved in its reconciled (persisted-identity) form so
+      // it matches the reconciled editor state and doesn't read as unsaved.
+      const savedDraftState = getCurrentDraftState();
       markSectionsSaved(sections, {
-        ...getCurrentDraftState(),
+        ...savedDraftState,
         mediaItems: persistedMediaItems,
+        variations: applyPersistedIdentityToVariations(savedDraftState.variations, persistedIdentity),
+        variationPreviewMediaByCardId: applyPersistedIdentityToPreviewMedia(
+          savedDraftState.variationPreviewMediaByCardId,
+          persistedIdentity,
+        ),
+        variationUnitOptions: applyPersistedIdentityToUnitOptions(
+          savedDraftState.variationUnitOptions,
+          persistedIdentity,
+        ),
+        discounts: applyPersistedIdentityToDiscounts(savedDraftState.discounts, persistedIdentity),
+        surcharges: applyPersistedIdentityToSurcharges(savedDraftState.surcharges, persistedIdentity),
       });
       onSaved?.(productId, formValues.categoryId);
       return true;
@@ -3400,6 +3548,56 @@ export default function AddProduct({
           >
             {saveNotice.message}
           </p>
+        ) : null}
+        {unresolvedDiscountHeaders.length > 0 ? (
+          <div className={`${styles.saveNotice} ${styles.saveNoticeWarning}`}>
+            {unresolvedDiscountHeaders.length} incomplete old discount record
+            {unresolvedDiscountHeaders.length === 1 ? ' was' : 's were'} found. They are ignored and will
+            not be resubmitted.
+            <button
+              type="button"
+              className={styles.staleNoticeToggle}
+              aria-expanded={showStaleDiscountDetails}
+              onClick={() => setShowStaleDiscountDetails((current) => !current)}
+            >
+              {showStaleDiscountDetails ? 'Hide details' : 'Show details'}
+            </button>
+            {showStaleDiscountDetails ? (
+              <ul className={styles.staleNoticeDetails}>
+                {unresolvedDiscountHeaders.map((header) => (
+                  <li key={header.id}>
+                    {header.discountName || 'Unnamed discount'} ({header.priceCode || 'no price code'},{' '}
+                    {header.status})
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+        {unresolvedSurchargeHeaders.length > 0 ? (
+          <div className={`${styles.saveNotice} ${styles.saveNoticeWarning}`}>
+            {unresolvedSurchargeHeaders.length} incomplete old promo/surcharge record
+            {unresolvedSurchargeHeaders.length === 1 ? ' was' : 's were'} found. They are ignored and
+            will not be resubmitted.
+            <button
+              type="button"
+              className={styles.staleNoticeToggle}
+              aria-expanded={showStaleSurchargeDetails}
+              onClick={() => setShowStaleSurchargeDetails((current) => !current)}
+            >
+              {showStaleSurchargeDetails ? 'Hide details' : 'Show details'}
+            </button>
+            {showStaleSurchargeDetails ? (
+              <ul className={styles.staleNoticeDetails}>
+                {unresolvedSurchargeHeaders.map((header) => (
+                  <li key={header.id}>
+                    {header.surchargeName || 'Unnamed promo/surcharge'} ({header.surchargeType || 'no type'},{' '}
+                    {header.priceCode || 'no price code'}, {header.status})
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
         ) : null}
 
         {!isEditorLoading && activeSection === 'Basic Information' ? (

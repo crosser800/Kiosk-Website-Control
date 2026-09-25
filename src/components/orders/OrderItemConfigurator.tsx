@@ -524,6 +524,7 @@ function formatReasons(reasons: string[]) {
     wrong_branch: 'wrong branch',
     wrong_price_type: 'wrong price type',
     wrong_variation: 'wrong variation',
+    unresolved_configuration: 'incomplete configuration',
   };
   return reasons.map((reason) => labels[reason] ?? reason).join(', ');
 }
