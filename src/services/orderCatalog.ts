@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { fetchAllPages } from './fetchAllPages';
 import {
   type DiscountClassRule,
   type DiscountRule,
@@ -185,82 +186,118 @@ type PriceClassRow = {
 
 const PRICE_CODE_ORDER: OrderPriceCode[] = ['R1', 'R2', 'W1', 'W2', 'SP', 'CP'];
 
+// Reads every row of one catalog query (see fetchAllPages). Each query keeps
+// its original filters and primary ordering and adds `id` as a unique
+// tie-breaker so page boundaries are stable.
+function fetchCatalogTable<Row extends { id: unknown }>(
+  label: string,
+  buildPage: (
+    from: number,
+    to: number,
+  ) => PromiseLike<{ data: unknown; error: { message: string } | null; count: number | null }>,
+) {
+  return fetchAllPages<Row>(label, (from, to) =>
+    buildPage(from, to).then((response) => ({
+      data: (response.data ?? null) as Row[] | null,
+      error: response.error,
+      count: response.count,
+    })),
+  );
+}
+
 export async function loadOrderCatalog(): Promise<OrderCatalogProduct[]> {
+  // Tables load in parallel; pages within a table load in order. Any failure
+  // rejects the whole catalog, so a partially loaded catalog is never priced.
   const [
-    productsRes,
-    variationsRes,
-    unitOptionsRes,
-    priceClassesRes,
-    discountsRes,
-    discountClassesRes,
-    surchargesRes,
-    surchargeClassesRes,
+    products,
+    variations,
+    unitOptions,
+    ,
+    discounts,
+    discountClasses,
+    surcharges,
+    surchargeClasses,
   ] = await Promise.all([
-    supabase
-      .from('products')
-      .select('id, category_id, product_name, sku_code, status, product_categories(category_title)')
-      .eq('status', 'Active')
-      .order('product_name', { ascending: true }),
-    supabase
-      .from('product_variations')
-      .select('id, product_id, variation_name, class_name, branch_name, price_type, price_code, price, sku_code, stock_quantity, availability, sort_order')
-      .order('sort_order', { ascending: true }),
-    supabase
-      .from('product_variation_unit_options')
-      .select('id, variation_id, unit_code, unit_label, base_unit_code, quantity_in_base_unit, price_override, packaging_text, min_order_quantity, order_increment, is_default, is_orderable, status, sort_order, notes, weight_value, weight_unit, length_value, width_value, height_value, dimension_unit, shipping_notes')
-      .eq('status', 'Active')
-      .order('sort_order', { ascending: true }),
-    supabase
-      .from('price_classes')
-      .select('id, price_code, price_label, preference_code, status, sort_order')
-      .eq('status', 'Active')
-      .order('sort_order', { ascending: true }),
-    supabase
-      .from('product_discounts')
-      .select('id, product_id, discount_kind, discount_name, discount_type, discount_percent, amount, status, min_quantity, max_quantity, branch_name, price_type, price_code, priority, apply_sequence, calculation_method, discount_group, applies_to, stackable, starts_at, ends_at')
-      .order('apply_sequence', { ascending: true })
-      .order('priority', { ascending: true }),
-    supabase
-      .from('product_discount_classes')
-      .select('id, discount_id, variation_id, price_code, branch_name, price_type, unit_option_id, order_unit_code, unit_condition, min_order_quantity, max_order_quantity, min_base_quantity, max_base_quantity'),
-    supabase
-      .from('product_surcharges')
-      .select('id, product_id, linked_discount_id, surcharge_name, surcharge_type, surcharge_percent, amount, free_quantity, qualification_scope, reward_target_type, reward_product_id, reward_variation_id, reward_unit_option_id, reward_unit_code, reward_repeat_mode, reward_every_quantity, status, min_quantity, max_quantity, branch_name, price_type, price_code, priority, starts_at, ends_at')
-      .order('priority', { ascending: true }),
-    supabase
-      .from('product_surcharge_classes')
-      .select('id, surcharge_id, linked_discount_class_id, variation_id, price_code, branch_name, price_type, unit_option_id, order_unit_code, unit_condition, min_order_quantity, max_order_quantity, min_base_quantity, max_base_quantity, reward_quantity, reward_target_type, reward_product_id, reward_variation_id, reward_unit_option_id, reward_unit_code, reward_repeat_mode, reward_every_quantity'),
+    fetchCatalogTable<ProductRow>('products', (from, to) =>
+      supabase
+        .from('products')
+        .select('id, category_id, product_name, sku_code, status, product_categories(category_title)', { count: 'exact' })
+        .eq('status', 'Active')
+        .order('product_name', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+    fetchCatalogTable<VariationRow>('product variations', (from, to) =>
+      supabase
+        .from('product_variations')
+        .select('id, product_id, variation_name, class_name, branch_name, price_type, price_code, price, sku_code, stock_quantity, availability, sort_order', { count: 'exact' })
+        .order('sort_order', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+    fetchCatalogTable<UnitOptionRow>('product unit options', (from, to) =>
+      supabase
+        .from('product_variation_unit_options')
+        .select('id, variation_id, unit_code, unit_label, base_unit_code, quantity_in_base_unit, price_override, packaging_text, min_order_quantity, order_increment, is_default, is_orderable, status, sort_order, notes, weight_value, weight_unit, length_value, width_value, height_value, dimension_unit, shipping_notes', { count: 'exact' })
+        .eq('status', 'Active')
+        .order('sort_order', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+    // Not used to build the catalog; kept so a price_classes read failure
+    // still fails the catalog load exactly as before.
+    fetchCatalogTable<PriceClassRow>('price classes', (from, to) =>
+      supabase
+        .from('price_classes')
+        .select('id, price_code, price_label, preference_code, status, sort_order', { count: 'exact' })
+        .eq('status', 'Active')
+        .order('sort_order', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+    fetchCatalogTable<DiscountRow>('product discounts', (from, to) =>
+      supabase
+        .from('product_discounts')
+        .select('id, product_id, discount_kind, discount_name, discount_type, discount_percent, amount, status, min_quantity, max_quantity, branch_name, price_type, price_code, priority, apply_sequence, calculation_method, discount_group, applies_to, stackable, starts_at, ends_at', { count: 'exact' })
+        .order('apply_sequence', { ascending: true })
+        .order('priority', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+    fetchCatalogTable<DiscountClassRow>('product discount classes', (from, to) =>
+      supabase
+        .from('product_discount_classes')
+        .select('id, discount_id, variation_id, price_code, branch_name, price_type, unit_option_id, order_unit_code, unit_condition, min_order_quantity, max_order_quantity, min_base_quantity, max_base_quantity', { count: 'exact' })
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+    fetchCatalogTable<SurchargeRow>('product surcharges', (from, to) =>
+      supabase
+        .from('product_surcharges')
+        .select('id, product_id, linked_discount_id, surcharge_name, surcharge_type, surcharge_percent, amount, free_quantity, qualification_scope, reward_target_type, reward_product_id, reward_variation_id, reward_unit_option_id, reward_unit_code, reward_repeat_mode, reward_every_quantity, status, min_quantity, max_quantity, branch_name, price_type, price_code, priority, starts_at, ends_at', { count: 'exact' })
+        .order('priority', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+    fetchCatalogTable<SurchargeClassRow>('product surcharge classes', (from, to) =>
+      supabase
+        .from('product_surcharge_classes')
+        .select('id, surcharge_id, linked_discount_class_id, variation_id, price_code, branch_name, price_type, unit_option_id, order_unit_code, unit_condition, min_order_quantity, max_order_quantity, min_base_quantity, max_base_quantity, reward_quantity, reward_target_type, reward_product_id, reward_variation_id, reward_unit_option_id, reward_unit_code, reward_repeat_mode, reward_every_quantity', { count: 'exact' })
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
   ]);
 
-  const loadError =
-    productsRes.error ??
-    variationsRes.error ??
-    unitOptionsRes.error ??
-    priceClassesRes.error ??
-    discountsRes.error ??
-    discountClassesRes.error ??
-    surchargesRes.error ??
-    surchargeClassesRes.error;
-
-  if (loadError) {
-    throw new Error(loadError.message);
-  }
-
-  warnSkippedZeroClassRules({
-    discounts: (discountsRes.data ?? []) as DiscountRow[],
-    discountClasses: (discountClassesRes.data ?? []) as DiscountClassRow[],
-    surcharges: (surchargesRes.data ?? []) as SurchargeRow[],
-    surchargeClasses: (surchargeClassesRes.data ?? []) as SurchargeClassRow[],
-  });
+  warnSkippedZeroClassRules({ discounts, discountClasses, surcharges, surchargeClasses });
 
   return buildOrderCatalog({
-    products: (productsRes.data ?? []) as ProductRow[],
-    variations: (variationsRes.data ?? []) as VariationRow[],
-    unitOptions: (unitOptionsRes.data ?? []) as UnitOptionRow[],
-    discounts: (discountsRes.data ?? []) as DiscountRow[],
-    discountClasses: (discountClassesRes.data ?? []) as DiscountClassRow[],
-    surcharges: (surchargesRes.data ?? []) as SurchargeRow[],
-    surchargeClasses: (surchargeClassesRes.data ?? []) as SurchargeClassRow[],
+    products,
+    variations,
+    unitOptions,
+    discounts,
+    discountClasses,
+    surcharges,
+    surchargeClasses,
   });
 }
 

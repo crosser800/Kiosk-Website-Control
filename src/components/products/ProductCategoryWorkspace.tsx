@@ -1,115 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import AddProduct from './AddProduct';
 import ProductCreateModal from './ProductCreateModal';
 import { normalizeSearchText, searchProducts } from './productSearch';
+import {
+  loadProductWorkspace,
+  UNCATEGORIZED_CATEGORY_ID,
+  type CategorySummary,
+  type ProductCatalogStats,
+  type ProductListItem,
+} from './productWorkspaceData';
+import { createRefreshScheduler, type RefreshScheduler } from '../../utils/refreshScheduler';
 import styles from './ProductCategoryWorkspace.module.css';
-
-type CategoryRow = {
-  id: string;
-  category_title: string | null;
-  category_slug: string | null;
-  category_image_url: string | null;
-  status: string | null;
-};
-
-type ProductRow = {
-  id: string;
-  category_id: string | null;
-  product_name: string | null;
-  sku_code: string | null;
-  description: string | null;
-  status: string | null;
-  created_at: string | null;
-};
-
-type ProductMediaRow = {
-  id: string;
-  product_id: string | null;
-  media_url: string | null;
-  media_type: string | null;
-  is_primary: boolean | null;
-  sort_order: number | null;
-  variation_id: string | null;
-  status: string | null;
-};
-
-type ProductVariationRow = {
-  id: string;
-  product_id: string | null;
-  variation_name: string | null;
-  class_name: string | null;
-  sku_code: string | null;
-  availability: string | null;
-};
-
-type ProductListItem = {
-  id: string;
-  categoryId: string;
-  name: string;
-  skuCode: string;
-  description: string;
-  status: string;
-  thumbnailUrl: string;
-  variationCount: number;
-  createdAt: string;
-  // Search index fields (see productSearch.ts).
-  categoryTitle: string;
-  variationNames: string[];
-  variationSkus: string[];
-};
-
-type CategorySummary = {
-  id: string;
-  title: string;
-  slug: string;
-  imageUrl: string;
-  status: string;
-  productCount: number;
-  variationCount: number;
-  products: ProductListItem[];
-};
 
 type EditorMode = 'create' | 'edit';
 
-const SUPABASE_PAGE_SIZE = 1000;
 const SEARCH_RESULT_LIMIT = 60;
-
-// Display-only bucket for products whose category_id is empty or points to a
-// category that was not loaded. Never written to the database: the editor
-// and create modal receive null instead of this id.
-const UNCATEGORIZED_CATEGORY_ID = '__uncategorized__';
-
-function buildVariationGroupKey(variation: ProductVariationRow) {
-  const normalizedVariationName = String(variation.variation_name ?? variation.class_name ?? '')
-    .trim()
-    .toLowerCase();
-  const normalizedSku = String(variation.sku_code ?? '').trim().toLowerCase();
-
-  if (normalizedVariationName || normalizedSku) {
-    return `${normalizedVariationName}::${normalizedSku}`;
-  }
-
-  return `row::${String(variation.id ?? '').trim().toLowerCase()}`;
-}
-
-function isAvailableVariation(variation: ProductVariationRow) {
-  const availability = String(variation.availability ?? '').trim().toLowerCase();
-  return !['unavailable', 'inactive', 'archived', 'deleted'].includes(availability);
-}
-
-function countVariationCards(variations: ProductVariationRow[]) {
-  return new Set(
-    variations
-      .filter(isAvailableVariation)
-      .map((variation) => buildVariationGroupKey(variation)),
-  ).size;
-}
-
-function normalizeStatus(status: string | null | undefined) {
-  const normalized = String(status ?? '').trim();
-  return normalized || 'Inactive';
-}
 
 function getInitials(value: string) {
   return value
@@ -128,71 +34,15 @@ function getCategoryDescription(categoryTitle: string, productCount: number) {
   return `Manage products and variations under ${categoryTitle}.`;
 }
 
-function sortProducts(products: ProductListItem[]) {
-  return [...products].sort(
-    (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
-  );
-}
-
-// Pages through a query so the workspace (and its search) never silently
-// stops at the server's per-request row cap.
-async function fetchAllRows<Row>(
-  fetchPage: (
-    from: number,
-    to: number,
-  ) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>,
-) {
-  const rows: Row[] = [];
-  let from = 0;
-
-  while (true) {
-    const to = from + SUPABASE_PAGE_SIZE - 1;
-    const { data, error } = await fetchPage(from, to);
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    const page = (data ?? []) as Row[];
-    rows.push(...page);
-
-    if (page.length < SUPABASE_PAGE_SIZE) {
-      return rows;
-    }
-
-    from += SUPABASE_PAGE_SIZE;
-  }
-}
-
-function fetchAllVariationRows() {
-  return fetchAllRows<ProductVariationRow>((from, to) =>
-    supabase
-      .from('product_variations')
-      .select('id, product_id, variation_name, class_name, sku_code, availability')
-      .order('id', { ascending: true })
-      .range(from, to),
-  );
-}
-
-function uniqueText(values: Array<string | null | undefined>) {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  values.forEach((value) => {
-    const text = String(value ?? '').trim();
-    const key = text.toLowerCase();
-    if (!text || seen.has(key)) return;
-    seen.add(key);
-    result.push(text);
-  });
-  return result;
-}
-
 type ProductCategoryWorkspaceProps = {
   onRegisterNavigationGuard?: (guard: (() => Promise<boolean>) | null) => void;
+  // Receives the page counters computed from the same load (no extra query).
+  onCatalogStatsChange?: (stats: ProductCatalogStats) => void;
 };
 
 export default function ProductCategoryWorkspace({
   onRegisterNavigationGuard,
+  onCatalogStatsChange,
 }: ProductCategoryWorkspaceProps) {
   const PRODUCTS_PER_PAGE = 8;
   const [categories, setCategories] = useState<CategorySummary[]>([]);
@@ -209,145 +59,25 @@ export default function ProductCategoryWorkspace({
   const [editorInitialSection, setEditorInitialSection] =
     useState<'Basic Information' | 'Images' | 'Variation & Pricing'>('Basic Information');
 
-  async function fetchWorkspaceData() {
-    const [categoriesRes, productRows, mediaRows, variationRows] = await Promise.all([
-      supabase
-        .from('product_categories')
-        .select('id, category_title, category_slug, category_image_url, status')
-        .order('category_title'),
-      // Paged with an id tie-breaker so no product is skipped or repeated
-      // between pages; the search index needs the complete catalog.
-      fetchAllRows<ProductRow>((from, to) =>
-        supabase
-          .from('products')
-          .select('id, category_id, product_name, sku_code, description, status, created_at')
-          .order('created_at', { ascending: false })
-          .order('id', { ascending: true })
-          .range(from, to),
-      ),
-      fetchAllRows<ProductMediaRow>((from, to) =>
-        supabase
-          .from('product_media')
-          .select('id, product_id, media_url, media_type, is_primary, sort_order, variation_id, status')
-          .order('sort_order', { ascending: true })
-          .order('id', { ascending: true })
-          .range(from, to),
-      ),
-      fetchAllVariationRows(),
-    ]);
-
-    if (categoriesRes.error) {
-      throw new Error(categoriesRes.error.message);
-    }
-
-    const categoryRows = (categoriesRes.data as CategoryRow[] | null | undefined) ?? [];
-    const categoryTitleById = new Map(
-      categoryRows.map((row) => [String(row.id), String(row.category_title ?? 'Untitled Category')]),
-    );
-
-    const mediaByProductId = new Map<string, ProductMediaRow[]>();
-    mediaRows.forEach((row) => {
-      const productId = String(row.product_id ?? '');
-      if (!productId) return;
-      const current = mediaByProductId.get(productId) ?? [];
-      current.push(row);
-      mediaByProductId.set(productId, current);
-    });
-
-    const variationsByProductId = new Map<string, ProductVariationRow[]>();
-    variationRows.forEach((row) => {
-      const productId = String(row.product_id ?? '');
-      if (!productId) return;
-      const current = variationsByProductId.get(productId) ?? [];
-      current.push(row);
-      variationsByProductId.set(productId, current);
-    });
-
-    const productsByCategoryId = new Map<string, ProductListItem[]>();
-    productRows.forEach((row) => {
-      // Previously products without a (loaded) category were dropped here and
-      // could not be reached at all; they now land in the display-only
-      // Uncategorized bucket. Their category_id is left untouched.
-      const rawCategoryId = String(row.category_id ?? '');
-      const categoryId = categoryTitleById.has(rawCategoryId) ? rawCategoryId : UNCATEGORIZED_CATEGORY_ID;
-
-      const mediaItems = (mediaByProductId.get(String(row.id)) ?? []).filter(
-        (item) => !item.variation_id && String(item.status ?? 'Active') === 'Active',
-      );
-      const primaryMedia =
-        mediaItems.find((item) => item.is_primary && item.media_type === 'image') ??
-        mediaItems.find((item) => item.media_type === 'image') ??
-        mediaItems[0];
-      const productVariations = variationsByProductId.get(String(row.id)) ?? [];
-
-      const mappedProduct: ProductListItem = {
-        id: String(row.id),
-        categoryId,
-        name: String(row.product_name ?? 'Untitled Product'),
-        skuCode: String(row.sku_code ?? '-'),
-        description: String(row.description ?? '').trim(),
-        status: normalizeStatus(row.status),
-        thumbnailUrl: String(primaryMedia?.media_url ?? ''),
-        variationCount: countVariationCards(productVariations),
-        createdAt: String(row.created_at ?? new Date().toISOString()),
-        categoryTitle: categoryTitleById.get(categoryId) ?? '',
-        variationNames: uniqueText(
-          productVariations.flatMap((variation) => [variation.variation_name, variation.class_name]),
-        ),
-        variationSkus: uniqueText(productVariations.map((variation) => variation.sku_code)),
-      };
-
-      const current = productsByCategoryId.get(categoryId) ?? [];
-      current.push(mappedProduct);
-      productsByCategoryId.set(categoryId, current);
-    });
-
-    const summarize = (
-      base: Omit<CategorySummary, 'productCount' | 'variationCount' | 'products'>,
-    ): CategorySummary => {
-      const categoryProducts = sortProducts(productsByCategoryId.get(base.id) ?? []);
-      return {
-        ...base,
-        productCount: categoryProducts.length,
-        variationCount: categoryProducts.reduce(
-          (total, product) => total + product.variationCount,
-          0,
-        ),
-        products: categoryProducts,
-      };
-    };
-
-    const mappedCategories = categoryRows.map((row) =>
-      summarize({
-        id: String(row.id),
-        title: String(row.category_title ?? 'Untitled Category'),
-        slug: String(row.category_slug ?? ''),
-        imageUrl: String(row.category_image_url ?? ''),
-        status: normalizeStatus(row.status),
-      }),
-    );
-
-    if ((productsByCategoryId.get(UNCATEGORIZED_CATEGORY_ID) ?? []).length > 0) {
-      mappedCategories.push(
-        summarize({
-          id: UNCATEGORIZED_CATEGORY_ID,
-          title: 'Uncategorized',
-          slug: '',
-          imageUrl: '',
-          status: 'No Category',
-        }),
-      );
-    }
-
-    return mappedCategories;
-  }
+  // Latest successfully loaded categories (read after a post-save refresh)
+  // and the scheduler that serializes every reload of this workspace.
+  const latestCategoriesRef = useRef<CategorySummary[] | null>(null);
+  const refreshSchedulerRef = useRef<RefreshScheduler | null>(null);
+  const onCatalogStatsChangeRef = useRef(onCatalogStatsChange);
+  useEffect(() => {
+    onCatalogStatsChangeRef.current = onCatalogStatsChange;
+  }, [onCatalogStatsChange]);
 
   async function refreshWorkspaceAfterSave(productId: string, categoryId: string) {
-    try {
-      const nextCategories = await fetchWorkspaceData();
-      setCategories(nextCategories);
-      setLoadError('');
-      setRefreshNotice('');
+    const scheduler = refreshSchedulerRef.current;
+    // Goes through the same scheduler as realtime reloads, so an older
+    // in-flight reload can never overwrite the post-save data.
+    const refreshed = scheduler ? await scheduler.flush() : false;
+    if (!scheduler || scheduler.isDisposed()) {
+      return false;
+    }
+    const nextCategories = latestCategoriesRef.current;
+    if (refreshed && nextCategories) {
       // A product saved without a known category stays reachable in the
       // Uncategorized view instead of dropping back to the category grid.
       setSelectedCategoryId(
@@ -359,70 +89,67 @@ export default function ProductCategoryWorkspace({
       setEditorMode('edit');
       setProductPage(1);
       return true;
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Saved, but failed to refresh the product list.';
-      setRefreshNotice(
-        `${message} Please reload if the product list does not update immediately.`,
-      );
-      setSelectedCategoryId(categoryId);
-      setSelectedProductId(productId);
-      setEditorMode('edit');
-      return false;
     }
+    // The failed refresh already set refreshNotice and will retry itself.
+    setSelectedCategoryId(categoryId);
+    setSelectedProductId(productId);
+    setEditorMode('edit');
+    return false;
   }
 
   useEffect(() => {
-    let disposed = false;
+    let hasLoaded = false;
 
-    const loadWorkspace = async () => {
-      setIsLoading(true);
-      setLoadError('');
-      setRefreshNotice('');
-
-      if (disposed) {
-        return;
-      }
-
-      try {
-        const mappedCategories = await fetchWorkspaceData();
-        if (disposed) {
-          return;
+    // Realtime events arrive in bursts (one product save writes many rows),
+    // so they are coalesced: one reload ~400 ms after the last event, at most
+    // 2 s after the first, never overlapping, with a final reload for events
+    // that arrive mid-load. Only the first load shows the skeleton.
+    const scheduler = createRefreshScheduler({
+      delayMs: 400,
+      maxWaitMs: 2000,
+      onError: (error) => console.error('Products workspace refresh failed:', error),
+      run: async () => {
+        try {
+          const workspace = await loadProductWorkspace();
+          if (scheduler.isDisposed()) return;
+          hasLoaded = true;
+          latestCategoriesRef.current = workspace.categories;
+          setCategories(workspace.categories);
+          onCatalogStatsChangeRef.current?.(workspace.stats);
+          setLoadError('');
+          setRefreshNotice('');
+          setIsLoading(false);
+        } catch (error) {
+          if (scheduler.isDisposed()) throw error;
+          const message = error instanceof Error ? error.message : 'Failed to load products workspace.';
+          if (!hasLoaded) {
+            latestCategoriesRef.current = null;
+            setLoadError(message);
+            setCategories([]);
+            setIsLoading(false);
+          } else {
+            // Keep the last good data on screen; the scheduler retries.
+            setRefreshNotice(`${message} Showing the last loaded products while retrying.`);
+          }
+          throw error;
         }
-        setCategories(mappedCategories);
-        setIsLoading(false);
-      } catch (error) {
-        if (disposed) {
-          return;
-        }
-        setLoadError(error instanceof Error ? error.message : 'Failed to load products workspace.');
-        setCategories([]);
-        setIsLoading(false);
-      }
-    };
+      },
+    });
+    refreshSchedulerRef.current = scheduler;
+    void scheduler.flush();
 
-    void loadWorkspace();
-
+    const requestRefresh = () => scheduler.request();
     const realtimeChannel = supabase
       .channel('product-category-workspace')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_categories' }, () => {
-        void loadWorkspace();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
-        void loadWorkspace();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_media' }, () => {
-        void loadWorkspace();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_variations' }, () => {
-        void loadWorkspace();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_categories' }, requestRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, requestRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_media' }, requestRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_variations' }, requestRefresh)
       .subscribe();
 
     return () => {
-      disposed = true;
+      scheduler.dispose();
+      refreshSchedulerRef.current = null;
       void supabase.removeChannel(realtimeChannel);
     };
   }, []);
@@ -638,6 +365,12 @@ export default function ProductCategoryWorkspace({
               </label>
             </div>
           </div>
+
+          {refreshNotice && !loadError ? (
+            <p className={styles.helperText} role="status">
+              {refreshNotice}
+            </p>
+          ) : null}
 
           {isLoading ? (
             <div className={styles.cardGrid}>
