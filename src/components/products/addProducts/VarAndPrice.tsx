@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './VarAndPrice.module.css';
@@ -20,6 +20,23 @@ import {
 import { generatePackagingSummary } from './packagingParser';
 import { getLogicalVariationKey } from './variationIdentity';
 import RewardProductSelector from './RewardProductSelector';
+import {
+  buildAdjustmentClipboard,
+  getPasteBlockReason,
+  getPastedRowIssues,
+  mergePastedRows,
+  preparePastedRows,
+  resolveDifferentItemReward,
+  type AdjustmentClipboard,
+  type DifferentItemRewardResolution,
+  type DiscountDraftRow,
+  type PasteIssue,
+  type PasteMode,
+  type PasteTarget,
+  type PreparedPaste,
+  type PriceCode,
+  type RewardVariationRow,
+} from './discountClipboard';
 import type {
   DiscountItem,
   DiscountKind,
@@ -57,9 +74,12 @@ type VarAndPriceProps = {
   onDiscountsChange: (items: DiscountItem[]) => void;
   onSurchargesChange: (items: SurchargeItem[]) => void;
   showFooterActions?: boolean;
+  // Copy/paste clipboard for Manage Adjustments. Owned by AddProduct so it
+  // survives this component unmounting when the editor section changes.
+  adjustmentClipboard?: AdjustmentClipboard | null;
+  onAdjustmentClipboardChange?: (clipboard: AdjustmentClipboard | null) => void;
+  clipboardProductScope?: string;
 };
-
-type PriceCode = 'R1' | 'R2' | 'W1' | 'W2' | 'SP' | 'CP';
 
 type VariationCard = {
   id: string;
@@ -79,48 +99,6 @@ const DIMENSION_UNITS = ['mm', 'cm', 'm', 'in'] as const;
 
 type WeightUnit = VariationUnitOptionItem['weightUnit'];
 type DimensionUnit = VariationUnitOptionItem['dimensionUnit'];
-
-type DiscountDraftRow = {
-  id: string;
-  adjustmentKind: 'Discount' | 'Surcharge';
-  discountKind: DiscountKind;
-  discountName: string;
-  discountType: DiscountItem['discountType'];
-  amount: string;
-  calculationMethod: DiscountItem['calculationMethod'];
-  applySequence: string;
-  discountGroup: string;
-  unitCondition: UnitCondition;
-  unitOptionId: string;
-  minOrderQuantity: string;
-  maxOrderQuantity: string;
-  status: DiscountItem['status'];
-  startsAt: string;
-  endsAt: string;
-  promoValidityMode: PromoValidityMode;
-  promoDurationPreset: PromoDurationPreset;
-  stackable: boolean;
-  hasPromo: boolean;
-  promoType: DiscountItem['promoType'];
-  promoRewardUnitCode: string;
-  promoRewardQuantity: string;
-  promoSourceSurchargeId: string;
-  promoRewardTargetType: RewardTargetType;
-  promoRewardProductId: string;
-  promoRewardProductLabel: string;
-  promoRewardVariationId: string;
-  promoRewardVariationLabel: string;
-  promoRewardUnitOptionId: string;
-  promoRewardRepeatMode: RewardRepeatMode;
-  promoRewardEveryQuantity: string;
-  promoQualificationScope: QualificationScope;
-  promoRewardSearchQuery: string;
-  promoGiftCheckEnabled: boolean;
-  promoGiftCheckId: string;
-  promoGiftCheckCode: string;
-  promoGiftCheckName: string;
-  promoGiftCheckQuantity: string;
-};
 
 type GiftCheckOption = {
   id: string;
@@ -810,6 +788,9 @@ export default function VarAndPrice({
   onDiscountsChange,
   onSurchargesChange,
   showFooterActions = true,
+  adjustmentClipboard = null,
+  onAdjustmentClipboardChange,
+  clipboardProductScope = '',
 }: VarAndPriceProps) {
   const cards = useMemo(() => toVariationCards(items), [items]);
   const activeUnits = useMemo(
@@ -846,6 +827,19 @@ export default function VarAndPrice({
   const [discountModalError, setDiscountModalError] = useState('');
   const [discountManagedIds, setDiscountManagedIds] = useState<Set<string>>(new Set());
   const [surchargeManagedIds, setSurchargeManagedIds] = useState<Set<string>>(new Set());
+  // Copy/paste: the prepared paste awaiting Replace/Append confirmation, the
+  // review banner shown after a paste, and the ids of pasted rows that get the
+  // extra paste-only checks (getPastedRowIssues) when the modal is saved.
+  const [pendingPaste, setPendingPaste] = useState<
+    (PreparedPaste & { sourceLabel: string; error: string }) | null
+  >(null);
+  const [isPreparingPaste, setIsPreparingPaste] = useState(false);
+  const [pasteNotice, setPasteNotice] = useState<{ sourceLabel: string; issues: PasteIssue[] } | null>(null);
+  const [copyNotice, setCopyNotice] = useState('');
+  const [pastedRowIds, setPastedRowIds] = useState<Set<string>>(new Set());
+  // Bumped whenever the modal opens/closes so an in-flight paste preparation
+  // (which awaits reward lookups) is dropped instead of landing in another context.
+  const pasteRequestRef = useRef(0);
   const [draggingDiscountStackId, setDraggingDiscountStackId] = useState<string | null>(null);
   const [dragOverDiscountStackId, setDragOverDiscountStackId] = useState<string | null>(null);
   const [pendingRemoveDiscountGroupId, setPendingRemoveDiscountGroupId] = useState<string | null>(null);
@@ -1015,6 +1009,21 @@ export default function VarAndPrice({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [pendingDisablePromoGroupId]);
+
+  useEffect(() => {
+    if (!pendingPaste) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setPendingPaste(null);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pendingPaste]);
 
   function pushCards(nextCards: VariationCard[]) {
     onChange(flattenCards(nextCards));
@@ -2228,6 +2237,7 @@ export default function VarAndPrice({
 
   function openDiscountModal(variationId: string, code: PriceCode, fallbackRowId?: string) {
     setDiscountContext({ variationId, code });
+    resetPasteState();
     setDiscountModalError('');
     const matchVariation = matchesVariation(variationId, fallbackRowId);
     const rawExistingDiscounts = discounts
@@ -2342,6 +2352,201 @@ export default function VarAndPrice({
         ? getDraftRuleKey(visibleExisting[0])
         : '',
     );
+  }
+
+  function resetPasteState() {
+    pasteRequestRef.current += 1;
+    setPendingPaste(null);
+    setIsPreparingPaste(false);
+    setPasteNotice(null);
+    setCopyNotice('');
+    setPastedRowIds(new Set());
+  }
+
+  function getAdjustmentContextLabel(variationId: string, code: PriceCode) {
+    const card = cards.find((item) => item.id === variationId);
+    return `${card?.variationName.trim() || 'Variation'} · ${code}`;
+  }
+
+  function buildPasteTarget(variationId: string, code: PriceCode): PasteTarget {
+    const card = cards.find((item) => item.id === variationId);
+    const baseUnitCode = getCardBaseUnitCode(variationId);
+    const toClipboardUnits = (cardId: string) =>
+      getOrderableUnitOptions(cardId).map((option) => ({ id: option.id, unitCode: option.unitCode }));
+    return {
+      productScope: clipboardProductScope,
+      variationId,
+      priceCode: code,
+      hasPriceRow: Boolean(card?.rowIds[code]),
+      unitOptions: toClipboardUnits(variationId),
+      sameProductRewardVariationIds: getSameProductRewardVariationOptions(variationId, code).map(
+        (option) => option.id,
+      ),
+      getRewardVariationUnitOptions: toClipboardUnits,
+      getUnitPrice: (unitOptionId) => {
+        if (!card) return null;
+        const option = unitOptionId ? getDraftUnitOption(variationId, unitOptionId) : null;
+        if (unitOptionId && !option) return null;
+        const price = getSelectedUnitPrice(card, code, option, baseUnitCode);
+        return price > 0 ? price : null;
+      },
+    };
+  }
+
+  function copyAdjustmentSetup() {
+    if (!discountContext || !onAdjustmentClipboardChange) return;
+    const rows = normalizeAllDiscountRules(discountDraft);
+    if (rows.length === 0) return;
+    const unitCodeById: Record<string, string> = {};
+    cards.forEach((card) => {
+      getCardUnitOptions(card.id).forEach((option) => {
+        if (option.unitCode.trim()) unitCodeById[option.id] = option.unitCode;
+      });
+    });
+    const label = getAdjustmentContextLabel(discountContext.variationId, discountContext.code);
+    onAdjustmentClipboardChange(
+      buildAdjustmentClipboard({
+        productScope: clipboardProductScope,
+        variationId: discountContext.variationId,
+        variationLabel: label,
+        priceCode: discountContext.code,
+        rows,
+        unitCodeById,
+        copiedAt: Date.now(),
+      }),
+    );
+    const groupCount = getDiscountRuleGroups(rows).length;
+    setCopyNotice(
+      `Copied ${groupCount} adjustment${groupCount === 1 ? '' : 's'} from ${label}. Open another variation or price code of this product and click Paste Setup.`,
+    );
+  }
+
+  // Re-matches each different-product reward to the target price code's row.
+  // Read-only lookups; failures clear the reward instead of guessing.
+  async function resolveDifferentItemRewards(clipboard: AdjustmentClipboard, targetCode: PriceCode) {
+    const unitOptionIdByVariationId = new Map<string, string>();
+    clipboard.rows.forEach((row) => {
+      if (
+        row.adjustmentKind === 'Discount' &&
+        row.hasPromo &&
+        row.promoRewardTargetType === 'different_item' &&
+        row.promoRewardVariationId &&
+        !unitOptionIdByVariationId.has(row.promoRewardVariationId)
+      ) {
+        unitOptionIdByVariationId.set(row.promoRewardVariationId, row.promoRewardUnitOptionId);
+      }
+    });
+
+    const resolutions: Record<string, DifferentItemRewardResolution> = {};
+    for (const [variationId, unitOptionId] of unitOptionIdByVariationId) {
+      try {
+        const { data: sourceRow, error: sourceError } = await supabase
+          .from('product_variations')
+          .select('id, product_id')
+          .eq('id', variationId)
+          .maybeSingle();
+        if (sourceError) throw sourceError;
+        if (!sourceRow) {
+          resolutions[variationId] = {
+            status: 'clear',
+            reason: 'The reward variation no longer exists. Reselect the reward product.',
+          };
+          continue;
+        }
+        const { data: productRows, error: rowsError } = await supabase
+          .from('product_variations')
+          .select('id, product_id, variation_name, class_name, sku_code, price_code, variation_group_id')
+          .eq('product_id', sourceRow.product_id);
+        if (rowsError) throw rowsError;
+        let unitOptionVariationId = '';
+        if (unitOptionId) {
+          const { data: unitRow, error: unitError } = await supabase
+            .from('product_variation_unit_options')
+            .select('id, variation_id')
+            .eq('id', unitOptionId)
+            .maybeSingle();
+          if (unitError) throw unitError;
+          unitOptionVariationId = String(unitRow?.variation_id ?? '');
+        }
+        resolutions[variationId] = resolveDifferentItemReward({
+          sourceVariationId: variationId,
+          sourceUnitOptionId: unitOptionId,
+          unitOptionVariationId,
+          productRows: ((productRows ?? []) as Array<Record<string, unknown>>).map(
+            (row): RewardVariationRow => ({
+              id: String(row.id ?? ''),
+              productId: String(row.product_id ?? ''),
+              variationName: String(row.variation_name ?? ''),
+              className: String(row.class_name ?? ''),
+              skuCode: String(row.sku_code ?? ''),
+              priceCode: String(row.price_code ?? ''),
+              variationGroupId: row.variation_group_id ? String(row.variation_group_id) : null,
+            }),
+          ),
+          targetPriceCode: targetCode,
+        });
+      } catch {
+        resolutions[variationId] = {
+          status: 'clear',
+          reason: 'The reward variation could not be checked. Reselect the reward product.',
+        };
+      }
+    }
+    return resolutions;
+  }
+
+  async function requestPasteSetup() {
+    if (!discountContext || !adjustmentClipboard) return;
+    const context = discountContext;
+    const clipboard = adjustmentClipboard;
+    const target = buildPasteTarget(context.variationId, context.code);
+    const blockReason = getPasteBlockReason(clipboard, target);
+    if (blockReason) {
+      setDiscountModalError(blockReason);
+      return;
+    }
+
+    const requestId = pasteRequestRef.current + 1;
+    pasteRequestRef.current = requestId;
+    setIsPreparingPaste(true);
+    setDiscountModalError('');
+    const resolutions =
+      clipboard.sourcePriceCode === context.code
+        ? {}
+        : await resolveDifferentItemRewards(clipboard, context.code);
+    if (pasteRequestRef.current !== requestId) return;
+    setIsPreparingPaste(false);
+
+    const prepared = preparePastedRows(clipboard, target, {
+      createId: () => crypto.randomUUID(),
+      createGroupId: () => `rule-${context.variationId}-${context.code}-${crypto.randomUUID()}`,
+      differentItemResolutions: resolutions,
+      now: new Date(),
+    });
+    if (!prepared.ok) {
+      setDiscountModalError(prepared.error);
+      return;
+    }
+    setPendingPaste({ ...prepared.value, sourceLabel: clipboard.sourceVariationLabel, error: '' });
+  }
+
+  function confirmPasteSetup(mode: PasteMode) {
+    if (!pendingPaste) return;
+    const merged = mergePastedRows(normalizeAllDiscountRules(discountDraft), pendingPaste.rows, mode);
+    if (!merged.ok) {
+      setPendingPaste({ ...pendingPaste, error: merged.error });
+      return;
+    }
+    const pastedIds = pendingPaste.rows.map((row) => row.id);
+    setDiscountDraft(normalizeAllDiscountRules(merged.rows));
+    setPastedRowIds((current) =>
+      mode === 'replace' ? new Set(pastedIds) : new Set([...current, ...pastedIds]),
+    );
+    setActiveDiscountTabId(pendingPaste.groupKeys[0] ?? '');
+    setPasteNotice({ sourceLabel: pendingPaste.sourceLabel, issues: pendingPaste.issues });
+    setCopyNotice('');
+    setDiscountModalError('');
+    setPendingPaste(null);
   }
 
   function saveDiscountModal() {
@@ -2521,6 +2726,27 @@ export default function VarAndPrice({
     if (validationError) {
       setDiscountModalError(validationError);
       return;
+    }
+    // Paste-only checks (expired schedule, fixed amount above the target
+    // price), re-evaluated now so rules the admin has corrected pass. Rules
+    // that were not pasted keep exactly the existing validation.
+    if (pastedRowIds.size > 0) {
+      const pastedGroupKeys = new Set(
+        normalizedDraft.filter((item) => pastedRowIds.has(item.id)).map(getDraftRuleKey),
+      );
+      const blockingIssue = getPastedRowIssues(
+        normalizedDraft.filter((item) => pastedGroupKeys.has(getDraftRuleKey(item))),
+        buildPasteTarget(discountContext.variationId, discountContext.code),
+        new Date(),
+      ).find((issue) => issue.level === 'blocking');
+      if (blockingIssue) {
+        const blockedRow = normalizedDraft.find((item) => getDraftRuleKey(item) === blockingIssue.groupKey);
+        setActiveDiscountTabId(blockingIssue.groupKey);
+        setDiscountModalError(
+          `${blockedRow ? getDraftValidationLabel(blockedRow) : 'Pasted adjustment'}: ${blockingIssue.message}`,
+        );
+        return;
+      }
     }
     const filtered = discounts.filter((item) => {
       const samePriceContext = matchVariation(item.variationId) && toPriceCode(item.priceCode) === discountContext.code;
@@ -2761,6 +2987,7 @@ export default function VarAndPrice({
     setPendingRemoveDiscountGroupId(null);
     setPendingDisablePromoGroupId(null);
     clearDiscountStackDragState();
+    resetPasteState();
   }
 
   return (
@@ -3642,6 +3869,17 @@ export default function VarAndPrice({
             {(() => {
               const currentCard = cards.find((card) => card.id === discountContext.variationId);
               const orderableOptions = getOrderableUnitOptions(discountContext.variationId);
+              const pasteBlockReason = getPasteBlockReason(adjustmentClipboard, {
+                productScope: clipboardProductScope,
+                variationId: discountContext.variationId,
+                priceCode: discountContext.code,
+                hasPriceRow: Boolean(currentCard?.rowIds[discountContext.code]),
+              });
+              const pasteReviewGroupKeys = new Set(
+                (pasteNotice?.issues ?? [])
+                  .filter((issue) => issue.level === 'blocking')
+                  .map((issue) => issue.groupKey),
+              );
               const discountRuleGroups = getDiscountRuleGroups();
               const selectedDiscountGroup =
                 discountRuleGroups.find(
@@ -3692,6 +3930,7 @@ export default function VarAndPrice({
                         setPendingRemoveDiscountGroupId(null);
                         setPendingDisablePromoGroupId(null);
                         clearDiscountStackDragState();
+                        resetPasteState();
                       }}
                       aria-label="Close discount modal"
                     >
@@ -3713,6 +3952,40 @@ export default function VarAndPrice({
                     </span>
                   </div>
                   {discountModalError ? <p className={styles.modalAlert}>{discountModalError}</p> : null}
+                  {copyNotice ? (
+                    <p className={styles.clipboardNotice} role="status">
+                      <i className="fa-solid fa-copy" aria-hidden="true"></i> {copyNotice}
+                    </p>
+                  ) : null}
+                  {pasteNotice ? (
+                    <div className={styles.clipboardNotice} role="status">
+                      <p>
+                        <i className="fa-solid fa-paste" aria-hidden="true"></i>{' '}
+                        Pasted from <strong>{pasteNotice.sourceLabel}</strong>. Review the copied rules, then click
+                        Save here and Save Product to keep them. Nothing has been saved yet.
+                      </p>
+                      {pasteNotice.issues.length > 0 ? (
+                        <ul className={styles.clipboardIssueList}>
+                          {pasteNotice.issues.map((issue, index) => {
+                            const groupIndex = discountRuleGroups.findIndex(
+                              (group) => group.groupKey === issue.groupKey,
+                            );
+                            const groupName =
+                              discountRuleGroups[groupIndex]?.rows[0]?.discountName.trim() ||
+                              (groupIndex >= 0 ? `Discount ${groupIndex + 1}` : 'Adjustment');
+                            return (
+                              <li
+                                key={`${issue.groupKey}-${index}`}
+                                className={issue.level === 'blocking' ? styles.clipboardIssueBlocking : undefined}
+                              >
+                                <strong>{groupName}:</strong> {issue.message}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   <div className={styles.modalContent}>
                     <div className={styles.ruleTabsHeader}>
@@ -3720,22 +3993,64 @@ export default function VarAndPrice({
                         {discountRuleGroups.map((ruleGroup, index) => {
                           const rule = ruleGroup.rows[0];
                           const isSelected = selectedDiscountGroup?.groupKey === ruleGroup.groupKey;
+                          const needsReview = pasteReviewGroupKeys.has(ruleGroup.groupKey);
                           return (
                             <button
                               key={ruleGroup.groupKey}
                               type="button"
                               className={`${styles.ruleTab} ${isSelected ? styles.ruleTabActive : ''}`}
                               onClick={() => setActiveDiscountTabId(ruleGroup.groupKey)}
+                              title={needsReview ? 'Pasted rule that needs review' : undefined}
                             >
+                              {needsReview ? (
+                                <i className="fa-solid fa-triangle-exclamation" aria-label="Needs review"></i>
+                              ) : null}{' '}
                               {rule?.discountName.trim() || `Discount ${index + 1}`}
                             </button>
                           );
                         })}
                       </div>
-                      <button type="button" className={styles.secondaryAction} onClick={addDiscountRule}>
-                        + Add Adjustment
-                      </button>
+                      <div className={styles.clipboardActions}>
+                        {onAdjustmentClipboardChange ? (
+                          <>
+                            <button
+                              type="button"
+                              className={styles.secondaryAction}
+                              onClick={copyAdjustmentSetup}
+                              disabled={discountRuleGroups.length === 0}
+                              title={
+                                discountRuleGroups.length === 0
+                                  ? 'Add an adjustment before copying.'
+                                  : 'Copy every adjustment shown here, including unsaved edits.'
+                              }
+                            >
+                              <i className="fa-solid fa-copy" aria-hidden="true"></i> Copy Setup
+                            </button>
+                            <button
+                              type="button"
+                              className={styles.secondaryAction}
+                              onClick={() => void requestPasteSetup()}
+                              disabled={Boolean(pasteBlockReason) || isPreparingPaste}
+                              title={pasteBlockReason || `Paste the setup copied from ${adjustmentClipboard?.sourceVariationLabel}.`}
+                            >
+                              <i className="fa-solid fa-paste" aria-hidden="true"></i>{' '}
+                              {isPreparingPaste ? 'Preparing...' : 'Paste Setup'}
+                            </button>
+                          </>
+                        ) : null}
+                        <button type="button" className={styles.secondaryAction} onClick={addDiscountRule}>
+                          + Add Adjustment
+                        </button>
+                      </div>
                     </div>
+                    {onAdjustmentClipboardChange && adjustmentClipboard ? (
+                      <p className={styles.clipboardHint}>
+                        Clipboard: {adjustmentClipboard.sourceVariationLabel} (
+                        {new Set(adjustmentClipboard.rows.map((row) => row.discountGroup)).size} adjustment
+                        {new Set(adjustmentClipboard.rows.map((row) => row.discountGroup)).size === 1 ? '' : 's'})
+                        {pasteBlockReason ? ` — ${pasteBlockReason}` : ''}
+                      </p>
+                    ) : null}
 
                     <div className={styles.ruleList}>
                       {selectedDiscountGroup ? [selectedDiscountGroup].map((ruleGroup) => {
@@ -4668,6 +4983,111 @@ export default function VarAndPrice({
                       </div>
                     </div>
                   ) : null}
+                  {pendingPaste ? (
+                    <div
+                      className={styles.confirmOverlay}
+                      role="presentation"
+                      onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) {
+                          setPendingPaste(null);
+                        }
+                      }}
+                    >
+                      <div
+                        className={styles.confirmDialog}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="paste-setup-title"
+                        aria-describedby="paste-setup-message"
+                      >
+                        <div className={styles.modalHeader}>
+                          <div>
+                            <h4 id="paste-setup-title" className={styles.modalTitle}>
+                              Paste Setup?
+                            </h4>
+                            <p id="paste-setup-message" className={styles.confirmText}>
+                              Paste {pendingPaste.groupKeys.length} adjustment
+                              {pendingPaste.groupKeys.length === 1 ? '' : 's'} copied from{' '}
+                              {pendingPaste.sourceLabel} into{' '}
+                              {getAdjustmentContextLabel(discountContext.variationId, discountContext.code)}.
+                              Nothing is saved until you click Save here and then Save Product.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className={styles.modalClose}
+                            onClick={() => setPendingPaste(null)}
+                            aria-label="Close paste setup confirmation"
+                          >
+                            <i className="fa-solid fa-xmark" aria-hidden="true"></i>
+                          </button>
+                        </div>
+                        {discountRuleGroups.length > 0 ? (
+                          <>
+                            <div className={styles.confirmDetail}>
+                              <span>Current adjustments here</span>
+                              <strong>{discountRuleGroups.length}</strong>
+                            </div>
+                            <p className={styles.confirmText}>
+                              Replace removes them from this draft; they are only deleted (or set Inactive when
+                              orders use them) after you save the product. Append keeps them and adds the copied
+                              rules as separate adjustments.
+                            </p>
+                          </>
+                        ) : null}
+                        {pendingPaste.issues.length > 0 ? (
+                          <ul className={styles.clipboardIssueList}>
+                            {pendingPaste.issues.map((issue, index) => (
+                              <li
+                                key={`${issue.groupKey}-${index}`}
+                                className={issue.level === 'blocking' ? styles.clipboardIssueBlocking : undefined}
+                              >
+                                {issue.level === 'blocking' ? 'Needs fixing before save: ' : ''}
+                                {issue.message}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        {pendingPaste.error ? <p className={styles.modalAlert}>{pendingPaste.error}</p> : null}
+                        <div className={styles.actions}>
+                          <button
+                            type="button"
+                            className={styles.cancelButton}
+                            onClick={() => setPendingPaste(null)}
+                            autoFocus
+                          >
+                            Cancel
+                          </button>
+                          {discountRuleGroups.length > 0 ? (
+                            <>
+                              <button
+                                type="button"
+                                className={styles.secondaryAction}
+                                onClick={() => confirmPasteSetup('append')}
+                              >
+                                Append
+                              </button>
+                              <button
+                                type="button"
+                                className={styles.deleteAction}
+                                onClick={() => confirmPasteSetup('replace')}
+                              >
+                                Replace {discountRuleGroups.length}
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              className={styles.registerButton}
+                              onClick={() => confirmPasteSetup('replace')}
+                            >
+                              Paste
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                   {pendingDisablePromoGroup ? (
                     <div
                       className={styles.confirmOverlay}
@@ -4742,6 +5162,7 @@ export default function VarAndPrice({
                 setPendingRemoveDiscountGroupId(null);
                 setPendingDisablePromoGroupId(null);
                 clearDiscountStackDragState();
+                resetPasteState();
               }}>Cancel</button>
               <button type="button" className={styles.registerButton} onClick={saveDiscountModal}>Save</button>
             </div>

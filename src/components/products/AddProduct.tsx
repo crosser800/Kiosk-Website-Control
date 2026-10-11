@@ -7,6 +7,7 @@ import { supabase } from '../../lib/supabase';
 import { normalizeDiscountKind } from './addProducts/discountLifecycle';
 import { generatePackagingSummary, normalizePackagingUnitCode } from './addProducts/packagingParser';
 import { getLogicalVariationKey } from './addProducts/variationIdentity';
+import type { AdjustmentClipboard } from './addProducts/discountClipboard';
 import type {
   DiscountItem,
   MediaItem,
@@ -850,6 +851,17 @@ export default function AddProduct({
   } | null>(null);
   const [pendingTabChange, setPendingTabChange] = useState<PendingTabChange | null>(null);
   const [isResolvingTabChange, setIsResolvingTabChange] = useState(false);
+  // Manage Adjustments copy/paste clipboard. Lives here (not in VarAndPrice,
+  // which unmounts on section changes) and is scoped to the open product:
+  // this component is reused when another product is selected, so the
+  // clipboard is dropped as soon as the product identity changes.
+  const clipboardProductScope = editProductId ?? 'unsaved-product';
+  const [adjustmentClipboard, setAdjustmentClipboard] = useState<AdjustmentClipboard | null>(null);
+  const [adjustmentClipboardScope, setAdjustmentClipboardScope] = useState(clipboardProductScope);
+  if (adjustmentClipboardScope !== clipboardProductScope) {
+    setAdjustmentClipboardScope(clipboardProductScope);
+    setAdjustmentClipboard(null);
+  }
 
   const isEditMode = useMemo(() => Boolean(editProductId), [editProductId]);
   const basicInformationRef = useRef<HTMLElement | null>(null);
@@ -3606,6 +3618,11 @@ export default function AddProduct({
               onVariationPreviewMediaChange={setVariationPreviewMediaByCardId}
               onDiscountsChange={setDiscounts}
               onSurchargesChange={setSurcharges}
+              adjustmentClipboard={
+                adjustmentClipboard?.sourceProductScope === clipboardProductScope ? adjustmentClipboard : null
+              }
+              onAdjustmentClipboardChange={setAdjustmentClipboard}
+              clipboardProductScope={clipboardProductScope}
             />
           </section>
         ) : null}

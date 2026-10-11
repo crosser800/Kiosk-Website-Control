@@ -1766,3 +1766,54 @@
     gap: 0.4rem;
   }
 }
+
+/* Manage Adjustments copy/paste */
+.clipboardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.clipboardActions i,
+.ruleTab i {
+  margin-right: 0.15rem;
+}
+
+.clipboardHint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.clipboardNotice {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--yellow) 40%, var(--card-border));
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--yellow) 10%, var(--surface));
+  color: var(--text);
+  font-size: 0.84rem;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.clipboardNotice p {
+  margin: 0;
+}
+
+.clipboardIssueList {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.clipboardIssueBlocking {
+  color: #b42318;
+  font-weight: 600;
+}

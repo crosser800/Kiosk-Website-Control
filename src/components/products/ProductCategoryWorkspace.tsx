@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import AddProduct from './AddProduct';
 import ProductCreateModal from './ProductCreateModal';
+import { normalizeSearchText, searchProducts } from './productSearch';
 import styles from './ProductCategoryWorkspace.module.css';
 
 type CategoryRow = {
@@ -52,6 +53,10 @@ type ProductListItem = {
   thumbnailUrl: string;
   variationCount: number;
   createdAt: string;
+  // Search index fields (see productSearch.ts).
+  categoryTitle: string;
+  variationNames: string[];
+  variationSkus: string[];
 };
 
 type CategorySummary = {
@@ -68,6 +73,12 @@ type CategorySummary = {
 type EditorMode = 'create' | 'edit';
 
 const SUPABASE_PAGE_SIZE = 1000;
+const SEARCH_RESULT_LIMIT = 60;
+
+// Display-only bucket for products whose category_id is empty or points to a
+// category that was not loaded. Never written to the database: the editor
+// and create modal receive null instead of this id.
+const UNCATEGORIZED_CATEGORY_ID = '__uncategorized__';
 
 function buildVariationGroupKey(variation: ProductVariationRow) {
   const normalizedVariationName = String(variation.variation_name ?? variation.class_name ?? '')
@@ -123,23 +134,26 @@ function sortProducts(products: ProductListItem[]) {
   );
 }
 
-async function fetchAllVariationRows() {
-  const rows: ProductVariationRow[] = [];
+// Pages through a query so the workspace (and its search) never silently
+// stops at the server's per-request row cap.
+async function fetchAllRows<Row>(
+  fetchPage: (
+    from: number,
+    to: number,
+  ) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>,
+) {
+  const rows: Row[] = [];
   let from = 0;
 
   while (true) {
     const to = from + SUPABASE_PAGE_SIZE - 1;
-    const { data, error } = await supabase
-      .from('product_variations')
-      .select('id, product_id, variation_name, class_name, sku_code, availability')
-      .order('id', { ascending: true })
-      .range(from, to);
+    const { data, error } = await fetchPage(from, to);
 
     if (error) {
       throw new Error(error.message);
     }
 
-    const page = (data ?? []) as ProductVariationRow[];
+    const page = (data ?? []) as Row[];
     rows.push(...page);
 
     if (page.length < SUPABASE_PAGE_SIZE) {
@@ -148,6 +162,29 @@ async function fetchAllVariationRows() {
 
     from += SUPABASE_PAGE_SIZE;
   }
+}
+
+function fetchAllVariationRows() {
+  return fetchAllRows<ProductVariationRow>((from, to) =>
+    supabase
+      .from('product_variations')
+      .select('id, product_id, variation_name, class_name, sku_code, availability')
+      .order('id', { ascending: true })
+      .range(from, to),
+  );
+}
+
+function uniqueText(values: Array<string | null | undefined>) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  values.forEach((value) => {
+    const text = String(value ?? '').trim();
+    const key = text.toLowerCase();
+    if (!text || seen.has(key)) return;
+    seen.add(key);
+    result.push(text);
+  });
+  return result;
 }
 
 type ProductCategoryWorkspaceProps = {
@@ -173,30 +210,43 @@ export default function ProductCategoryWorkspace({
     useState<'Basic Information' | 'Images' | 'Variation & Pricing'>('Basic Information');
 
   async function fetchWorkspaceData() {
-    const [categoriesRes, productsRes, mediaRes, variationRows] = await Promise.all([
+    const [categoriesRes, productRows, mediaRows, variationRows] = await Promise.all([
       supabase
         .from('product_categories')
         .select('id, category_title, category_slug, category_image_url, status')
         .order('category_title'),
-      supabase
-        .from('products')
-        .select('id, category_id, product_name, sku_code, description, status, created_at')
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('product_media')
-        .select('id, product_id, media_url, media_type, is_primary, sort_order, variation_id, status')
-        .order('sort_order', { ascending: true }),
+      // Paged with an id tie-breaker so no product is skipped or repeated
+      // between pages; the search index needs the complete catalog.
+      fetchAllRows<ProductRow>((from, to) =>
+        supabase
+          .from('products')
+          .select('id, category_id, product_name, sku_code, description, status, created_at')
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, to),
+      ),
+      fetchAllRows<ProductMediaRow>((from, to) =>
+        supabase
+          .from('product_media')
+          .select('id, product_id, media_url, media_type, is_primary, sort_order, variation_id, status')
+          .order('sort_order', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, to),
+      ),
       fetchAllVariationRows(),
     ]);
 
-    const firstError =
-      categoriesRes.error ?? productsRes.error ?? mediaRes.error;
-    if (firstError) {
-      throw new Error(firstError.message);
+    if (categoriesRes.error) {
+      throw new Error(categoriesRes.error.message);
     }
 
+    const categoryRows = (categoriesRes.data as CategoryRow[] | null | undefined) ?? [];
+    const categoryTitleById = new Map(
+      categoryRows.map((row) => [String(row.id), String(row.category_title ?? 'Untitled Category')]),
+    );
+
     const mediaByProductId = new Map<string, ProductMediaRow[]>();
-    (mediaRes.data as ProductMediaRow[] | null | undefined)?.forEach((row) => {
+    mediaRows.forEach((row) => {
       const productId = String(row.product_id ?? '');
       if (!productId) return;
       const current = mediaByProductId.get(productId) ?? [];
@@ -214,9 +264,12 @@ export default function ProductCategoryWorkspace({
     });
 
     const productsByCategoryId = new Map<string, ProductListItem[]>();
-    (productsRes.data as ProductRow[] | null | undefined)?.forEach((row) => {
-      const categoryId = String(row.category_id ?? '');
-      if (!categoryId) return;
+    productRows.forEach((row) => {
+      // Previously products without a (loaded) category were dropped here and
+      // could not be reached at all; they now land in the display-only
+      // Uncategorized bucket. Their category_id is left untouched.
+      const rawCategoryId = String(row.category_id ?? '');
+      const categoryId = categoryTitleById.has(rawCategoryId) ? rawCategoryId : UNCATEGORIZED_CATEGORY_ID;
 
       const mediaItems = (mediaByProductId.get(String(row.id)) ?? []).filter(
         (item) => !item.variation_id && String(item.status ?? 'Active') === 'Active',
@@ -237,6 +290,11 @@ export default function ProductCategoryWorkspace({
         thumbnailUrl: String(primaryMedia?.media_url ?? ''),
         variationCount: countVariationCards(productVariations),
         createdAt: String(row.created_at ?? new Date().toISOString()),
+        categoryTitle: categoryTitleById.get(categoryId) ?? '',
+        variationNames: uniqueText(
+          productVariations.flatMap((variation) => [variation.variation_name, variation.class_name]),
+        ),
+        variationSkus: uniqueText(productVariations.map((variation) => variation.sku_code)),
       };
 
       const current = productsByCategoryId.get(categoryId) ?? [];
@@ -244,22 +302,44 @@ export default function ProductCategoryWorkspace({
       productsByCategoryId.set(categoryId, current);
     });
 
-    return ((categoriesRes.data as CategoryRow[] | null | undefined) ?? []).map((row) => {
-      const categoryProducts = sortProducts(productsByCategoryId.get(String(row.id)) ?? []);
+    const summarize = (
+      base: Omit<CategorySummary, 'productCount' | 'variationCount' | 'products'>,
+    ): CategorySummary => {
+      const categoryProducts = sortProducts(productsByCategoryId.get(base.id) ?? []);
       return {
-        id: String(row.id),
-        title: String(row.category_title ?? 'Untitled Category'),
-        slug: String(row.category_slug ?? ''),
-        imageUrl: String(row.category_image_url ?? ''),
-        status: normalizeStatus(row.status),
+        ...base,
         productCount: categoryProducts.length,
         variationCount: categoryProducts.reduce(
           (total, product) => total + product.variationCount,
           0,
         ),
         products: categoryProducts,
-      } satisfies CategorySummary;
-    });
+      };
+    };
+
+    const mappedCategories = categoryRows.map((row) =>
+      summarize({
+        id: String(row.id),
+        title: String(row.category_title ?? 'Untitled Category'),
+        slug: String(row.category_slug ?? ''),
+        imageUrl: String(row.category_image_url ?? ''),
+        status: normalizeStatus(row.status),
+      }),
+    );
+
+    if ((productsByCategoryId.get(UNCATEGORIZED_CATEGORY_ID) ?? []).length > 0) {
+      mappedCategories.push(
+        summarize({
+          id: UNCATEGORIZED_CATEGORY_ID,
+          title: 'Uncategorized',
+          slug: '',
+          imageUrl: '',
+          status: 'No Category',
+        }),
+      );
+    }
+
+    return mappedCategories;
   }
 
   async function refreshWorkspaceAfterSave(productId: string, categoryId: string) {
@@ -268,7 +348,13 @@ export default function ProductCategoryWorkspace({
       setCategories(nextCategories);
       setLoadError('');
       setRefreshNotice('');
-      setSelectedCategoryId(categoryId);
+      // A product saved without a known category stays reachable in the
+      // Uncategorized view instead of dropping back to the category grid.
+      setSelectedCategoryId(
+        nextCategories.some((category) => category.id === categoryId)
+          ? categoryId
+          : UNCATEGORIZED_CATEGORY_ID,
+      );
       setSelectedProductId(productId);
       setEditorMode('edit');
       setProductPage(1);
@@ -341,25 +427,17 @@ export default function ProductCategoryWorkspace({
     };
   }, []);
 
-  const filteredCategories = useMemo(() => {
-    const normalizedSearch = searchValue.trim().toLowerCase();
-
-    return categories.filter((category) => {
-      if (
-        [category.title, category.slug, category.status].some((value) =>
-          value.toLowerCase().includes(normalizedSearch),
-        )
-      ) {
-        return true;
-      }
-
-      return category.products.some((product) =>
-        [product.name, product.skuCode, product.description].some((value) =>
-          value.toLowerCase().includes(normalizedSearch),
-        ),
-      );
-    });
-  }, [categories, searchValue]);
+  // Global product search: every loaded product (all categories plus the
+  // Uncategorized bucket), independent of the selected category.
+  const allProducts = useMemo(
+    () => categories.flatMap((category) => category.products),
+    [categories],
+  );
+  const isGlobalSearch = normalizeSearchText(searchValue) !== '';
+  const globalSearchResults = useMemo(
+    () => searchProducts(allProducts, searchValue),
+    [allProducts, searchValue],
+  );
 
   const selectedCategory = useMemo(
     () => categories.find((category) => category.id === selectedCategoryId) ?? null,
@@ -438,6 +516,17 @@ export default function ProductCategoryWorkspace({
     setProductPage(1);
   }
 
+  // Opens the existing editor for a search result directly, without browsing
+  // its category first. The category detail view is still the editor host.
+  function openProductFromSearch(product: ProductListItem) {
+    setSelectedCategoryId(product.categoryId);
+    setSelectedProductId(product.id);
+    setEditorMode('edit');
+    setEditorInitialSection('Basic Information');
+    setProductSearchValue('');
+    setProductPage(1);
+  }
+
   function handleStartAddProduct() {
     setIsCreateModalOpen(true);
   }
@@ -504,6 +593,10 @@ export default function ProductCategoryWorkspace({
 
   const showCategoryDetail = Boolean(selectedCategoryId && selectedCategory);
   const detailCategory = selectedCategory;
+  // The Uncategorized bucket is display-only; never hand its id to the editor
+  // or the create modal as a real category_id.
+  const realSelectedCategoryId =
+    selectedCategoryId === UNCATEGORIZED_CATEGORY_ID ? null : selectedCategoryId;
 
   return (
     <section className={styles.workspace}>
@@ -511,9 +604,13 @@ export default function ProductCategoryWorkspace({
         <div className={styles.catalogPanel}>
           <div className={styles.topBar}>
             <div>
-              <h2 className={styles.title}>Browse by Category</h2>
-              <p className={styles.helperText}>
-                Select a category to view and manage its products faster.
+              <h2 className={styles.title}>{isGlobalSearch ? 'Search Products' : 'Browse by Category'}</h2>
+              <p className={styles.helperText} aria-live="polite">
+                {!isGlobalSearch
+                  ? 'Select a category, or search to open any product directly.'
+                  : isLoading
+                    ? 'Loading products...'
+                    : `${globalSearchResults.length} product${globalSearchResults.length === 1 ? '' : 's'} found across all categories.`}
               </p>
             </div>
 
@@ -524,8 +621,20 @@ export default function ProductCategoryWorkspace({
                   type="text"
                   value={searchValue}
                   onChange={(event) => setSearchValue(event.target.value)}
-                  placeholder="Search categories..."
+                  placeholder="Search product name, SKU, variation, or category..."
+                  aria-label="Search products"
                 />
+                {searchValue ? (
+                  <button
+                    type="button"
+                    className={styles.searchClearButton}
+                    onClick={() => setSearchValue('')}
+                    aria-label="Clear search"
+                    title="Clear search"
+                  >
+                    <i className="fa-solid fa-xmark" aria-hidden="true"></i>
+                  </button>
+                ) : null}
               </label>
             </div>
           </div>
@@ -540,13 +649,77 @@ export default function ProductCategoryWorkspace({
             <div className={styles.emptyState}>
               <p>{loadError}</p>
             </div>
-          ) : filteredCategories.length === 0 ? (
+          ) : isGlobalSearch ? (
+            globalSearchResults.length === 0 ? (
+              <div className={styles.emptyState}>
+                <p>No products match "{searchValue.trim()}".</p>
+                <button type="button" className={styles.secondaryButton} onClick={() => setSearchValue('')}>
+                  Clear search
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className={styles.searchResultsGrid}>
+                  {globalSearchResults.slice(0, SEARCH_RESULT_LIMIT).map(({ product, matchedField, matchedValue }) => (
+                    <button
+                      key={product.id}
+                      type="button"
+                      className={styles.productCard}
+                      onClick={() => openProductFromSearch(product)}
+                      aria-label={`Open ${product.name}`}
+                    >
+                      <div className={styles.productThumbWrap}>
+                        {product.thumbnailUrl ? (
+                          <img src={product.thumbnailUrl} alt={product.name} className={styles.productThumb} />
+                        ) : (
+                          <div className={styles.productThumbPlaceholder}>
+                            <i className="fa-solid fa-box" aria-hidden="true"></i>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className={styles.productMeta}>
+                        <div className={styles.productNameRow}>
+                          <span className={styles.productName}>{product.name}</span>
+                          <span
+                            className={`${styles.statusBadge} ${
+                              product.status.toLowerCase() === 'active'
+                                ? styles.statusActive
+                                : styles.statusInactive
+                            }`}
+                          >
+                            {product.status}
+                          </span>
+                        </div>
+                        <span className={styles.productSubtext}>{product.skuCode}</span>
+                        <span className={styles.productSubtext}>
+                          <i className="fa-solid fa-folder" aria-hidden="true"></i>{' '}
+                          {product.categoryTitle || 'Uncategorized'}
+                        </span>
+                        {matchedField !== 'Product name' ? (
+                          <span className={styles.productSubtext}>
+                            Matched {matchedField.toLowerCase()}: {matchedValue}
+                          </span>
+                        ) : null}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                {globalSearchResults.length > SEARCH_RESULT_LIMIT ? (
+                  <p className={styles.helperText}>
+                    Showing the first {SEARCH_RESULT_LIMIT} of {globalSearchResults.length} matches. Add more
+                    words to narrow the search.
+                  </p>
+                ) : null}
+              </>
+            )
+          ) : categories.length === 0 ? (
             <div className={styles.emptyState}>
-              <p>No categories match your search.</p>
+              <p>No categories yet.</p>
             </div>
           ) : (
             <div className={styles.cardGrid}>
-              {filteredCategories.map((category) => (
+              {categories.map((category) => (
                 <article key={category.id} className={styles.categoryCard}>
                   <button
                     type="button"
@@ -806,7 +979,7 @@ export default function ProductCategoryWorkspace({
               {editorMode === 'edit' && selectedProductId ? (
                 <AddProduct
                   layout="embedded"
-                  initialCategoryId={detailCategory.id}
+                  initialCategoryId={realSelectedCategoryId}
                   editProductId={selectedProductId}
                   initialSection={editorInitialSection}
                   onRegisterNavigationGuard={onRegisterNavigationGuard}
@@ -837,7 +1010,7 @@ export default function ProductCategoryWorkspace({
 
       {isCreateModalOpen ? (
         <ProductCreateModal
-          initialCategoryId={selectedCategoryId}
+          initialCategoryId={realSelectedCategoryId}
           onClose={() => setIsCreateModalOpen(false)}
           onCreated={handleCreatedProduct}
         />
