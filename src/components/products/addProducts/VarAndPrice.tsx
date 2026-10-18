@@ -79,6 +79,10 @@ type VarAndPriceProps = {
   adjustmentClipboard?: AdjustmentClipboard | null;
   onAdjustmentClipboardChange?: (clipboard: AdjustmentClipboard | null) => void;
   clipboardProductScope?: string;
+  // Select a variation card (and optionally highlight one unit option row);
+  // a new nonce re-triggers the same target. Used by duplicate-conflict links.
+  focusRequest?: { cardKey: string; unitOptionId: string | null; nonce: number | string } | null;
+  onFocusRequestHandled?: () => void;
 };
 
 type VariationCard = {
@@ -791,6 +795,8 @@ export default function VarAndPrice({
   adjustmentClipboard = null,
   onAdjustmentClipboardChange,
   clipboardProductScope = '',
+  focusRequest = null,
+  onFocusRequestHandled,
 }: VarAndPriceProps) {
   const cards = useMemo(() => toVariationCards(items), [items]);
   const activeUnits = useMemo(
@@ -819,6 +825,8 @@ export default function VarAndPrice({
   const [isVariationModalOpen, setVariationModalOpen] = useState(false);
   const [discountContext, setDiscountContext] = useState<{ variationId: string; code: PriceCode } | null>(null);
   const [activeVariationTabId, setActiveVariationTabId] = useState<string>('');
+  const [focusHighlight, setFocusHighlight] = useState<{ cardKey: string; unitOptionId: string | null } | null>(null);
+  const focusTimersRef = useRef<number[]>([]);
   const [duplicateTarget, setDuplicateTarget] = useState<VariationCard | null>(null);
   const [imageSelectorCardId, setImageSelectorCardId] = useState<string | null>(null);
 
@@ -961,6 +969,34 @@ export default function VarAndPrice({
       setActiveVariationTabId(cards[0].id);
     }
   }, [activeVariationTabId, cards]);
+
+  useEffect(() => {
+    if (!focusRequest || !cards.some((card) => card.id === focusRequest.cardKey)) {
+      return;
+    }
+    const target = { cardKey: focusRequest.cardKey, unitOptionId: focusRequest.unitOptionId };
+    const selector = focusRequest.unitOptionId
+      ? `[data-unit-option-id="${CSS.escape(focusRequest.unitOptionId)}"]`
+      : `[data-variation-card-key="${CSS.escape(focusRequest.cardKey)}"]`;
+    // Timers live in a ref: the parent clears focusRequest right away
+    // (onFocusRequestHandled), which must not cancel the scroll/highlight.
+    focusTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    focusTimersRef.current = [
+      window.setTimeout(() => {
+        setActiveVariationTabId(target.cardKey);
+        setFocusHighlight(target);
+      }, 0),
+      window.setTimeout(() => {
+        document.querySelector(selector)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 80),
+      window.setTimeout(() => setFocusHighlight(null), 4000),
+    ];
+    onFocusRequestHandled?.();
+    // Re-run only for a new request or once its card appears.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusRequest?.nonce, cards]);
+
+  useEffect(() => () => focusTimersRef.current.forEach((timer) => window.clearTimeout(timer)), []);
 
   useEffect(() => {
     if (discountDraft.length === 0) {
@@ -3050,7 +3086,13 @@ export default function VarAndPrice({
             const hasBaseUnitRow = cardUnitOptions.some((item) => isBaseUnitOption(item, baseUnitCode));
 
             return (
-              <article key={card.id} className={styles.variationCard}>
+              <article
+                key={card.id}
+                data-variation-card-key={card.id}
+                className={`${styles.variationCard} ${
+                  focusHighlight?.cardKey === card.id && !focusHighlight.unitOptionId ? styles.focusHighlight : ''
+                }`}
+              >
                 <div className={styles.cardHeader}>
                   <div>
                     <h4 className={styles.cardTitle}>{card.variationName}</h4>
@@ -3255,7 +3297,13 @@ export default function VarAndPrice({
                       {cardUnitOptions.map((option) => {
                         const isBaseUnitRow = isBaseUnitOption(option, baseUnitCode);
                         return (
-                          <div key={option.id} className={styles.orderUnitRow}>
+                          <div
+                            key={option.id}
+                            data-unit-option-id={option.id}
+                            className={`${styles.orderUnitRow} ${
+                              focusHighlight?.unitOptionId === option.id ? styles.focusHighlight : ''
+                            }`}
+                          >
                             <div className={styles.orderUnitCellIndex}>
                               {cardUnitOptions.findIndex((item) => item.id === option.id) + 1}
                             </div>

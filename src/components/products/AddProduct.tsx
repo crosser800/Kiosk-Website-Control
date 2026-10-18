@@ -7,6 +7,25 @@ import { supabase } from '../../lib/supabase';
 import { normalizeDiscountKind } from './addProducts/discountLifecycle';
 import { generatePackagingSummary, normalizePackagingUnitCode } from './addProducts/packagingParser';
 import { getLogicalVariationKey } from './addProducts/variationIdentity';
+import {
+  findVariationSkuConflicts,
+  loadVariationConflictPreview,
+  normalizeVariationSku,
+  openConflictingProduct,
+  VariationSkuConflictError,
+  type VariationSkuConflict,
+} from './addProducts/variationSkuConflicts';
+import {
+  getUnitOptionNaturalKey,
+  parseUnitOptionUniqueViolation,
+  planUnitOptionWrites,
+  UnitOptionConflictError,
+  type ExistingUnitOptionRow,
+  type UnitOptionConflict,
+  type UnitOptionWriteRow,
+} from './addProducts/unitOptionReconciliation';
+import { describeProductSaveError } from './addProducts/saveErrorMessages';
+import SaveConflictPanel, { type SaveConflictState } from './addProducts/SaveConflictPanel';
 import type { AdjustmentClipboard } from './addProducts/discountClipboard';
 import type {
   DiscountItem,
@@ -30,6 +49,11 @@ type AddProductProps = {
   onRegisterNavigationGuard?: (guard: (() => Promise<boolean>) | null) => void;
   layout?: 'standalone' | 'embedded';
   initialSection?: AddProductSection;
+  // Variation (product_variation_groups.id) to select once the product loads.
+  initialVariationGroupId?: string | null;
+  // Opens another product in the host workspace. Returns false when the
+  // product is not available there (navigation did not happen).
+  onOpenProduct?: (productId: string, variationGroupId: string) => boolean;
 };
 
 type OptionItem = { id: string; label: string };
@@ -37,6 +61,8 @@ type PendingTabChange = {
   from: AddProductSection;
   to: AddProductSection | null;
   dirtySections: AddProductSection[];
+  // Shown instead of "leaving Products" when leaving for a specific place.
+  destinationLabel?: string;
 };
 type SectionDraftState = {
   formValues: ProductFormState;
@@ -259,6 +285,38 @@ function applyPersistedIdentityToSurcharges(
   }));
 }
 
+// Editor unit-option id -> persisted id, for rows whose id changed during a
+// save (see planUnitOptionWrites). Applied to the unit options and to every
+// discount/surcharge reference so the next save sends the persisted ids.
+type UnitOptionIdRemap = Map<string, string>;
+
+function remapUnitOptionId(value: string, remap: UnitOptionIdRemap) {
+  return value ? remap.get(value) ?? value : value;
+}
+
+function applyUnitOptionIdRemap<T extends { id: string }>(items: T[], remap: UnitOptionIdRemap): T[] {
+  if (remap.size === 0) return items;
+  return items.map((item) => (remap.has(item.id) ? { ...item, id: remap.get(item.id) as string } : item));
+}
+
+function applyUnitOptionIdRemapToDiscounts(items: DiscountItem[], remap: UnitOptionIdRemap): DiscountItem[] {
+  if (remap.size === 0) return items;
+  return items.map((item) => ({
+    ...item,
+    unitOptionId: remapUnitOptionId(item.unitOptionId, remap),
+    promoRewardUnitOptionId: remapUnitOptionId(item.promoRewardUnitOptionId, remap),
+  }));
+}
+
+function applyUnitOptionIdRemapToSurcharges(items: SurchargeItem[], remap: UnitOptionIdRemap): SurchargeItem[] {
+  if (remap.size === 0) return items;
+  return items.map((item) => ({
+    ...item,
+    unitOptionId: remapUnitOptionId(item.unitOptionId, remap),
+    rewardUnitOptionId: remapUnitOptionId(item.rewardUnitOptionId, remap),
+  }));
+}
+
 type PromoGiftCheckMeta = {
   giftCheckId: string;
   giftCheckCode: string;
@@ -450,7 +508,7 @@ function getVariationUnitValidationError(
   variations: VariationItem[],
   unitDefinitions: ProductUnitDefinition[],
   unitAliases: ProductUnitAliasDefinition[],
-) {
+): { message: string; unitConflict?: UnitOptionConflict } | null {
   const variationNameById = new Map(
     variations.map((variation) => [
       getLogicalVariationKey({
@@ -462,7 +520,8 @@ function getVariationUnitValidationError(
       variation.variationName || variation.className || variation.skuCode || 'Variation',
     ]),
   );
-  const unitsByVariation = new Map<string, Set<string>>();
+  // variation key -> resolved unit code -> first option id using it
+  const unitsByVariation = new Map<string, Map<string, string>>();
 
   for (const [index, option] of unitOptions.entries()) {
     const rawUnitCode = String(option.unitCode ?? '').trim();
@@ -477,33 +536,45 @@ function getVariationUnitValidationError(
 
     const unitCode = resolveKnownUnitCode(rawUnitCode, unitDefinitions, unitAliases);
     if (!unitCode) {
-      return `${rowLabel} uses unknown unit code "${rawUnitCode || rawUnitLabel || 'blank'}". Select a configured unit.`;
+      return { message: `${rowLabel} uses unknown unit code "${rawUnitCode || rawUnitLabel || 'blank'}". Select a configured unit.` };
     }
 
     const baseUnitCode = resolveKnownUnitCode(rawBaseUnitCode, unitDefinitions, unitAliases);
     if (!baseUnitCode) {
-      return `${rowLabel} uses unknown base unit "${rawBaseUnitCode || 'blank'}". Select a configured base unit.`;
+      return { message: `${rowLabel} uses unknown base unit "${rawBaseUnitCode || 'blank'}". Select a configured base unit.` };
     }
 
     const quantityInBaseUnit = Number(String(option.quantityInBaseUnit ?? '').replace(/,/g, ''));
     if (!Number.isFinite(quantityInBaseUnit) || quantityInBaseUnit <= 0) {
-      return `${rowLabel} must have a Contains quantity greater than 0.`;
+      return { message: `${rowLabel} must have a Contains quantity greater than 0.` };
     }
 
     const labelCode = rawUnitLabel ? resolveKnownUnitCode(rawUnitLabel, unitDefinitions, unitAliases) : '';
     if (labelCode && labelCode !== unitCode) {
-      return `${rowLabel} has mismatched unit code "${unitCode}" and label "${rawUnitLabel}". Re-select the unit so code and label match.`;
+      return { message: `${rowLabel} has mismatched unit code "${unitCode}" and label "${rawUnitLabel}". Re-select the unit so code and label match.` };
     }
 
-    const variationUnits = unitsByVariation.get(option.variationId) ?? new Set<string>();
-    if (variationUnits.has(unitCode)) {
-      return `${rowLabel} duplicates ${unitCode.toUpperCase()}. Each variation can only use one row per order unit.`;
+    const variationUnits = unitsByVariation.get(option.variationId) ?? new Map<string, string>();
+    const firstOptionId = variationUnits.get(unitCode);
+    if (firstOptionId !== undefined) {
+      return {
+        message:
+          `${variationName}: order unit ${unitCode.toUpperCase()} is listed twice. ` +
+          'Saving is blocked because each variation can only use one row per order unit. Remove or change one of them.',
+        unitConflict: {
+          variationId: option.variationId,
+          unitCode,
+          quantityInBaseUnit: quantityInBaseUnit,
+          optionIds: [firstOptionId, option.id],
+          cardKey: option.variationId,
+        },
+      };
     }
-    variationUnits.add(unitCode);
+    variationUnits.set(unitCode, option.id);
     unitsByVariation.set(option.variationId, variationUnits);
   }
 
-  return '';
+  return null;
 }
 
 async function syncInventoryLinksForVariationRows(input: {
@@ -600,95 +671,90 @@ async function syncInventoryLinksForVariationRows(input: {
 // scope) — product_variation_groups only guards against creating two
 // registry rows for the SAME logical variation (product_id +
 // normalized_variation_name + normalized_sku_code).
-function mapVariationGroupSaveError(error: { code?: string; message?: string } | null): Error {
+function mapVariationGroupSaveError(
+  error: { code?: string; message?: string } | null,
+  identity?: { variationName: string; skuCode: string },
+): Error {
   if (error?.code === '23505') {
-    return new Error('This logical variation already exists for this product.');
+    console.error('product_variation_groups unique violation', error);
+    return new Error(
+      identity
+        ? `This product already has a variation named "${identity.variationName.trim()}" with SKU "${identity.skuCode.trim()}". ` +
+            'Saving is blocked because the same name and SKU cannot be registered twice. Rename the variation or change its SKU.'
+        : 'This variation name and SKU are already registered for this product.',
+    );
   }
   return new Error(error?.message ?? 'Failed to save variation group.');
 }
 
 type VariationGroupBundle = {
+  cardKey: string;
   variationName: string;
   skuCode: string;
   existingGroupId: string | null;
 };
 
-function normalizeLogicalVariationSku(value: string) {
-  return value.trim().toLowerCase();
-}
-
-function formatVariationSkuForMessage(value: string) {
-  return value.trim() || 'this SKU';
-}
-
-async function validateLogicalVariationSkuAvailability(bundles: VariationGroupBundle[]) {
-  const claims = bundles
-    .map((bundle) => ({
-      ...bundle,
-      normalizedSkuCode: normalizeLogicalVariationSku(bundle.skuCode),
-    }))
-    .filter((bundle) => bundle.normalizedSkuCode);
-
-  if (claims.length === 0) {
-    return;
+// Read-only. Orphan groups (no product_variations rows left) never block a
+// SKU; a live conflict throws VariationSkuConflictError with every
+// conflicting record (see variationSkuConflicts.ts).
+async function validateLogicalVariationSkuAvailability(productId: string, bundles: VariationGroupBundle[]) {
+  const result = await findVariationSkuConflicts(
+    productId,
+    bundles.map((bundle) => ({
+      cardKey: bundle.cardKey,
+      variationName: bundle.variationName,
+      skuCode: bundle.skuCode,
+      existingGroupId: bundle.existingGroupId,
+    })),
+  );
+  if (result.ignoredOrphans.length > 0) {
+    console.info('Ignored unused product_variation_groups rows during SKU validation:', result.ignoredOrphans);
   }
+  if (result.conflicts.length > 0) {
+    throw new VariationSkuConflictError(result);
+  }
+}
 
-  const normalizedSkuCodes = Array.from(new Set(claims.map((bundle) => bundle.normalizedSkuCode)));
-  const { data, error } = await supabase
+// An existing group's rename/re-SKU can collide with an orphan group of the
+// same product that already holds the exact target identity (product + name
+// + SKU) — left behind when that variation was once deleted and re-added.
+// That orphan is the same logical variation, so it is reused instead of
+// blocking the save; nothing is deleted. Returns null if the identity holder
+// still has variation rows (a real conflict).
+async function adoptOrphanGroupForIdentity(identity: {
+  productId: string;
+  variationName: string;
+  skuCode: string;
+  nowIso: string;
+}): Promise<string | null> {
+  const { data: candidates, error } = await supabase
     .from('product_variation_groups')
-    .select('id, normalized_sku_code')
-    .in('normalized_sku_code', normalizedSkuCodes);
+    .select('id, variation_name')
+    .eq('product_id', identity.productId)
+    .eq('normalized_sku_code', normalizeVariationSku(identity.skuCode));
+  if (error) throw new Error(error.message);
+  const targetName = identity.variationName.trim().toLowerCase();
+  const holder = ((candidates ?? []) as Array<Record<string, unknown>>).find(
+    (row) => String(row.variation_name ?? '').trim().toLowerCase() === targetName,
+  );
+  if (!holder) return null;
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  const holderId = String(holder.id);
+  const { data: holderRows, error: holderRowsError } = await supabase
+    .from('product_variations')
+    .select('id')
+    .eq('variation_group_id', holderId)
+    .limit(1);
+  if (holderRowsError) throw new Error(holderRowsError.message);
+  if ((holderRows ?? []).length > 0) return null;
 
-  const rowsByNormalizedSku = new Map<string, Set<string>>();
-  ((data ?? []) as Array<Record<string, unknown>>).forEach((row) => {
-    const normalizedSkuCode = String(row.normalized_sku_code ?? '').trim().toLowerCase();
-    const groupId = String(row.id ?? '');
-    if (!normalizedSkuCode || !groupId) {
-      return;
-    }
-    const groupIds = rowsByNormalizedSku.get(normalizedSkuCode) ?? new Set<string>();
-    groupIds.add(groupId);
-    rowsByNormalizedSku.set(normalizedSkuCode, groupIds);
-  });
-
-  const claimsByNormalizedSku = new Map<string, typeof claims>();
-  claims.forEach((claim) => {
-    claimsByNormalizedSku.set(claim.normalizedSkuCode, [
-      ...(claimsByNormalizedSku.get(claim.normalizedSkuCode) ?? []),
-      claim,
-    ]);
-  });
-
-  for (const claim of claims) {
-    const existingGroupIds = rowsByNormalizedSku.get(claim.normalizedSkuCode) ?? new Set<string>();
-    const ownGroupStillHasSku =
-      Boolean(claim.existingGroupId) && existingGroupIds.has(String(claim.existingGroupId));
-
-    if (ownGroupStillHasSku) {
-      continue;
-    }
-
-    const sameSaveNewOrChangedClaims = (claimsByNormalizedSku.get(claim.normalizedSkuCode) ?? []).filter(
-      (sameSkuClaim) => {
-        if (sameSkuClaim === claim) {
-          return false;
-        }
-        const sameSkuOwnGroupStillHasSku =
-          Boolean(sameSkuClaim.existingGroupId) && existingGroupIds.has(String(sameSkuClaim.existingGroupId));
-        return !sameSkuOwnGroupStillHasSku;
-      },
-    );
-
-    if (existingGroupIds.size > 0 || sameSaveNewOrChangedClaims.length > 0) {
-      throw new Error(
-        `Variation SKU "${formatVariationSkuForMessage(claim.skuCode)}" is already assigned to another product variation.`,
-      );
-    }
-  }
+  const { error: updateError } = await supabase
+    .from('product_variation_groups')
+    .update({ variation_name: identity.variationName, sku_code: identity.skuCode, updated_at: identity.nowIso })
+    .eq('id', holderId);
+  if (updateError) throw new Error(updateError.message);
+  console.info('Reused unused product_variation_groups row for this variation identity:', holderId);
+  return holderId;
 }
 
 async function resolveVariationGroupId(identity: {
@@ -711,8 +777,19 @@ async function resolveVariationGroupId(identity: {
       .eq('id', identity.existingGroupId)
       .select('id')
       .single();
+    if (error?.code === '23505') {
+      const adoptedGroupId = await adoptOrphanGroupForIdentity({
+        productId: identity.productId,
+        variationName,
+        skuCode,
+        nowIso,
+      });
+      if (adoptedGroupId) {
+        return adoptedGroupId;
+      }
+    }
     if (error) {
-      throw mapVariationGroupSaveError(error);
+      throw mapVariationGroupSaveError(error, { variationName, skuCode });
     }
     if (!data) {
       throw new Error('Failed to update variation group: no matching group row found.');
@@ -732,7 +809,7 @@ async function resolveVariationGroupId(identity: {
     .select('id')
     .single();
   if (error) {
-    throw mapVariationGroupSaveError(error);
+    throw mapVariationGroupSaveError(error, { variationName, skuCode });
   }
   if (!data) {
     throw new Error('Failed to create variation group.');
@@ -805,6 +882,8 @@ export default function AddProduct({
   onRegisterNavigationGuard,
   layout = 'standalone',
   initialSection = 'Basic Information',
+  initialVariationGroupId = null,
+  onOpenProduct,
 }: AddProductProps) {
   const [activeSection, setActiveSection] = useState<AddProductSection>(initialSection);
   const [formValues, setFormValues] = useState<ProductFormState>({
@@ -838,6 +917,23 @@ export default function AddProduct({
   const [loadedExistingMediaItems, setLoadedExistingMediaItems] = useState<MediaItem[]>([]);
   const [submitError, setSubmitError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  // Structured duplicate SKU / unit-option conflict from the last save
+  // attempt, tagged with the product it belongs to (hidden for any other).
+  const [saveConflictEntry, setSaveConflictEntry] = useState<{
+    productKey: string;
+    conflict: SaveConflictState;
+  } | null>(null);
+  const saveConflict =
+    saveConflictEntry && saveConflictEntry.productKey === (editProductId ?? '') ? saveConflictEntry.conflict : null;
+  const setSaveConflict = (conflict: SaveConflictState | null) =>
+    setSaveConflictEntry(conflict ? { productKey: editProductId ?? '', conflict } : null);
+  // Asks VarAndPrice to select (and highlight) a variation or unit option.
+  const [variationFocusRequest, setVariationFocusRequest] = useState<{
+    cardKey: string;
+    unitOptionId: string | null;
+    nonce: number | string;
+  } | null>(null);
+  const [handledInitialFocusKey, setHandledInitialFocusKey] = useState('');
   const [isLoadingProduct, setIsLoadingProduct] = useState(false);
   const [isLoadingLookups, setIsLoadingLookups] = useState(false);
   const [saveNotice, setSaveNotice] = useState<{
@@ -1676,16 +1772,60 @@ export default function AddProduct({
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function confirmUnsavedChanges(targetSection: AddProductSection | null) {
+  function confirmUnsavedChanges(targetSection: AddProductSection | null, destinationLabel?: string) {
     const dirtySections = getUnsavedSections();
     if (dirtySections.length === 0) {
       return Promise.resolve(true);
     }
 
-    setPendingTabChange({ from: activeSection, to: targetSection, dirtySections });
+    setPendingTabChange({ from: activeSection, to: targetSection, dirtySections, destinationLabel });
     return new Promise<boolean>((resolve) => {
       pendingNavigationResolveRef.current = resolve;
     });
+  }
+
+  function requestVariationFocus(cardKey: string, unitOptionId: string | null) {
+    setActiveSection('Variation & Pricing');
+    setVariationFocusRequest({ cardKey, unitOptionId, nonce: Date.now() });
+  }
+
+  // The variation passed by the workspace (View Existing Product) is focused
+  // once per product; VarAndPrice waits until that card has loaded.
+  const initialFocusKey = editProductId && initialVariationGroupId ? `${editProductId}:${initialVariationGroupId}` : '';
+  const effectiveVariationFocusRequest =
+    variationFocusRequest ??
+    (initialFocusKey && handledInitialFocusKey !== initialFocusKey
+      ? {
+          cardKey: getLogicalVariationKey({ variationGroupId: initialVariationGroupId }),
+          unitOptionId: null,
+          nonce: initialFocusKey,
+        }
+      : null);
+
+  function handleVariationFocusHandled() {
+    setVariationFocusRequest(null);
+    if (initialFocusKey) {
+      setHandledInitialFocusKey(initialFocusKey);
+    }
+  }
+
+  async function handleOpenConflictProduct(conflict: VariationSkuConflict): Promise<string | null> {
+    if (!onOpenProduct) {
+      return 'Opening another product is not available from this screen.';
+    }
+    const productLabel = conflict.productName || 'the existing product';
+    const outcome = await openConflictingProduct(conflict, {
+      verify: () => loadVariationConflictPreview(conflict),
+      confirmUnsavedChanges: () => confirmUnsavedChanges(null, ` opening "${productLabel}"`),
+      openProduct: (productId, variationGroupId) => onOpenProduct(productId, variationGroupId),
+    });
+    if (outcome === 'not_found') {
+      return `The variation "${conflict.variationName}" of "${productLabel}" no longer exists, so there is nothing to open. Try saving again.`;
+    }
+    if (outcome === 'unavailable') {
+      return `"${productLabel}" is not in the product list right now (it may be filtered out or still loading).`;
+    }
+    return null;
   }
 
   useEffect(() => {
@@ -2208,6 +2348,7 @@ export default function AddProduct({
   }
 
   async function handleRegister() {
+    setSaveConflict(null);
     if (!validateForm()) {
       return false;
     }
@@ -2219,8 +2360,11 @@ export default function AddProduct({
       unitAliases,
     );
     if (unitValidationError) {
-      setSubmitError(unitValidationError);
-      setSaveNotice({ type: 'error', message: unitValidationError });
+      if (unitValidationError.unitConflict) {
+        setSaveConflict({ kind: 'unit', conflicts: [unitValidationError.unitConflict] });
+      }
+      setSubmitError(unitValidationError.message);
+      setSaveNotice({ type: 'error', message: unitValidationError.message });
       return false;
     }
 
@@ -2279,6 +2423,7 @@ export default function AddProduct({
         const existingBundle = variationGroupBundlesByKey.get(bundleKey);
         if (!existingBundle) {
           variationGroupBundlesByKey.set(bundleKey, {
+            cardKey: bundleKey,
             variationName: item.variationName,
             skuCode: item.skuCode,
             existingGroupId: itemGroupId,
@@ -2293,7 +2438,7 @@ export default function AddProduct({
         }
       }
 
-      await validateLogicalVariationSkuAvailability(Array.from(variationGroupBundlesByKey.values()));
+      await validateLogicalVariationSkuAvailability(productId, Array.from(variationGroupBundlesByKey.values()));
 
       // One persisted row id per item, computed once and shared by the row
       // upsert, the state reconciliation below and the pre-save alias block
@@ -2508,7 +2653,12 @@ export default function AddProduct({
       const variationMediaRows = Object.entries(variationPreviewMediaByCardId).flatMap(
         ([cardKey, mediaId]) => {
           const sourceMedia = productImageMediaById.get(mediaId);
-          const variationIdsForCard = variationIdsByCardKey.get(cardKey) ?? [];
+          // A card whose group id changed in this save (new variation, or a
+          // reused orphan group) is still keyed by its pre-save key here.
+          const variationIdsForCard =
+            variationIdsByCardKey.get(cardKey) ??
+            variationIdsByCardKey.get(persistedIdentity.logicalKeyMap.get(cardKey) ?? '') ??
+            [];
           if (!sourceMedia || variationIdsForCard.length === 0) {
             return [];
           }
@@ -2642,6 +2792,7 @@ export default function AddProduct({
       );
 
       const unitOptionLookup = new Map<string, string>();
+      const unitOptionIdRemap: UnitOptionIdRemap = new Map();
       const localUnitOptionLookup = new Map(
         variationUnitOptions.map((item) => [item.id, item] as const),
       );
@@ -2666,64 +2817,138 @@ export default function AddProduct({
           );
         });
 
-        const persistedUnitOptionIdBySourceId = new Map(
-          normalizedUnitOptions.map((item) => [item.id, getStableUuid(item.id)] as const),
-        );
-        const unitOptionRows = normalizedUnitOptions.map((item, index) => ({
-          id: persistedUnitOptionIdBySourceId.get(item.id),
-          variation_id: item.variationId,
-          unit_code: item.unitCode,
-          unit_label: item.unitLabel,
-          base_unit_code: item.baseUnitCode,
-          quantity_in_base_unit: Number(item.quantityInBaseUnit || '1') || 1,
-          price_override: item.priceOverride ? parseNumber(item.priceOverride) : null,
-          packaging_text: packagingSummaryByVariationId.get(item.variationId) || null,
-          min_order_quantity: Number(item.minOrderQuantity || '1') || 1,
-          order_increment: Number(item.orderIncrement || '1') || 1,
-          is_default: item.isDefault,
-          is_orderable: item.isOrderable,
-          status: item.status,
-          sort_order: Number(item.sortOrder || String(index)) || index,
-          notes: item.notes || null,
-          weight_value: parseNullableNonNegativeNumber(item.weightValue),
-          weight_unit: normalizeWeightUnit(item.weightUnit),
-          // weight_mode intentionally NOT written — the column does not exist in the live
-          // DB yet (migration not applied). Writing it would make this upsert fail entirely.
-          length_value: parseNullableNonNegativeNumber(item.lengthValue),
-          width_value: parseNullableNonNegativeNumber(item.widthValue),
-          height_value: parseNullableNonNegativeNumber(item.heightValue),
-          dimension_unit: normalizeDimensionUnit(item.dimensionUnit),
-          shipping_notes: item.shippingNotes || null,
-        }));
-
-        const { error: unitOptionInsertError } = await supabase
-          .from('product_variation_unit_options')
-          .upsert(unitOptionRows, { onConflict: 'id' })
-          .select('id, variation_id, unit_code, sort_order');
-
-        if (unitOptionInsertError) {
-          throw new Error(unitOptionInsertError.message);
-        }
-
-        normalizedUnitOptions.forEach((item) => {
-          const persistedId = persistedUnitOptionIdBySourceId.get(item.id);
-          if (!persistedId) return;
-          unitOptionLookup.set(item.id, persistedId);
+        const unitOptionRows: UnitOptionWriteRow[] = normalizedUnitOptions.map((item, index) => {
+          const parsedSortOrder = Number(item.sortOrder);
+          return {
+            id: getStableUuid(item.id),
+            variation_id: item.variationId,
+            unit_code: item.unitCode,
+            unit_label: item.unitLabel,
+            base_unit_code: item.baseUnitCode,
+            quantity_in_base_unit: Number(item.quantityInBaseUnit || '1') || 1,
+            price_override: item.priceOverride ? parseNumber(item.priceOverride) : null,
+            packaging_text: packagingSummaryByVariationId.get(item.variationId) || null,
+            min_order_quantity: Number(item.minOrderQuantity || '1') || 1,
+            order_increment: Number(item.orderIncrement || '1') || 1,
+            is_default: item.isDefault,
+            is_orderable: item.isOrderable,
+            status: item.status,
+            sort_order: item.sortOrder !== '' && Number.isFinite(parsedSortOrder) ? parsedSortOrder : index,
+            notes: item.notes || null,
+            weight_value: parseNullableNonNegativeNumber(item.weightValue),
+            weight_unit: normalizeWeightUnit(item.weightUnit),
+            // weight_mode intentionally NOT written — the column does not exist in the live
+            // DB yet (migration not applied). Writing it would make this upsert fail entirely.
+            length_value: parseNullableNonNegativeNumber(item.lengthValue),
+            width_value: parseNullableNonNegativeNumber(item.widthValue),
+            height_value: parseNullableNonNegativeNumber(item.heightValue),
+            dimension_unit: normalizeDimensionUnit(item.dimensionUnit),
+            shipping_notes: item.shippingNotes || null,
+          };
         });
+        // Write-row id -> editor id / card key, for conflict reporting and
+        // for remapping editor state to the persisted ids afterwards.
+        const editorIdByRowId = new Map(
+          normalizedUnitOptions.map((item, index) => [unitOptionRows[index].id, item.id] as const),
+        );
+        const cardKeyByEditorId = new Map(variationUnitOptions.map((item) => [item.id, item.variationId] as const));
+        const toUnitOptionConflictError = (
+          conflicts: Array<{ variationId: string; unitCode: string; quantityInBaseUnit: number; rowIds: string[] }>,
+        ) => {
+          const mapped = conflicts.map((conflict) => {
+            const optionIds = conflict.rowIds.map((rowId) => editorIdByRowId.get(rowId) ?? rowId);
+            return {
+              variationId: conflict.variationId,
+              unitCode: conflict.unitCode,
+              quantityInBaseUnit: conflict.quantityInBaseUnit,
+              optionIds,
+              cardKey: cardKeyByEditorId.get(optionIds[0] ?? '') ?? null,
+            };
+          });
+          const cardKey = mapped[0]?.cardKey;
+          const variation = variations.find(
+            (item) =>
+              getLogicalVariationKey({
+                variationGroupId: item.variationGroupId,
+                variationName: item.variationName,
+                className: item.className,
+                skuCode: item.skuCode,
+              }) === cardKey,
+          );
+          const label = variation
+            ? `variation "${(variation.variationName || variation.className || variation.skuCode).trim()}"`
+            : 'this variation';
+          return new UnitOptionConflictError(mapped, label);
+        };
 
-        const submittedUnitOptionIds = new Set(unitOptionRows.map((row) => String(row.id)));
+        // Read the current rows BEFORE writing, so ids can follow the
+        // (variation, unit, quantity) key and the upsert can never collide
+        // with a row that is about to be removed (planUnitOptionWrites).
         const submittedVariationIdsForUnits = Array.from(
           new Set(unitOptionRows.map((row) => String(row.variation_id))),
         );
         const { data: existingUnitRows, error: existingUnitError } = await supabase
           .from('product_variation_unit_options')
-          .select('id')
+          .select(
+            'id, variation_id, unit_code, unit_label, base_unit_code, quantity_in_base_unit, price_override, packaging_text, min_order_quantity, order_increment, is_default, is_orderable, status, sort_order, notes, weight_value, weight_unit, length_value, width_value, height_value, dimension_unit, shipping_notes',
+          )
           .in('variation_id', submittedVariationIdsForUnits);
         if (existingUnitError) throw new Error(existingUnitError.message);
 
-        const removedUnitOptionIds = ((existingUnitRows ?? []) as Array<Record<string, unknown>>)
-          .map((row) => String(row.id ?? ''))
-          .filter((id) => id && !submittedUnitOptionIds.has(id));
+        const unitWritePlan = planUnitOptionWrites({
+          submitted: unitOptionRows,
+          existing: ((existingUnitRows ?? []) as Array<Record<string, unknown>>).map(
+            (row) => ({ ...row, id: String(row.id ?? '') }) as ExistingUnitOptionRow,
+          ),
+          createId: () => crypto.randomUUID(),
+        });
+        if (unitWritePlan.duplicates.length > 0) {
+          throw toUnitOptionConflictError(
+            unitWritePlan.duplicates.map((duplicate) => ({ ...duplicate, rowIds: duplicate.sourceIds })),
+          );
+        }
+
+        if (unitWritePlan.changedRows.length > 0) {
+          const { error: unitOptionInsertError } = await supabase
+            .from('product_variation_unit_options')
+            .upsert(unitWritePlan.changedRows, { onConflict: 'id' })
+            .select('id, variation_id, unit_code, sort_order');
+
+          if (unitOptionInsertError) {
+            const violation = parseUnitOptionUniqueViolation(unitOptionInsertError);
+            if (violation) {
+              console.error('product_variation_unit_options unique violation', unitOptionInsertError);
+              const violatingKey = getUnitOptionNaturalKey(
+                violation.variationId,
+                violation.unitCode,
+                violation.quantityInBaseUnit,
+              );
+              const violatingRow = unitWritePlan.rows.find(
+                (row) => getUnitOptionNaturalKey(row.variation_id, row.unit_code, row.quantity_in_base_unit) === violatingKey,
+              );
+              throw toUnitOptionConflictError([
+                {
+                  variationId: violation.variationId,
+                  unitCode: violation.unitCode,
+                  quantityInBaseUnit: violation.quantityInBaseUnit,
+                  rowIds: violatingRow ? [violatingRow.id] : [],
+                },
+              ]);
+            }
+            throw new Error(unitOptionInsertError.message);
+          }
+        }
+
+        normalizedUnitOptions.forEach((item, index) => {
+          const persistedId = unitWritePlan.idBySourceId.get(unitOptionRows[index].id);
+          if (!persistedId) return;
+          unitOptionLookup.set(item.id, persistedId);
+          if (persistedId !== item.id) {
+            unitOptionIdRemap.set(item.id, persistedId);
+          }
+        });
+
+        const removedUnitOptionIds = unitWritePlan.removedIds;
 
         if (removedUnitOptionIds.length > 0) {
           const { data: referencedUnitRows, error: referencedUnitError } = await supabase
@@ -2756,6 +2981,15 @@ export default function AddProduct({
             if (deleteUnitError) throw new Error(deleteUnitError.message);
           }
         }
+      }
+
+      // Unit options are committed at this point: move editor state to the
+      // persisted ids now (not only on full success), so a retry after a
+      // later failure re-sends those ids instead of re-planning from stale ones.
+      if (unitOptionIdRemap.size > 0) {
+        setVariationUnitOptions((current) => applyUnitOptionIdRemap(current, unitOptionIdRemap));
+        setDiscounts((current) => applyUnitOptionIdRemapToDiscounts(current, unitOptionIdRemap));
+        setSurcharges((current) => applyUnitOptionIdRemapToSurcharges(current, unitOptionIdRemap));
       }
 
       const resolveRewardSelection = (item: {
@@ -3378,17 +3612,32 @@ export default function AddProduct({
           savedDraftState.variationPreviewMediaByCardId,
           persistedIdentity,
         ),
-        variationUnitOptions: applyPersistedIdentityToUnitOptions(
-          savedDraftState.variationUnitOptions,
-          persistedIdentity,
+        variationUnitOptions: applyUnitOptionIdRemap(
+          applyPersistedIdentityToUnitOptions(savedDraftState.variationUnitOptions, persistedIdentity),
+          unitOptionIdRemap,
         ),
-        discounts: applyPersistedIdentityToDiscounts(savedDraftState.discounts, persistedIdentity),
-        surcharges: applyPersistedIdentityToSurcharges(savedDraftState.surcharges, persistedIdentity),
+        discounts: applyUnitOptionIdRemapToDiscounts(
+          applyPersistedIdentityToDiscounts(savedDraftState.discounts, persistedIdentity),
+          unitOptionIdRemap,
+        ),
+        surcharges: applyUnitOptionIdRemapToSurcharges(
+          applyPersistedIdentityToSurcharges(savedDraftState.surcharges, persistedIdentity),
+          unitOptionIdRemap,
+        ),
       });
       onSaved?.(productId, formValues.categoryId);
       return true;
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to save product.';
+      if (error instanceof VariationSkuConflictError) {
+        console.error('Variation SKU conflict', { conflicts: error.conflicts, ignoredOrphans: error.ignoredOrphans });
+        setSaveConflict({ kind: 'sku', conflicts: error.conflicts, ignoredOrphans: error.ignoredOrphans });
+      } else if (error instanceof UnitOptionConflictError) {
+        console.error('Unit option conflict', error.conflicts);
+        setSaveConflict({ kind: 'unit', conflicts: error.conflicts });
+      } else {
+        console.error('Product save failed', error);
+      }
+      const message = describeProductSaveError(error);
       setSubmitError(message);
       setSaveNotice({ type: 'error', message });
       setSnackbar({ type: 'error', message });
@@ -3557,6 +3806,15 @@ export default function AddProduct({
             {saveNotice.message}
           </p>
         ) : null}
+        {saveConflict && !isEditorLoading ? (
+          <SaveConflictPanel
+            conflict={saveConflict}
+            onGoToVariation={(cardKey) => requestVariationFocus(cardKey, null)}
+            onGoToUnitOption={(cardKey, unitOptionId) => requestVariationFocus(cardKey, unitOptionId)}
+            onOpenProduct={onOpenProduct ? handleOpenConflictProduct : undefined}
+            onDismiss={() => setSaveConflict(null)}
+          />
+        ) : null}
 
         {!isEditorLoading && activeSection === 'Basic Information' ? (
           <section ref={basicInformationRef} className={styles.editorSection}>
@@ -3623,6 +3881,8 @@ export default function AddProduct({
               }
               onAdjustmentClipboardChange={setAdjustmentClipboard}
               clipboardProductScope={clipboardProductScope}
+              focusRequest={effectiveVariationFocusRequest}
+              onFocusRequestHandled={handleVariationFocusHandled}
             />
           </section>
         ) : null}
@@ -3641,7 +3901,9 @@ export default function AddProduct({
             </h4>
             <p className={styles.confirmText}>
               You have unsaved changes in {pendingTabChange.dirtySections.join(', ')}. Save them before
-              {pendingTabChange.to ? ` opening ${pendingTabChange.to}` : ' leaving Products'}?
+              {pendingTabChange.to
+                ? ` opening ${pendingTabChange.to}`
+                : pendingTabChange.destinationLabel ?? ' leaving Products'}?
             </p>
             <div className={styles.confirmActions}>
               <button

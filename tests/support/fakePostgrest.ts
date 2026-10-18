@@ -92,6 +92,13 @@ export function createFakePostgrest(options: FakePostgrestOptions) {
         query.range = [start, end];
         return builder;
       },
+      // First matching row or null, like PostgREST's maybeSingle().
+      maybeSingle() {
+        return Promise.resolve().then(() => {
+          const result = respond();
+          return { data: result.data?.[0] ?? null, error: result.error, count: result.count };
+        });
+      },
       then<Result1, Result2 = never>(
         onFulfilled?: (value: { data: Row[] | null; error: { message: string } | null; count: number | null }) => Result1 | PromiseLike<Result1>,
         onRejected?: (reason: unknown) => Result2 | PromiseLike<Result2>,

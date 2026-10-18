@@ -1817,3 +1817,15 @@
   color: #b42318;
   font-weight: 600;
 }
+
+.focusHighlight {
+  outline: 3px solid #f59e0b;
+  outline-offset: 2px;
+  animation: focusHighlightPulse 1.2s ease-in-out 2;
+}
+
+@keyframes focusHighlightPulse {
+  50% {
+    outline-color: rgba(245, 158, 11, 0.25);
+  }
+}

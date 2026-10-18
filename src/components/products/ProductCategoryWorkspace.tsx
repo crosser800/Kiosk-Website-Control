@@ -58,6 +58,8 @@ export default function ProductCategoryWorkspace({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editorInitialSection, setEditorInitialSection] =
     useState<'Basic Information' | 'Images' | 'Variation & Pricing'>('Basic Information');
+  // Variation to select when the editor opens (set only by conflict navigation).
+  const [editorFocusVariationGroupId, setEditorFocusVariationGroupId] = useState<string | null>(null);
 
   // Latest successfully loaded categories (read after a post-save refresh)
   // and the scheduler that serializes every reload of this workspace.
@@ -250,6 +252,7 @@ export default function ProductCategoryWorkspace({
     setSelectedProductId(product.id);
     setEditorMode('edit');
     setEditorInitialSection('Basic Information');
+    setEditorFocusVariationGroupId(null);
     setProductSearchValue('');
     setProductPage(1);
   }
@@ -262,6 +265,25 @@ export default function ProductCategoryWorkspace({
     setSelectedProductId(productId);
     setEditorMode('edit');
     setEditorInitialSection('Basic Information');
+    setEditorFocusVariationGroupId(null);
+  }
+
+  // "View Existing Product" from a duplicate-SKU conflict. The editor has
+  // already re-verified the record and cleared unsaved changes; this only
+  // navigates to a product that is present in the loaded workspace.
+  function openProductFromConflict(productId: string, variationGroupId: string) {
+    const category = categories.find((entry) => entry.products.some((product) => product.id === productId));
+    if (!category) {
+      return false;
+    }
+    setSelectedCategoryId(category.id);
+    setSelectedProductId(productId);
+    setEditorMode('edit');
+    setEditorInitialSection('Variation & Pricing');
+    setEditorFocusVariationGroupId(variationGroupId);
+    setProductSearchValue('');
+    setProductPage(1);
+    return true;
   }
 
   function handleSavedProduct(productId: string, categoryId: string) {
@@ -271,6 +293,7 @@ export default function ProductCategoryWorkspace({
   function handleCreatedProduct(productId: string, categoryId: string) {
     setIsCreateModalOpen(false);
     setEditorInitialSection('Images');
+    setEditorFocusVariationGroupId(null);
     void refreshWorkspaceAfterSave(productId, categoryId);
   }
 
@@ -715,12 +738,15 @@ export default function ProductCategoryWorkspace({
                   initialCategoryId={realSelectedCategoryId}
                   editProductId={selectedProductId}
                   initialSection={editorInitialSection}
+                  initialVariationGroupId={editorFocusVariationGroupId}
+                  onOpenProduct={openProductFromConflict}
                   onRegisterNavigationGuard={onRegisterNavigationGuard}
                   onCancel={() => {
                     if (detailCategory.products.length > 0) {
                       setEditorMode('edit');
                       setSelectedProductId(detailCategory.products[0]?.id ?? null);
                       setEditorInitialSection('Basic Information');
+                      setEditorFocusVariationGroupId(null);
                     }
                   }}
                   onSaved={handleSavedProduct}
