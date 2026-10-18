@@ -15,7 +15,11 @@ export type RecordedQuery = {
   orders: string[];
   range: [number, number] | null;
   limit: number | null;
+  // Set for update()/delete() requests (applied to `tables` in place).
+  mutation?: { kind: 'update' | 'delete'; values?: Row };
 };
+
+export type RecordedRpc = { fn: string; args: Record<string, unknown> };
 
 export type FakePostgrestOptions = {
   tables: Record<string, Row[]>;
@@ -24,6 +28,8 @@ export type FakePostgrestOptions = {
   failOn?: { table: string; requestIndex: number; message: string };
   // Called before each request is answered; may mutate `tables`.
   beforeResponse?: (query: RecordedQuery, requestIndex: number) => void;
+  // Answers supabase.rpc(fn, args); absent -> PostgREST "function not found".
+  rpc?: (fn: string, args: Record<string, unknown>) => { data: unknown; error: { message: string; code?: string } | null };
 };
 
 function compareValues(left: unknown, right: unknown) {
@@ -47,6 +53,14 @@ export function createFakePostgrest(options: FakePostgrestOptions) {
     const predicates: Array<(row: Row) => boolean> = [];
     const descending = new Set<string>();
     const builder = {
+      update(values: Row) {
+        query.mutation = { kind: 'update', values };
+        return builder;
+      },
+      delete() {
+        query.mutation = { kind: 'delete' };
+        return builder;
+      },
       select(columns: string, selectOptions?: { count?: string }) {
         query.columns = columns;
         query.count = selectOptions?.count;
@@ -120,6 +134,15 @@ export function createFakePostgrest(options: FakePostgrestOptions) {
           query.filters.every(([column, value]) => row[column] === value) &&
           predicates.every((matches) => matches(row)),
       );
+      if (query.mutation?.kind === 'update') {
+        filtered.forEach((row) => Object.assign(row, query.mutation?.values));
+        // update().select(...) returns the updated rows, like PostgREST.
+        return { data: query.columns ? filtered.map((row) => ({ ...row })) : null, error: null, count: null };
+      }
+      if (query.mutation?.kind === 'delete') {
+        options.tables[table] = (options.tables[table] ?? []).filter((row) => !filtered.includes(row));
+        return { data: null, error: null, count: null };
+      }
       const sorted = filtered.slice().sort((left, right) => {
         for (const entry of query.orders) {
           const column = entry.replace(/ desc$/, '');
@@ -143,5 +166,17 @@ export function createFakePostgrest(options: FakePostgrestOptions) {
     return builder;
   }
 
-  return { from, queries, rowsReturned };
+  const rpcCalls: RecordedRpc[] = [];
+  function rpc(fn: string, args: Record<string, unknown>) {
+    rpcCalls.push({ fn, args });
+    return Promise.resolve().then(
+      () =>
+        options.rpc?.(fn, args) ?? {
+          data: null,
+          error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache` },
+        },
+    );
+  }
+
+  return { from, rpc, queries, rowsReturned, rpcCalls };
 }

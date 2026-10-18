@@ -85,10 +85,6 @@ export function normalizeVariationSku(value: string | null | undefined) {
   return String(value ?? '').trim().toLowerCase();
 }
 
-function normalizeVariationName(value: string | null | undefined) {
-  return String(value ?? '').trim().toLowerCase();
-}
-
 function summarizeAvailability(rows: SkuGroupVariationRow[]): VariationSkuConflict['recordStatus'] {
   const unavailable = rows.filter(
     (row) => String(row.availability ?? '').trim().toLowerCase() === 'unavailable',
@@ -157,16 +153,10 @@ export function classifyVariationSkuConflicts(input: {
       if (owningClaim && owningClaim !== claim && owningClaim.normalizedSku !== claim.normalizedSku) {
         continue;
       }
-      // A variation removed from the editor in this edit and re-added with
-      // the same name and SKU: the group upsert reuses that same group.
-      if (
-        isSameProduct &&
-        !owningClaim &&
-        !claim.existingGroupId &&
-        normalizeVariationName(group.variation_name) === normalizeVariationName(claim.variationName)
-      ) {
-        continue;
-      }
+      // No exception for re-creating a variation under the same name + SKU:
+      // a group with any rows (including Unavailable rows kept for order
+      // history) must block, or the group upsert would hand the new
+      // variation that group and mix both sets of price-class rows in it.
 
       const product = productsById.get(group.product_id);
       conflicts.push({

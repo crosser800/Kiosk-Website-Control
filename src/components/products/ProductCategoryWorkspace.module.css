@@ -35,11 +35,31 @@
   font-family: 'Montserrat', sans-serif;
 }
 
-.catalogControls {
-  width: min(100%, 22rem);
+/* Catalog toolbar: [Category slider] [Product slider] [search, fills the
+   rest] on one row. Sliders keep their compact width; the row only wraps
+   when the window is too narrow for the search to keep ~16rem. */
+.catalogToolbar,
+.sidebarToolbar {
   display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1.1rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.sidebarToolbar {
+  gap: 0.5rem 0.6rem;
+}
+
+.toolbarSearch {
+  flex: 1 1 16rem;
+  width: auto;
+  min-width: 0;
+}
+
+.sidebarToolbar .toolbarSearch {
+  flex-basis: 8rem;
 }
 
 .searchField {
@@ -73,16 +93,20 @@
   color: var(--text-muted);
 }
 
+/* Card sizes: --category-card-min / --product-card-min are set on .workspace
+   by the size sliders (cardSizePreferences.ts). Each is a MINIMUM width; the
+   grid fits as many equal columns as possible and never overflows (min()). */
 .cardGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--category-card-min, 270px)), 1fr));
+  gap: clamp(0.6rem, 1.2vw, 1rem);
 }
 
 .categoryCard,
 .categoryCardSkeleton {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   border: 1px solid var(--card-border);
   border-radius: 1.25rem;
   background: var(--card-bg);
@@ -90,8 +114,12 @@
   overflow: hidden;
 }
 
+.categoryCard {
+  container-type: inline-size;
+}
+
 .categoryCardSkeleton {
-  min-height: 21rem;
+  aspect-ratio: 4 / 5;
   background: linear-gradient(90deg, #fafafa 20%, #f1f5f9 50%, #fafafa 80%);
   background-size: 200% 100%;
   animation: shimmer 1.25s linear infinite;
@@ -107,7 +135,7 @@
 .categoryImage,
 .categoryPlaceholder {
   width: 100%;
-  height: 13rem;
+  aspect-ratio: 16 / 10;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -122,7 +150,7 @@
     radial-gradient(circle at top left, rgba(250, 204, 21, 0.65), transparent 45%),
     linear-gradient(135deg, #111827, #4b5563);
   color: #ffffff;
-  font-size: 2rem;
+  font-size: clamp(1.1rem, 12cqi, 2.4rem);
   font-weight: 800;
   font-family: 'Montserrat', sans-serif;
 }
@@ -130,9 +158,10 @@
 .categoryBody {
   display: flex;
   flex-direction: column;
-  gap: 0.95rem;
-  padding: 1rem;
+  gap: clamp(0.5rem, 4cqi, 0.95rem);
+  padding: clamp(0.6rem, 5cqi, 1rem);
   flex: 1;
+  min-width: 0;
 }
 
 .cardHeader {
@@ -143,11 +172,21 @@
 }
 
 .categoryTitle {
+  min-width: 0;
   margin: 0;
   color: var(--text);
-  font-size: 1.1rem;
+  font-size: clamp(0.85rem, 6cqi, 1.15rem);
   font-weight: 700;
   font-family: 'Montserrat', sans-serif;
+  overflow-wrap: anywhere;
+}
+
+/* Narrow category cards: stack the title over the badge. */
+@container (max-width: 15rem) {
+  .cardHeader {
+    flex-direction: column;
+    gap: 0.4rem;
+  }
 }
 
 .statusBadge {
@@ -179,8 +218,7 @@
 .statsRow {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  min-height: 5rem;
+  gap: 0.5rem;
 }
 
 .statPill {
@@ -191,10 +229,11 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--surface) 72%, white);
   color: var(--text);
-  font-size: 0.84rem;
+  font-size: clamp(0.72rem, 4.5cqi, 0.84rem);
   font-weight: 700;
   font-family: 'Montserrat', sans-serif;
   width: fit-content;
+  max-width: 100%;
 }
 
 .statPill i {
@@ -239,9 +278,10 @@
   display: none;
 }
 
-@media (max-width: 1024px) {
+/* Small category cards (slider at the low end / narrow screens): icon-only
+   View button, keeping a full-width touch target. */
+@container (max-width: 13rem) {
   .viewButton {
-    width: 2.5rem;
     padding: 0;
   }
 
@@ -250,6 +290,24 @@
   }
 
   .viewButtonText {
+    display: none;
+  }
+}
+
+/* Very small category cards: counts side by side, numbers only. */
+@container (max-width: 11rem) {
+  .statsRow {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .statPill {
+    gap: 0.3rem;
+    padding: 0.35rem 0.5rem;
+  }
+
+  .statLabel {
     display: none;
   }
 }
@@ -498,10 +556,28 @@
   font-family: 'Montserrat', sans-serif;
 }
 
+.productGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--product-card-min, 170px)), 1fr));
+  gap: clamp(0.5rem, 1vw, 0.85rem);
+  align-items: stretch;
+}
+
+/* Category sidebar: horizontal cards. A column needs ~1.6x the product size,
+   so the ~264px desktop sidebar always shows one column, while a full-width
+   sidebar (<=1100px) fits several. */
 .productList {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(100%, calc(var(--product-card-min, 170px) * 1.6)), 1fr)
+  );
+  gap: clamp(0.4rem, calc(var(--product-card-min, 170px) * 0.04), 0.75rem);
+  align-items: stretch;
+}
+
+.productList > .emptyListState {
+  grid-column: 1 / -1;
 }
 
 .pagination {
@@ -536,101 +612,240 @@
   font-family: 'Montserrat', sans-serif;
 }
 
-.productCard {
+/* Image-first product card (ProductBrowseCard). Width comes from the grid;
+   typography follows the card's own width via container units. */
+.productTile {
+  container-type: inline-size;
   width: 100%;
-  display: grid;
-  grid-template-columns: 4rem minmax(0, 1fr);
-  gap: 0.8rem;
-  align-items: center;
-  padding: 0.75rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
   border: 1px solid var(--card-border);
-  border-radius: 1rem;
-  background: color-mix(in srgb, var(--surface) 82%, white);
+  border-radius: 0.9rem;
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
   cursor: pointer;
   text-align: left;
+  color: var(--text);
   transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.productCard:hover,
-.productCardActive {
-  transform: translateY(-1px);
+.productTile:hover,
+.productTile:focus-visible {
+  transform: translateY(-2px);
   border-color: color-mix(in srgb, var(--yellow) 60%, var(--card-border));
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
 }
 
-.productCardActive {
-  background: color-mix(in srgb, var(--surface) 82%, white);
+.productTile:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
+}
+
+.productTileActive {
   border-color: var(--yellow);
   box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--yellow) 32%, transparent),
-    0 12px 24px rgba(15, 23, 42, 0.08);
+    0 0 0 2px color-mix(in srgb, var(--yellow) 40%, transparent),
+    0 12px 24px rgba(15, 23, 42, 0.1);
 }
 
-.productThumbWrap {
-  width: 4rem;
-  height: 4rem;
-  border-radius: 0.85rem;
+/* Fixed square box: no layout shift while the image loads. */
+.productTileMedia {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background:
+    radial-gradient(circle at top left, rgba(250, 204, 21, 0.18), transparent 50%),
+    color-mix(in srgb, var(--surface) 85%, white);
   overflow: hidden;
-  background: var(--surface);
 }
 
-.productThumb,
-.productThumbPlaceholder {
+.productTileImage {
   width: 100%;
   height: 100%;
+  display: block;
+  object-fit: contain;
 }
 
-.productThumb {
-  object-fit: cover;
-}
-
-.productThumbPlaceholder {
+.productTilePlaceholder {
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #ca8a04;
-  background:
-    radial-gradient(circle at top left, rgba(250, 204, 21, 0.24), transparent 45%),
-    #f8fafc;
+  font-size: clamp(1.25rem, 18cqi, 2.75rem);
 }
 
-.productMeta {
+.productTileBadge {
+  position: absolute;
+  top: 0.45rem;
+  left: 0.45rem;
+  max-width: calc(100% - 0.9rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0.2rem 0.5rem;
+  font-size: clamp(0.62rem, 5cqi, 0.74rem);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
+}
+
+.productTileBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: clamp(0.5rem, 5cqi, 0.8rem);
+  min-width: 0;
+  flex: 1;
+}
+
+.productTileName {
+  color: var(--text);
+  font-size: clamp(0.76rem, 6cqi, 0.95rem);
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  /* Reserve two lines so cards in a row line up. */
+  min-height: 2.6em;
+}
+
+/* Horizontal product card (category sidebar): [thumbnail] [details].
+   The thumbnail follows the Product Size slider (~77px at the default 170,
+   56px..104px over the range); the card never switches to image-on-top. */
+.productRow {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(0.5rem, calc(var(--product-card-min, 170px) * 0.045), 0.85rem);
+  padding: clamp(0.45rem, calc(var(--product-card-min, 170px) * 0.035), 0.7rem);
+  border: 1px solid var(--card-border);
+  border-radius: 0.85rem;
+  background: var(--card-bg);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.productRow:hover,
+.productRow:focus-visible {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--yellow) 60%, var(--card-border));
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.1);
+}
+
+.productRow:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
+}
+
+/* Selected product (declared after .productRow so the yellow border wins). */
+.productRow.productTileActive {
+  border-color: var(--yellow);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--yellow) 40%, transparent),
+    0 10px 20px rgba(15, 23, 42, 0.1);
+}
+
+.productRowMedia {
+  display: block;
+  width: clamp(3.5rem, calc(var(--product-card-min, 170px) * 0.45), 6.5rem);
+  aspect-ratio: 1 / 1;
+  border-radius: 0.65rem;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top left, rgba(250, 204, 21, 0.18), transparent 50%),
+    color-mix(in srgb, var(--surface) 85%, white);
+}
+
+.productRowMedia .productTilePlaceholder {
+  font-size: 1.35rem;
+}
+
+.productRowBody {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-}
-
-.productNameRow {
-  display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.2rem;
 }
 
-.productName {
-  flex: 1 1 auto;
-  min-width: 0;
+.productRowName {
+  max-width: 100%;
   color: var(--text);
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 700;
   font-family: 'Montserrat', sans-serif;
-  overflow-wrap: break-word;
-  word-break: break-word;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
-.productSubtext {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
+.productRowBody .productTileSku,
+.productRowBody .productTileLine {
+  max-width: 100%;
+  font-size: 0.72rem;
+}
+
+.productRowBody .productTileLine {
+  width: 100%;
+}
+
+.productRowBadge {
+  max-width: 100%;
+  margin-top: 0.1rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.66rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.productTileSku {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: clamp(0.66rem, 4.8cqi, 0.78rem);
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.productTileLine {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: clamp(0.68rem, 5cqi, 0.8rem);
   font-weight: 600;
   font-family: 'Montserrat', sans-serif;
 }
 
-.productSubtext i {
+.productTileLine i {
+  flex: 0 0 auto;
   color: #ca8a04;
+  font-size: 0.85em;
+}
+
+.productTileLineText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @keyframes shimmer {
@@ -670,81 +885,28 @@
     width: 100%;
   }
 
-  .catalogControls {
-    width: 100%;
+  /* Phones: sliders share the first line, search gets the full second line. */
+  .catalogToolbar {
+    gap: 0.5rem 0.9rem;
   }
 
+  .catalogToolbar .toolbarSearch {
+    flex-basis: 100%;
+  }
+
+  /* Phones: smaller minimums so two or more cards fit per row; the sliders
+     still scale them and container queries keep the text readable. */
   .cardGrid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.35rem;
+    grid-template-columns: repeat(
+      auto-fill,
+      minmax(min(100%, calc(var(--category-card-min, 270px) * 0.55)), 1fr)
+    );
+    gap: 0.5rem;
   }
 
   .categoryCard,
   .categoryCardSkeleton {
-    border-radius: 0.55rem;
-  }
-
-  .categoryCardSkeleton {
-    min-height: 8.5rem;
-  }
-
-  .categoryImage,
-  .categoryPlaceholder {
-    height: 4rem;
-  }
-
-  .categoryPlaceholder {
-    font-size: 0.8rem;
-  }
-
-  .categoryBody {
-    gap: 0.28rem;
-    padding: 0.35rem;
-  }
-
-  .cardHeader {
-    flex-direction: column;
-    gap: 0.2rem;
-  }
-
-  .categoryTitle {
-    width: 100%;
-    font-size: 0.52rem;
-    line-height: 1.15;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .statusBadge {
-    padding: 0.1rem 0.25rem;
-    font-size: 0.4rem;
-  }
-
-  .statsRow {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 0.2rem;
-    min-height: 0;
-  }
-
-  .statPill {
-    gap: 0.16rem;
-    padding: 0.16rem 0.25rem;
-    font-size: 0.45rem;
-  }
-
-  .statLabel {
-    display: none;
-  }
-
-  .viewButton {
-    width: 100%;
-    height: 1.6rem;
-    align-self: stretch;
-    border-radius: 0.4rem;
-    font-size: 0.55rem;
+    border-radius: 0.75rem;
   }
 
   .detailHeader {
@@ -831,21 +993,24 @@
     white-space: nowrap;
   }
 
-  .productSidebar > .searchField {
+  .productSidebar > .sidebarToolbar {
     grid-column: 1;
     grid-row: 2;
+  }
+
+  .sidebarToolbar .searchField {
     min-width: 0;
     padding: 0.5rem 0.6rem;
     border-radius: 0.55rem;
     box-shadow: none;
   }
 
-  .productSidebar > .searchField input {
+  .sidebarToolbar .searchField input {
     min-width: 0;
     font-size: 0.65rem;
   }
 
-  .productSidebar > .searchField i {
+  .sidebarToolbar .searchField i {
     font-size: 0.65rem;
   }
 
@@ -860,39 +1025,28 @@
 
   .productList {
     grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .productGrid {
+    grid-template-columns: repeat(
+      auto-fill,
+      minmax(min(100%, calc(var(--product-card-min, 170px) * 0.7)), 1fr)
+    );
+    gap: 0.45rem;
+  }
+
+  /* Phones: horizontal cards, two columns when the size allows it. */
+  .productList {
+    grid-template-columns: repeat(
+      auto-fill,
+      minmax(min(100%, calc(var(--product-card-min, 170px) * 1.2)), 1fr)
+    );
     gap: 0.4rem;
   }
 
-  .productCard {
-    grid-template-columns: 2.5rem minmax(0, 1fr);
-    gap: 0.4rem;
-    padding: 0.4rem;
-    border-radius: 0.6rem;
-  }
-
-  .productThumbWrap {
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 0.5rem;
-  }
-
-  .productMeta {
-    gap: 0.16rem;
-  }
-
-  .productNameRow {
-    gap: 0.25rem;
-  }
-
-  .productName {
-    font-size: 0.62rem;
-  }
-
-  .productSubtext {
-    gap: 0.2rem;
-    font-size: 0.52rem;
+  .productTile {
+    border-radius: 0.65rem;
+    box-shadow: none;
   }
 
   .pagination {
@@ -936,10 +1090,4 @@
 .searchClearButton:focus-visible {
   background: color-mix(in srgb, var(--text-muted) 14%, transparent);
   color: var(--text);
-}
-
-.searchResultsGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
-  gap: 0.75rem;
 }

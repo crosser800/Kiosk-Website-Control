@@ -57,6 +57,9 @@ export type ProductListItem = {
   categoryTitle: string;
   variationNames: string[];
   variationSkus: string[];
+  // Card display: one label per available logical variation (the six
+  // price-class rows of a variation collapse into one), in load order.
+  variationLabels: string[];
 };
 
 export type CategorySummary = {
@@ -108,6 +111,20 @@ export function buildVariationGroupKey(variation: ProductVariationRow) {
 export function isAvailableVariation(variation: ProductVariationRow) {
   const availability = String(variation.availability ?? '').trim().toLowerCase();
   return !['unavailable', 'inactive', 'archived', 'deleted'].includes(availability);
+}
+
+// Same grouping as countVariationCards, so labels.length === variationCount.
+function getVariationLabels(variations: ProductVariationRow[]) {
+  const labelByGroup = new Map<string, string>();
+  variations.filter(isAvailableVariation).forEach((variation) => {
+    const key = buildVariationGroupKey(variation);
+    if (labelByGroup.has(key)) return;
+    labelByGroup.set(
+      key,
+      String(variation.variation_name || variation.class_name || variation.sku_code || '').trim(),
+    );
+  });
+  return Array.from(labelByGroup.values());
 }
 
 function countVariationCards(variations: ProductVariationRow[]) {
@@ -219,6 +236,7 @@ export function buildProductWorkspace(input: {
         productVariations.flatMap((variation) => [variation.variation_name, variation.class_name]),
       ),
       variationSkus: uniqueText(productVariations.map((variation) => variation.sku_code)),
+      variationLabels: getVariationLabels(productVariations),
     };
 
     const current = productsByCategoryId.get(categoryId) ?? [];

@@ -19,12 +19,14 @@ import {
   getUnitOptionNaturalKey,
   parseUnitOptionUniqueViolation,
   planUnitOptionWrites,
+  resolveOwnUnitOptionReference,
   UnitOptionConflictError,
   type ExistingUnitOptionRow,
   type UnitOptionConflict,
   type UnitOptionWriteRow,
 } from './addProducts/unitOptionReconciliation';
 import { describeProductSaveError } from './addProducts/saveErrorMessages';
+import { cleanupRemovedUnitOptions, cleanupRemovedVariations } from './addProducts/referenceCleanup';
 import SaveConflictPanel, { type SaveConflictState } from './addProducts/SaveConflictPanel';
 import type { AdjustmentClipboard } from './addProducts/discountClipboard';
 import type {
@@ -2522,47 +2524,13 @@ export default function AddProduct({
       });
 
       const submittedVariationIds = new Set(variationRows.map((row) => String(row.id)));
+      // Removed variation rows are cleaned up at the END of the save (see
+      // cleanupRemovedVariations below), after discount/surcharge classes have
+      // been re-pointed, and only server-side: deleting a variation cascades to
+      // its unit options, whose references are all ON DELETE SET NULL.
       const removedVariationIds = ((existingVariationRows ?? []) as Array<Record<string, unknown>>)
         .map((row) => String(row.id ?? ''))
         .filter((id) => id && !submittedVariationIds.has(id));
-
-      if (removedVariationIds.length > 0) {
-        const { data: referencedVariationRows, error: referencedVariationError } = await supabase
-          .from('order_items')
-          .select('variation_id')
-          .in('variation_id', removedVariationIds);
-        if (referencedVariationError) throw new Error(referencedVariationError.message);
-
-        const referencedVariationIds = new Set(
-          ((referencedVariationRows ?? []) as Array<Record<string, unknown>>)
-            .map((row) => String(row.variation_id ?? ''))
-            .filter(Boolean),
-        );
-        const deletableVariationIds = removedVariationIds.filter((id) => !referencedVariationIds.has(id));
-        const retiredVariationIds = removedVariationIds.filter((id) => referencedVariationIds.has(id));
-
-        if (retiredVariationIds.length > 0) {
-          const { error: retireVariationError } = await supabase
-            .from('product_variations')
-            .update({ availability: 'Unavailable' })
-            .in('id', retiredVariationIds);
-          if (retireVariationError) throw new Error(retireVariationError.message);
-        }
-
-        if (deletableVariationIds.length > 0) {
-          const { error: deleteInventoryLinksError } = await supabase
-            .from('inventory_item_variation_links')
-            .delete()
-            .in('product_variation_id', deletableVariationIds);
-          if (deleteInventoryLinksError) throw new Error(deleteInventoryLinksError.message);
-
-          const { error: deleteVariationError } = await supabase
-            .from('product_variations')
-            .delete()
-            .in('id', deletableVariationIds);
-          if (deleteVariationError) throw new Error(deleteVariationError.message);
-        }
-      }
 
       type VariationTarget = {
         variationId: string;
@@ -2793,6 +2761,8 @@ export default function AddProduct({
 
       const unitOptionLookup = new Map<string, string>();
       const unitOptionIdRemap: UnitOptionIdRemap = new Map();
+      // Existing rows of the saved variations that no submitted row kept.
+      const removedUnitOptionIds = new Set<string>();
       const localUnitOptionLookup = new Map(
         variationUnitOptions.map((item) => [item.id, item] as const),
       );
@@ -2948,39 +2918,9 @@ export default function AddProduct({
           }
         });
 
-        const removedUnitOptionIds = unitWritePlan.removedIds;
-
-        if (removedUnitOptionIds.length > 0) {
-          const { data: referencedUnitRows, error: referencedUnitError } = await supabase
-            .from('order_items')
-            .select('unit_option_id')
-            .in('unit_option_id', removedUnitOptionIds);
-          if (referencedUnitError) throw new Error(referencedUnitError.message);
-
-          const referencedUnitOptionIds = new Set(
-            ((referencedUnitRows ?? []) as Array<Record<string, unknown>>)
-              .map((row) => String(row.unit_option_id ?? ''))
-              .filter(Boolean),
-          );
-          const deletableUnitOptionIds = removedUnitOptionIds.filter((id) => !referencedUnitOptionIds.has(id));
-          const retiredUnitOptionIds = removedUnitOptionIds.filter((id) => referencedUnitOptionIds.has(id));
-
-          if (retiredUnitOptionIds.length > 0) {
-            const { error: retireUnitError } = await supabase
-              .from('product_variation_unit_options')
-              .update({ status: 'Inactive', is_orderable: false })
-              .in('id', retiredUnitOptionIds);
-            if (retireUnitError) throw new Error(retireUnitError.message);
-          }
-
-          if (deletableUnitOptionIds.length > 0) {
-            const { error: deleteUnitError } = await supabase
-              .from('product_variation_unit_options')
-              .delete()
-              .in('id', deletableUnitOptionIds);
-            if (deleteUnitError) throw new Error(deleteUnitError.message);
-          }
-        }
+        // Not removed here: cleanup runs at the end of the save, after
+        // discount/surcharge references have been rewritten (see below).
+        unitWritePlan.removedIds.forEach((id) => removedUnitOptionIds.add(id));
       }
 
       // Unit options are committed at this point: move editor state to the
@@ -3005,8 +2945,7 @@ export default function AddProduct({
         if (item.rewardTargetType === 'same_item') {
           const localRewardOption = localUnitOptionLookup.get(item.rewardUnitOptionId);
           const resolvedRewardUnitOptionId =
-            unitOptionLookup.get(item.rewardUnitOptionId) ??
-            (isUuid(item.rewardUnitOptionId) ? item.rewardUnitOptionId : null);
+            resolveOwnUnitOptionReference(item.rewardUnitOptionId, unitOptionLookup, removedUnitOptionIds);
 
           return {
             rewardProductId: productId,
@@ -3023,8 +2962,7 @@ export default function AddProduct({
         if (item.rewardTargetType === 'same_product_different_variant') {
           const localRewardOption = localUnitOptionLookup.get(item.rewardUnitOptionId);
           const resolvedRewardUnitOptionId =
-            unitOptionLookup.get(item.rewardUnitOptionId) ??
-            (isUuid(item.rewardUnitOptionId) ? item.rewardUnitOptionId : null);
+            resolveOwnUnitOptionReference(item.rewardUnitOptionId, unitOptionLookup, removedUnitOptionIds);
 
           return {
             rewardProductId: productId,
@@ -3377,6 +3315,12 @@ export default function AddProduct({
           item.qualificationScope !== 'assorted_same_product' &&
           !resolvedRewardSelection.rewardUnitOptionId
         ) {
+          if (item.rewardUnitOptionId && removedUnitOptionIds.has(unitOptionLookup.get(item.rewardUnitOptionId) ?? item.rewardUnitOptionId)) {
+            throw new Error(
+              `Promo "${item.surchargeName || 'Freebie'}" rewards unit ${String(item.rewardUnitCode || '').toUpperCase() || 'option'}, ` +
+                'which was removed from this variation. Choose another reward unit (or keep that unit), then save again.',
+            );
+          }
           throw new Error('Reward unit option is required before saving promo/freebie.');
         }
 
@@ -3576,6 +3520,22 @@ export default function AddProduct({
         }
       }
 
+      // Destructive cleanup last: every discount/surcharge reference of this
+      // product has been rewritten above, so a failure anywhere earlier leaves
+      // removed rows in place (a retry re-plans them) instead of erasing links.
+      // Deletion is server-side and transactional; without it, rows are retired.
+      const unitCleanup = await cleanupRemovedUnitOptions(productId, Array.from(removedUnitOptionIds));
+      const variationCleanup = await cleanupRemovedVariations(productId, removedVariationIds);
+      const keptRemovedCount = unitCleanup.retiredIds.length + variationCleanup.retiredIds.length;
+      if (keptRemovedCount > 0) {
+        console.info('Removed rows kept as inactive/unavailable', { unitCleanup, variationCleanup });
+      }
+      // Removals are retire-only for now (server switch off / RPC not deployed).
+      const cleanupNotice =
+        keptRemovedCount === 0
+          ? ''
+          : ` ${keptRemovedCount} removed item(s) were set to Inactive/Unavailable instead of being deleted, so existing orders, carts and promos keep their links.`;
+
       await writeDiscountHistoryRows({
         productId,
         oldSnapshots: oldDiscountSnapshots,
@@ -3595,11 +3555,11 @@ export default function AddProduct({
 
       setSaveNotice({
         type: 'success',
-        message: `${isEditMode ? 'Product updated' : 'Product created'} successfully.`,
+        message: `${isEditMode ? 'Product updated' : 'Product created'} successfully.${cleanupNotice}`,
       });
       setSnackbar({
         type: 'success',
-        message: `${isEditMode ? 'Product updated' : 'Product created'} successfully.`,
+        message: `${isEditMode ? 'Product updated' : 'Product created'} successfully.${cleanupNotice}`,
       });
       // Snapshot what was saved in its reconciled (persisted-identity) form so
       // it matches the reconciled editor state and doesn't read as unsaved.

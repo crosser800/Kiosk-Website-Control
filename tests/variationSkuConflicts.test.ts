@@ -156,21 +156,71 @@ describe('classifyVariationSkuConflicts', () => {
     assert.deepEqual(result.conflicts, []);
   });
 
-  it('treats a variation removed in this edit as a conflict unless it is re-added under the same name', () => {
+  it('blocks a variation removed in this edit and re-added, whatever its name', () => {
     const base = {
       productId: 'faucet',
       groups: [group('g-removed', 'faucet', 'Chrome', 'CR-1')],
       groupVariationRows: liveRows('g-removed', 'faucet'),
       products,
     };
-    const sameName = classifyVariationSkuConflicts({ ...base, claims: [claim('text:chrome::cr-1', 'chrome ', 'CR-1', null)] });
-    assert.deepEqual(sameName.conflicts, []);
+    for (const name of ['chrome ', 'Gold']) {
+      const result = classifyVariationSkuConflicts({ ...base, claims: [claim(`text:${name}::cr-1`, name, 'CR-1', null)] });
+      assert.equal(result.conflicts.length, 1, name);
+      assert.equal(result.conflicts[0].scope, 'same_product');
+      assert.equal(result.conflicts[0].variationGroupId, 'g-removed');
+      assert.equal(result.conflicts[0].targetCardKey, null);
+      assert.match(buildVariationSkuConflictMessage(result.conflicts), /removed in this edit, but still saved/);
+    }
+  });
 
-    const otherName = classifyVariationSkuConflicts({ ...base, claims: [claim('text:gold::cr-1', 'Gold', 'CR-1', null)] });
-    assert.equal(otherName.conflicts.length, 1);
-    assert.equal(otherName.conflicts[0].scope, 'same_product');
-    assert.equal(otherName.conflicts[0].targetCardKey, null);
-    assert.match(buildVariationSkuConflictMessage(otherName.conflicts), /removed in this edit, but still saved/);
+  it('blocks recreating a retired (Unavailable, order-referenced) variation with the same name and SKU', () => {
+    // A variation with orders is retired, not deleted: its six rows stay in
+    // the group as Unavailable. Re-creating "Chrome"/"CR-1" must not be
+    // handed that group (it would hold 12 rows, two per price code).
+    const retired = {
+      productId: 'faucet',
+      groups: [group('g-retired', 'faucet', 'Chrome', 'CR-1')],
+      groupVariationRows: liveRows('g-retired', 'faucet', 'Unavailable'),
+      products,
+    };
+
+    // Removed in this edit (retired card no longer in the editor).
+    const sameEdit = classifyVariationSkuConflicts({
+      ...retired,
+      claims: [claim('text:chrome::cr-1', 'Chrome', 'CR-1', null)],
+    });
+    assert.equal(sameEdit.conflicts.length, 1);
+    assert.deepEqual(sameEdit.ignoredOrphans, [], 'a group with Unavailable rows is not an orphan');
+    assert.equal(sameEdit.conflicts[0].recordStatus, 'Unavailable');
+    assert.equal(sameEdit.conflicts[0].liveRowCount, 6);
+    assert.equal(sameEdit.conflicts[0].variationName, 'Chrome');
+
+    // Retired in an earlier save: its card is loaded in the editor (it claims
+    // its own SKU), so the conflict links to that card.
+    const laterEdit = classifyVariationSkuConflicts({
+      ...retired,
+      claims: [
+        claim('group:g-retired', 'Chrome', 'CR-1', 'g-retired'),
+        claim('text:chrome::cr-1', 'Chrome', 'CR-1', null),
+      ],
+    });
+    assert.equal(laterEdit.conflicts.length, 1);
+    assert.equal(laterEdit.conflicts[0].scope, 'same_product');
+    assert.equal(laterEdit.conflicts[0].claimCardKey, 'text:chrome::cr-1');
+    assert.equal(laterEdit.conflicts[0].targetCardKey, 'group:g-retired');
+    assert.equal(laterEdit.conflicts[0].recordStatus, 'Unavailable');
+  });
+
+  it('still lets a new variation reuse a same-identity group that has no rows at all (true orphan)', () => {
+    const result = classifyVariationSkuConflicts({
+      productId: 'faucet',
+      claims: [claim('text:chrome::cr-1', 'Chrome', 'CR-1', null)],
+      groups: [group('g-orphan', 'faucet', 'Chrome', 'CR-1')],
+      groupVariationRows: [],
+      products,
+    });
+    assert.deepEqual(result.conflicts, []);
+    assert.deepEqual(result.ignoredOrphans.map((orphan) => orphan.groupId), ['g-orphan']);
   });
 });
 

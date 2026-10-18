@@ -1,7 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { supabase } from '../../lib/supabase';
 import AddProduct from './AddProduct';
+import CardSizeSlider from './CardSizeSlider';
+import CategoryBrowseCard from './CategoryBrowseCard';
+import ProductBrowseCard from './ProductBrowseCard';
+import { getInitials } from './productCardPresentation';
 import ProductCreateModal from './ProductCreateModal';
+import {
+  CATEGORY_CARD_SIZE,
+  CATEGORY_CARD_SIZE_KEY,
+  CATEGORY_CARD_SIZE_VAR,
+  PRODUCT_CARD_SIZE,
+  PRODUCT_CARD_SIZE_KEY,
+  PRODUCT_CARD_SIZE_VAR,
+  readCardSize,
+} from './cardSizePreferences';
 import { normalizeSearchText, searchProducts } from './productSearch';
 import {
   loadProductWorkspace,
@@ -16,15 +29,6 @@ import styles from './ProductCategoryWorkspace.module.css';
 type EditorMode = 'create' | 'edit';
 
 const SEARCH_RESULT_LIMIT = 60;
-
-function getInitials(value: string) {
-  return value
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('');
-}
 
 function getCategoryDescription(categoryTitle: string, productCount: number) {
   if (productCount === 0) {
@@ -58,6 +62,17 @@ export default function ProductCategoryWorkspace({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editorInitialSection, setEditorInitialSection] =
     useState<'Basic Information' | 'Images' | 'Variation & Pricing'>('Basic Information');
+  // Card sizes are CSS custom properties on the workspace root. Read from
+  // sessionStorage once; the sliders then update the element directly, so
+  // resizing never re-renders this component (or the editor inside it).
+  const workspaceRef = useRef<HTMLElement>(null);
+  const [initialCardSizeStyle] = useState(
+    () =>
+      ({
+        [CATEGORY_CARD_SIZE_VAR]: `${readCardSize(CATEGORY_CARD_SIZE_KEY, CATEGORY_CARD_SIZE)}px`,
+        [PRODUCT_CARD_SIZE_VAR]: `${readCardSize(PRODUCT_CARD_SIZE_KEY, PRODUCT_CARD_SIZE)}px`,
+      }) as CSSProperties,
+  );
   // Variation to select when the editor opens (set only by conflict navigation).
   const [editorFocusVariationGroupId, setEditorFocusVariationGroupId] = useState<string | null>(null);
 
@@ -349,7 +364,7 @@ export default function ProductCategoryWorkspace({
     selectedCategoryId === UNCATEGORIZED_CATEGORY_ID ? null : selectedCategoryId;
 
   return (
-    <section className={styles.workspace}>
+    <section ref={workspaceRef} className={styles.workspace} style={initialCardSizeStyle}>
       {!showCategoryDetail ? (
         <div className={styles.catalogPanel}>
           <div className={styles.topBar}>
@@ -363,30 +378,49 @@ export default function ProductCategoryWorkspace({
                     : `${globalSearchResults.length} product${globalSearchResults.length === 1 ? '' : 's'} found across all categories.`}
               </p>
             </div>
+          </div>
 
-            <div className={styles.catalogControls}>
-              <label className={styles.searchField}>
-                <i className="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                <input
-                  type="text"
-                  value={searchValue}
-                  onChange={(event) => setSearchValue(event.target.value)}
-                  placeholder="Search product name, SKU, variation, or category..."
-                  aria-label="Search products"
-                />
-                {searchValue ? (
-                  <button
-                    type="button"
-                    className={styles.searchClearButton}
-                    onClick={() => setSearchValue('')}
-                    aria-label="Clear search"
-                    title="Clear search"
-                  >
-                    <i className="fa-solid fa-xmark" aria-hidden="true"></i>
-                  </button>
-                ) : null}
-              </label>
-            </div>
+          {/* One row: Category size -> Product size -> search (fills the rest). */}
+          <div className={styles.catalogToolbar}>
+            <CardSizeSlider
+              label="Category"
+              icon="fa-table-cells-large"
+              accessibleLabel="Category card size"
+              storageKey={CATEGORY_CARD_SIZE_KEY}
+              range={CATEGORY_CARD_SIZE}
+              cssVariable={CATEGORY_CARD_SIZE_VAR}
+              targetRef={workspaceRef}
+            />
+            <CardSizeSlider
+              label="Product"
+              icon="fa-box"
+              accessibleLabel="Product card size"
+              storageKey={PRODUCT_CARD_SIZE_KEY}
+              range={PRODUCT_CARD_SIZE}
+              cssVariable={PRODUCT_CARD_SIZE_VAR}
+              targetRef={workspaceRef}
+            />
+            <label className={`${styles.searchField} ${styles.toolbarSearch}`}>
+              <i className="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+              <input
+                type="text"
+                value={searchValue}
+                onChange={(event) => setSearchValue(event.target.value)}
+                placeholder="Search product name, SKU, variation, or category..."
+                aria-label="Search products"
+              />
+              {searchValue ? (
+                <button
+                  type="button"
+                  className={styles.searchClearButton}
+                  onClick={() => setSearchValue('')}
+                  aria-label="Clear search"
+                  title="Clear search"
+                >
+                  <i className="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+              ) : null}
+            </label>
           </div>
 
           {refreshNotice && !loadError ? (
@@ -415,50 +449,18 @@ export default function ProductCategoryWorkspace({
               </div>
             ) : (
               <>
-                <div className={styles.searchResultsGrid}>
+                <div className={styles.productGrid}>
                   {globalSearchResults.slice(0, SEARCH_RESULT_LIMIT).map(({ product, matchedField, matchedValue }) => (
-                    <button
+                    <ProductBrowseCard
                       key={product.id}
-                      type="button"
-                      className={styles.productCard}
-                      onClick={() => openProductFromSearch(product)}
-                      aria-label={`Open ${product.name}`}
-                    >
-                      <div className={styles.productThumbWrap}>
-                        {product.thumbnailUrl ? (
-                          <img src={product.thumbnailUrl} alt={product.name} className={styles.productThumb} />
-                        ) : (
-                          <div className={styles.productThumbPlaceholder}>
-                            <i className="fa-solid fa-box" aria-hidden="true"></i>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className={styles.productMeta}>
-                        <div className={styles.productNameRow}>
-                          <span className={styles.productName}>{product.name}</span>
-                          <span
-                            className={`${styles.statusBadge} ${
-                              product.status.toLowerCase() === 'active'
-                                ? styles.statusActive
-                                : styles.statusInactive
-                            }`}
-                          >
-                            {product.status}
-                          </span>
-                        </div>
-                        <span className={styles.productSubtext}>{product.skuCode}</span>
-                        <span className={styles.productSubtext}>
-                          <i className="fa-solid fa-folder" aria-hidden="true"></i>{' '}
-                          {product.categoryTitle || 'Uncategorized'}
-                        </span>
-                        {matchedField !== 'Product name' ? (
-                          <span className={styles.productSubtext}>
-                            Matched {matchedField.toLowerCase()}: {matchedValue}
-                          </span>
-                        ) : null}
-                      </div>
-                    </button>
+                      product={product}
+                      onOpen={openProductFromSearch}
+                      hint={
+                        matchedField !== 'Product name'
+                          ? `Matched ${matchedField.toLowerCase()}: ${matchedValue}`
+                          : undefined
+                      }
+                    />
                   ))}
                 </div>
                 {globalSearchResults.length > SEARCH_RESULT_LIMIT ? (
@@ -476,67 +478,7 @@ export default function ProductCategoryWorkspace({
           ) : (
             <div className={styles.cardGrid}>
               {categories.map((category) => (
-                <article key={category.id} className={styles.categoryCard}>
-                  <button
-                    type="button"
-                    className={styles.cardImageButton}
-                    onClick={() => openCategory(category.id)}
-                    aria-label={`Open ${category.title}`}
-                  >
-                    {category.imageUrl ? (
-                      <img
-                        src={category.imageUrl}
-                        alt={category.title}
-                        className={styles.categoryImage}
-                      />
-                    ) : (
-                      <div className={styles.categoryPlaceholder}>{getInitials(category.title)}</div>
-                    )}
-                  </button>
-
-                  <div className={styles.categoryBody}>
-                    <div className={styles.cardHeader}>
-                      <h3 className={styles.categoryTitle}>{category.title}</h3>
-                      <span
-                        className={`${styles.statusBadge} ${
-                          category.status.toLowerCase() === 'active'
-                            ? styles.statusActive
-                            : styles.statusInactive
-                        }`}
-                      >
-                        {category.status}
-                      </span>
-                    </div>
-
-                    <div className={styles.statsRow}>
-                      <span className={styles.statPill}>
-                        <i className="fa-solid fa-box-open" aria-hidden="true"></i>
-                        <span>{category.productCount}</span>
-                        <span className={styles.statLabel}>
-                          Product{category.productCount === 1 ? '' : 's'}
-                        </span>
-                      </span>
-                      <span className={styles.statPill}>
-                        <i className="fa-solid fa-layer-group" aria-hidden="true"></i>
-                        <span>{category.variationCount}</span>
-                        <span className={styles.statLabel}>
-                          Variation{category.variationCount === 1 ? '' : 's'}
-                        </span>
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      className={styles.viewButton}
-                      onClick={() => openCategory(category.id)}
-                      aria-label={`View products in ${category.title}`}
-                      title={`View products in ${category.title}`}
-                    >
-                      <i className={`fa-solid fa-eye ${styles.viewButtonIcon}`} aria-hidden="true"></i>
-                      <span className={styles.viewButtonText}>View Products</span>
-                    </button>
-                  </div>
-                </article>
+                <CategoryBrowseCard key={category.id} category={category} onOpen={openCategory} />
               ))}
             </div>
           )}
@@ -627,15 +569,27 @@ export default function ProductCategoryWorkspace({
                 </button>
               </div>
 
-              <label className={styles.searchField}>
-                <i className="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                <input
-                  type="text"
-                  value={productSearchValue}
-                  onChange={(event) => setProductSearchValue(event.target.value)}
-                  placeholder="Search products..."
+              <div className={styles.sidebarToolbar}>
+                <CardSizeSlider
+                  label="Product"
+                  icon="fa-box"
+                  accessibleLabel="Product card size"
+                  hideLabel
+                  storageKey={PRODUCT_CARD_SIZE_KEY}
+                  range={PRODUCT_CARD_SIZE}
+                  cssVariable={PRODUCT_CARD_SIZE_VAR}
+                  targetRef={workspaceRef}
                 />
-              </label>
+                <label className={`${styles.searchField} ${styles.toolbarSearch}`}>
+                  <i className="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                  <input
+                    type="text"
+                    value={productSearchValue}
+                    onChange={(event) => setProductSearchValue(event.target.value)}
+                    placeholder="Search products..."
+                  />
+                </label>
+              </div>
 
               <div className={styles.productList}>
                 {filteredProducts.length === 0 ? (
@@ -655,51 +609,13 @@ export default function ProductCategoryWorkspace({
                   </div>
                 ) : (
                   pagedProducts.map((product) => (
-                    <button
+                    <ProductBrowseCard
                       key={product.id}
-                      type="button"
-                      className={`${styles.productCard} ${
-                        editorMode === 'edit' && selectedProductId === product.id
-                          ? styles.productCardActive
-                          : ''
-                      }`}
-                      onClick={() => handleSelectProduct(product.id)}
-                    >
-                      <div className={styles.productThumbWrap}>
-                        {product.thumbnailUrl ? (
-                          <img
-                            src={product.thumbnailUrl}
-                            alt={product.name}
-                            className={styles.productThumb}
-                          />
-                        ) : (
-                          <div className={styles.productThumbPlaceholder}>
-                            <i className="fa-solid fa-box" aria-hidden="true"></i>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className={styles.productMeta}>
-                        <div className={styles.productNameRow}>
-                          <span className={styles.productName}>{product.name}</span>
-                          <span
-                            className={`${styles.statusBadge} ${
-                              product.status.toLowerCase() === 'active'
-                                ? styles.statusActive
-                                : styles.statusInactive
-                            }`}
-                          >
-                            {product.status}
-                          </span>
-                        </div>
-                        <span className={styles.productSubtext}>{product.skuCode}</span>
-                        <span className={styles.productSubtext}>
-                          <i className="fa-solid fa-layer-group" aria-hidden="true"></i>{' '}
-                          {product.variationCount} Variation
-                          {product.variationCount === 1 ? '' : 's'}
-                        </span>
-                      </div>
-                    </button>
+                      product={product}
+                      layout="row"
+                      isActive={editorMode === 'edit' && selectedProductId === product.id}
+                      onOpen={(item) => handleSelectProduct(item.id)}
+                    />
                   ))
                 )}
               </div>

@@ -131,6 +131,25 @@ export function planUnitOptionWrites(input: {
   return { rows, changedRows, idBySourceId, removedIds, duplicates: [] };
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// Resolves an editor reference to one of this product's unit options (a
+// same-item / same-product reward unit) to the id to persist. Never returns an
+// id the admin removed in this save: such a reference resolves to null so the
+// caller can ask for a new selection instead of keeping (and thereby blocking
+// the cleanup of) a unit the admin removed, or writing a dangling id.
+export function resolveOwnUnitOptionReference(
+  editorId: string,
+  persistedIdByEditorId: Map<string, string>,
+  removedUnitOptionIds: Set<string>,
+): string | null {
+  const id = String(editorId ?? '').trim();
+  if (!id) return null;
+  const persisted = persistedIdByEditorId.get(id);
+  if (persisted) return persisted;
+  return UUID_PATTERN.test(id) && !removedUnitOptionIds.has(id) ? id : null;
+}
+
 export type UnitOptionConflict = {
   variationId: string;
   unitCode: string;
